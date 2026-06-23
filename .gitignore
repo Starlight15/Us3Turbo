@@ -1,0 +1,27 @@
+# Build artifacts
+build/
+.claude_tmp/
+
+# third_party is a symlink to an external path — do not track
+third_party
+
+# Build-output binary symlinks (point into build/)
+us3_turbo_backend
+us3_turbo_proxy
+us3_turbo_gds_put_example
+
+# Logs & runtime artifacts
+*.log
+*.log.*
+nohup.out
+core
+core.*
+*.tmp
+
+# IDE / OS
+.vscode/
+.idea/
+.cache/
+.DS_Store
+*.swp
+compile_commands.json
