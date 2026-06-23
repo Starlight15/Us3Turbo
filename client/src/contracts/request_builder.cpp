@@ -57,21 +57,21 @@ OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
   };
 }
 
-TransferSession ImportSession(
+SessionMeta ImportSession(
     const us3_turbo::proxy::OpenSessionResponse& response) {
-  TransferSession session;
-  session.meta.request_id = response.request_id();
-  session.meta.session_id = response.session_id();
-  session.meta.ticket = response.ticket();
-  session.meta.expire_at = response.expire_at();
-  session.meta.gateway_id = response.gateway_id().empty()
-                                ? kDefaultGatewayId
-                                : response.gateway_id();
+  SessionMeta session;
+  session.request_id = response.request_id();
+  session.session_id = response.session_id();
+  session.ticket = response.ticket();
+  session.expire_at = response.expire_at();
+  session.gateway_id = response.gateway_id().empty()
+                           ? kDefaultGatewayId
+                           : response.gateway_id();
   return session;
 }
 
 GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
-                                    const TransferSession& session,
+                                    const SessionMeta& session,
                                     const PutObjectRequest& request,
                                     ConstBufferView buffer,
                                     std::string_view rdma_token) {
@@ -84,24 +84,24 @@ GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
       .buffer_type = open.buffer_type,         // kCudaDevice
       .checksum_policy = request.checksum_policy,
       .extra_headers = request.extra_headers,
-      .request_id = session.meta.request_id,   // 服务端回填的 request_id
-      .session_id = session.meta.session_id,
-      .transfer_ticket = session.meta.ticket,
+      .request_id = session.request_id,        // 服务端回填的 request_id
+      .session_id = session.session_id,
+      .transfer_ticket = session.ticket,
       .rdma_token = std::string(rdma_token),
       .chunk_offset = 0,                       // 单对象 PUT:整段一次传
       .chunk_size = buffer.size,
   };
 }
 
-TransferOutcome MakeTransferOutcome(const TransferSession& session,
+TransferOutcome MakeTransferOutcome(const SessionMeta& session,
                                     const us3_turbo::proxy::GdsChunkResponse& response,
                                     ConstBufferView buffer) {
   TransferOutcome outcome;
   outcome.selected_flow     = DataFlow::GPUDirect;
-  outcome.request_id        = session.meta.request_id;
-  outcome.session_id        = session.meta.session_id;
+  outcome.request_id        = session.request_id;
+  outcome.session_id        = session.session_id;
   outcome.gateway_id        = response.selected_gateway().empty()
-                                  ? session.meta.gateway_id
+                                  ? session.gateway_id
                                   : response.selected_gateway();
   outcome.transfer_status   = response.transfer_status().empty()
                                   ? std::string{"completed"}

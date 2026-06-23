@@ -34,7 +34,8 @@ struct OpenSessionRequest {
 };
 
 /**
- * @brief OpenSession 成功后回填的会话元数据。
+ * @brief OpenSession 成功后回填的会话元数据;同时作为 GDS PUT 单次传输的
+ *        会话句柄直接传递(无需额外包装层)。
  */
 struct SessionMeta {
   std::string request_id;
@@ -42,13 +43,6 @@ struct SessionMeta {
   std::string ticket;
   std::string expire_at;
   std::string gateway_id;
-};
-
-/**
- * @brief GDS PUT 单次传输所用的会话句柄。
- */
-struct TransferSession {
-  SessionMeta meta;
 };
 
 /**

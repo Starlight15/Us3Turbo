@@ -8,36 +8,12 @@
 #include "client/src/common/errors.h"
 
 namespace us3_turbo::client {
-namespace {
-
-// 去尾斜杠,让 "host:port/" 与 "host:port" 等价。
-[[nodiscard]] std::string TrimTrailingSlash(std::string endpoint) {
-  while (!endpoint.empty() && endpoint.back() == '/') {
-    endpoint.pop_back();
-  }
-  return endpoint;
-}
-
-}  // namespace
 
 MetaRpc::MetaRpc(const std::string& endpoint, std::chrono::milliseconds timeout) {
-  // 参数校验:endpoint 为空直接失败,不建 channel。channel_ / stub_ 留空,
-  // ok() 返回 false,init_error_ 存原因。
-  if (endpoint.empty()) {
-    init_error_ = "control endpoint must not be empty";
-    return;
-  }
-  // 就地 Init 一条 baidu_std channel:connect / RPC 超时同源,max_retry=2。
-  // Init 失败时 channel_ 留空、init_error_ 存原因,ok() 返回 false。
-  channel_ = std::make_unique<brpc::Channel>();
-  brpc::ChannelOptions co;
-  co.protocol           = "baidu_std";
-  co.connect_timeout_ms = static_cast<int>(timeout.count());
-  co.timeout_ms         = static_cast<int>(timeout.count());
-  co.max_retry          = 2;
-  if (channel_->Init(TrimTrailingSlash(endpoint).c_str(), nullptr, &co) != 0) {
-    init_error_ = "Failed to initialize brpc channel: " + endpoint;
-    channel_.reset();
+  // channel 由 InitBrpcChannel 统一构建:endpoint 为空或 Init 失败时返回
+  // nullptr、init_error_ 存原因,ok() 返回 false。
+  channel_ = InitBrpcChannel(endpoint, timeout, init_error_, "control");
+  if (!channel_) {
     return;
   }
   stub_ = std::make_unique<us3_turbo::proxy::Control_Stub>(channel_.get());

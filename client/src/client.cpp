@@ -1,17 +1,18 @@
 #include "us3_turbo/client/client.h"
 
+#include <cassert>
 #include <chrono>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "client/src/common/errors.h"
+#include "client/src/common/retry_policy.h"
 #include "client/src/common/rpc_context.h"
 #include "client/src/contracts/request_builder.h"
 #include "client/src/contracts/requests.h"
 #include "client/src/control/meta_rpc.h"
 #include "client/src/data/chunk_rpc.h"
-#include "client/src/gds/retry_policy.h"
 #include "client/src/gds_transport/gds_memory_manager.h"
 
 namespace us3_turbo::client {
@@ -30,11 +31,14 @@ namespace {
 // 一次 PUT 的核心动作:OpenSession → AcquireToken → GdsChunk(GdsPut)。
 // 失败时 best-effort AbortSession。所有请求/结果结构由 request_builder 工厂
 // 从 PutObjectRequest + buffer 单源装配,不再手写中间字段。
+// gds_mgr 由 Client::Initialize 缓存并传入,避免每次重新 Instance()。
 [[nodiscard]] Result<TransferOutcome> PutOnce(const ClientOptions& options,
                                               MetaRpc& meta,
                                               const ChunkRpc& chunk,
+                                              GdsMemoryManager* gds_mgr,
                                               const PutObjectRequest& request,
                                               ConstBufferView buffer) {
+  assert(gds_mgr != nullptr);
   auto open_request = MakeOpenSessionRequest(options, request, buffer);
   auto open_response = meta.OpenSession(open_request);
   if (!open_response.success()) {
@@ -43,14 +47,9 @@ namespace {
   auto session = ImportSession(open_response.value());
 
   // 取整段 buffer 的 RDMA token。token 析构(RPC 响应返回后)自动释放。
-  auto mgr = GdsMemoryManager::Instance();
-  if (!mgr.success()) {
-    (void)meta.AbortSession(session.meta.session_id, open_request.context);
-    return Result<TransferOutcome>::Failure(mgr.error());
-  }
-  auto token = mgr.value()->AcquireToken(buffer.data, buffer.size, 0, OperationType::kPut);
+  auto token = gds_mgr->AcquireToken(buffer.data, buffer.size, 0, OperationType::kPut);
   if (!token.success()) {
-    (void)meta.AbortSession(session.meta.session_id, open_request.context);
+    (void)meta.AbortSession(session.session_id, open_request.context);
     return Result<TransferOutcome>::Failure(token.error());
   }
 
@@ -58,7 +57,7 @@ namespace {
                                        token.value().str());
   auto response = chunk.Put(chunk_req);
   if (!response.success()) {
-    (void)meta.AbortSession(session.meta.session_id, open_request.context);
+    (void)meta.AbortSession(session.session_id, open_request.context);
     return Result<TransferOutcome>::Failure(response.error());
   }
 
@@ -120,13 +119,15 @@ Result<bool> Client::Initialize() {
   }
 
   // GDS 通路早期探测:立即构造 cuObjClient 并检查 isConnected(),失败直接返
-  // kTransportError,避免首次 PutObject 才崩在半路。
+  // kTransportError,避免首次 PutObject 才崩在半路。成功则缓存 manager 指针,
+  // 后续 Register/Unregister/PutOnce 直接复用,不再重复 Instance()。
   auto mgr = GdsMemoryManager::Instance();
   if (!mgr.success()) {
     chunk_.reset();
     meta_.reset();
     return Result<bool>::Failure(mgr.error());
   }
+  gds_mgr_ = mgr.value();
 
   initialized_ = true;
   return Result<bool>::Success(true);
@@ -136,6 +137,7 @@ void Client::Shutdown() {
   // channel 在 RPC 对象内部,随其一起析构;顺序无关。
   chunk_.reset();
   meta_.reset();
+  gds_mgr_ = nullptr;
   initialized_ = false;
 }
 
@@ -170,7 +172,7 @@ Result<TransferOutcome> Client::PutObject(const PutObjectRequest& request,
       return Result<TransferOutcome>::Failure(MakeError(
           ErrorCode::kTimeout, "PutObject retry deadline exceeded", true));
     }
-    return PutOnce(options_, *meta_, *chunk_, request, buffer);
+    return PutOnce(options_, *meta_, *chunk_, gds_mgr_, request, buffer);
   });
 }
 
@@ -182,22 +184,16 @@ Result<bool> Client::RegisterDeviceBuffer(void* ptr, std::size_t size) {
   if (!initialized_) {
     return Result<bool>::Failure(MakeNotInitialized("Client"));
   }
-  auto mgr = GdsMemoryManager::Instance();
-  if (!mgr.success()) {
-    return Result<bool>::Failure(mgr.error());
-  }
-  return mgr.value()->RegisterBuffer(ptr, size);
+  assert(gds_mgr_ != nullptr);
+  return gds_mgr_->RegisterBuffer(ptr, size);
 }
 
 Result<bool> Client::UnregisterDeviceBuffer(void* ptr) {
   if (!initialized_) {
     return Result<bool>::Failure(MakeNotInitialized("Client"));
   }
-  auto mgr = GdsMemoryManager::Instance();
-  if (!mgr.success()) {
-    return Result<bool>::Failure(mgr.error());
-  }
-  return mgr.value()->UnregisterBuffer(ptr);
+  assert(gds_mgr_ != nullptr);
+  return gds_mgr_->UnregisterBuffer(ptr);
 }
 
 }  // namespace us3_turbo::client

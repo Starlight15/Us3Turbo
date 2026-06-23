@@ -30,7 +30,7 @@ namespace us3_turbo::client {
                                                         ConstBufferView buffer);
 
 /** @brief 从 OpenSession 响应回填会话元数据。 */
-[[nodiscard]] TransferSession ImportSession(
+[[nodiscard]] SessionMeta ImportSession(
     const us3_turbo::proxy::OpenSessionResponse& response);
 
 /**
@@ -39,7 +39,7 @@ namespace us3_turbo::client {
  *        ticket / checksum / extra_headers。
  */
 [[nodiscard]] GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
-                                                  const TransferSession& session,
+                                                  const SessionMeta& session,
                                                   const PutObjectRequest& request,
                                                   ConstBufferView buffer,
                                                   std::string_view rdma_token);
@@ -48,7 +48,7 @@ namespace us3_turbo::client {
  * @brief 从 GdsChunk 响应装配 TransferOutcome:固定 GPUDirect、chunk 全量传输;
  *        gateway_id / transfer_status 缺省回退会话元数据 / "completed"。
  */
-[[nodiscard]] TransferOutcome MakeTransferOutcome(const TransferSession& session,
+[[nodiscard]] TransferOutcome MakeTransferOutcome(const SessionMeta& session,
                                                   const us3_turbo::proxy::GdsChunkResponse& response,
                                                   ConstBufferView buffer);
 

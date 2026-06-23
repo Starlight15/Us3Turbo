@@ -11,6 +11,7 @@ namespace us3_turbo::client {
 
 class MetaRpc;
 class ChunkRpc;
+class GdsMemoryManager;
 
 /** @brief GDS-only client SDK 入口。只实现 GDS PUT 链路：OpenSession → GdsPut。 */
 class Client {
@@ -64,6 +65,7 @@ class Client {
   ClientOptions                  options_;
   std::unique_ptr<MetaRpc>      meta_;     // 内含 → proxy channel
   std::unique_ptr<ChunkRpc>     chunk_;    // 内含 → backend channel
+  GdsMemoryManager*             gds_mgr_{nullptr};  // Initialize 缓存,避免重复 Instance()
   bool                          initialized_{false};
 };
 
