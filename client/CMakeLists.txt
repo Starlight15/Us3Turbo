@@ -10,7 +10,6 @@
 add_library(us3_turbo_client
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
-  src/common/brpc_util.cpp
   src/common/errors.cpp
   src/common/types.cpp
   src/control/meta_rpc.cpp

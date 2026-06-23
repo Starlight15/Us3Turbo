@@ -4,29 +4,18 @@
 
 #include <brpc/controller.h>
 
-#include "client/src/common/brpc_util.h"
 #include "client/src/common/errors.h"
 
 namespace us3_turbo::client {
-
-MetaRpc::MetaRpc(const std::string& endpoint, std::chrono::milliseconds timeout) {
-  // channel 由 InitBrpcChannel 统一构建:endpoint 为空或 Init 失败时返回
-  // nullptr、init_error_ 存原因,ok() 返回 false。
-  channel_ = InitBrpcChannel(endpoint, timeout, init_error_, "control");
-  if (!channel_) {
-    return;
-  }
-  stub_ = std::make_unique<us3_turbo::proxy::Control_Stub>(channel_.get());
-}
 
 Result<us3_turbo::proxy::OpenSessionResponse>
 MetaRpc::OpenSession(const OpenSessionRequest& request) const {
   if (!ok()) {
     return Result<us3_turbo::proxy::OpenSessionResponse>::Failure(
-        MakeError(ErrorCode::kRpcError, init_error_, /*retryable=*/true));
+        MakeError(ErrorCode::kRpcError, init_error(), /*retryable=*/true));
   }
   brpc::Controller controller;
-  ApplyRequestHeaders(controller, request.context);
+  ApplyTimeout(controller, request.context);
 
   // GDS-only client:op_type / data_flow / is_multipart_part 恒为定值,
   // 直接内联(proxy 校验这三个字段,见 proxy_control_plane_service.cpp)。
@@ -42,10 +31,10 @@ MetaRpc::OpenSession(const OpenSessionRequest& request) const {
   rpc_request.set_is_multipart_part(false);
 
   us3_turbo::proxy::OpenSessionResponse rpc_response;
-  stub_->OpenSession(&controller, &rpc_request, &rpc_response, nullptr);
+  stub()->OpenSession(&controller, &rpc_request, &rpc_response, nullptr);
 
-  auto status = CheckRpcFailure(controller, "Failed to open transfer session",
-                                DataFlow::GPUDirect, request.request_id);
+  auto status = CheckFailure(controller, "Failed to open transfer session",
+                             request.request_id);
   if (!status.success()) {
     return Result<us3_turbo::proxy::OpenSessionResponse>::Failure(status.error());
   }
@@ -60,12 +49,12 @@ Result<bool> MetaRpc::AbortSession(const std::string& session_id,
     return Result<bool>::Success(false);
   }
   brpc::Controller controller;
-  ApplyRequestHeaders(controller, context);
+  ApplyTimeout(controller, context);
 
   us3_turbo::proxy::AbortSessionRequest req;
   req.set_session_id(session_id);
   us3_turbo::proxy::AbortSessionResponse resp;
-  stub_->AbortSession(&controller, &req, &resp, nullptr);
+  stub()->AbortSession(&controller, &req, &resp, nullptr);
   // best-effort:RPC 失败也算 success(false),不让重试失败干扰主流程。
   if (controller.Failed()) {
     return Result<bool>::Success(false);
