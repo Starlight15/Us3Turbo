@@ -5,7 +5,6 @@
 
 #include "client/src/common/errors.h"
 #include "client/src/common/rpc_base.h"
-#include "client/src/common/rpc_context.h"
 #include "client/src/contracts/requests.h"
 #include "control_plane.pb.h"
 #include "us3_turbo/client/result.h"
@@ -45,7 +44,7 @@ class MetaRpc : public RpcBase {
 
   /** best-effort:RPC 失败也算 success(false);不存在的 session 视为成功。 */
   [[nodiscard]] Result<bool> AbortSession(const std::string& session_id,
-                                          const RpcCallMetadata& context) const;
+                                          std::chrono::milliseconds timeout) const;
 };
 
 }  // namespace us3_turbo::client

@@ -1,11 +1,11 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
 
-#include "client/src/common/rpc_context.h"
 #include "us3_turbo/client/types.h"
 
 namespace us3_turbo::client {
@@ -20,7 +20,7 @@ namespace us3_turbo::client {
  * ("PUT" / "gds-cuobject" / false),由 RPC 层直接内联,不再作为可变字段。
  */
 struct OpenSessionRequest {
-  RpcCallMetadata context;
+  std::chrono::milliseconds timeout{std::chrono::milliseconds(30000)};
   std::string bucket;
   std::string key;
   std::uint64_t offset{0};
@@ -48,7 +48,7 @@ struct SessionMeta {
  * 不再作为可变字段。checksum_policy / extra_headers 无服务端消费,已移除。
  */
 struct GdsChunkRequest {
-  RpcCallMetadata context;
+  std::chrono::milliseconds timeout{std::chrono::milliseconds(30000)};
   std::string bucket;
   std::string key;
   std::string request_id;

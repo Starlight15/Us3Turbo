@@ -9,7 +9,6 @@
 #include <brpc/controller.h>
 #include <brpc/errno.pb.h>
 
-#include "client/src/common/rpc_context.h"
 #include "control_plane.pb.h"
 #include "us3_turbo/client/result.h"  // Error / MakeError / Result
 #include "us3_turbo/client/types.h"   // ErrorCode / DataFlow / ToString
@@ -88,9 +87,9 @@ class RpcBase {
   [[nodiscard]] const std::string& init_error() const { return init_error_; }
 
  protected:
-  /** 把 RpcCallMetadata.timeout 灌进 controller(目前只有 timeout)。 */
-  void ApplyTimeout(brpc::Controller& controller, const RpcCallMetadata& context) const {
-    controller.set_timeout_ms(static_cast<int>(context.timeout.count()));
+  /** 把 timeout 灌进 controller(目前 RPC 上下文只有 timeout)。 */
+  void ApplyTimeout(brpc::Controller& controller, std::chrono::milliseconds timeout) const {
+    controller.set_timeout_ms(static_cast<int>(timeout.count()));
   }
 
   /**

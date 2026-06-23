@@ -82,6 +82,12 @@ struct TransferOutcome {
 
 
 /** @brief Returns a stable string identifier for the data flow. */
-[[nodiscard]] std::string_view ToString(DataFlow flow);
+[[nodiscard]] inline std::string_view ToString(DataFlow flow) {
+  switch (flow) {
+    case DataFlow::GPUDirect:
+      return "gds-cuobject";
+  }
+  return "unknown";
+}
 
 }  // namespace us3_turbo::client

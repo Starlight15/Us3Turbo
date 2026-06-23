@@ -15,7 +15,7 @@ ChunkRpc::Put(const GdsChunkRequest& request) const {
         MakeError(ErrorCode::kRpcError, init_error(), /*retryable=*/true));
   }
   brpc::Controller controller;
-  ApplyTimeout(controller, request.context);
+  ApplyTimeout(controller, request.timeout);
 
   us3_turbo::proxy::GdsChunkRequest rpc_request;
   rpc_request.set_request_id(request.request_id);

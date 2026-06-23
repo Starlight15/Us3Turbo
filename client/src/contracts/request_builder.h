@@ -3,7 +3,6 @@
 #include <chrono>
 #include <string_view>
 
-#include "client/src/common/rpc_context.h"
 #include "client/src/contracts/requests.h"
 #include "control_plane.pb.h"
 #include "us3_turbo/client/options.h"

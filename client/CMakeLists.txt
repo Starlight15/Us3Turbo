@@ -10,8 +10,6 @@
 add_library(us3_turbo_client
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
-  src/common/errors.cpp
-  src/common/types.cpp
   src/control/meta_rpc.cpp
   src/contracts/request_builder.cpp
   src/data/chunk_rpc.cpp

@@ -26,11 +26,9 @@ constexpr char kDefaultGatewayId[] = "gateway-local";
 }
 
 // 优先级:request.timeout > request_timeout(单对象 PUT 无 per-op 拆分)。
-[[nodiscard]] RpcCallMetadata MakeContext(const ClientOptions& options,
-                                          std::chrono::milliseconds timeout) {
-  const auto effective =
-      (timeout.count() <= 0) ? options.request_timeout : timeout;
-  return RpcCallMetadata{.timeout = effective};
+[[nodiscard]] std::chrono::milliseconds MakeContext(const ClientOptions& options,
+                                                    std::chrono::milliseconds timeout) {
+  return (timeout.count() <= 0) ? options.request_timeout : timeout;
 }
 
 }  // namespace
@@ -38,7 +36,7 @@ constexpr char kDefaultGatewayId[] = "gateway-local";
 OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
                                           const PutObjectRequest& request) {
   return OpenSessionRequest{
-      .context = MakeContext(options, request.timeout),
+      .timeout = MakeContext(options, request.timeout),
       .bucket = request.bucket,
       .key = request.key,
       .offset = 0,
@@ -66,7 +64,7 @@ GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
                                     ConstBufferView buffer,
                                     std::string_view rdma_token) {
   return GdsChunkRequest{
-      .context = open.context,                 // 复用 OpenSession 的 RPC 上下文
+      .timeout = open.timeout,                 // 复用 OpenSession 的超时
       .bucket = open.bucket,                   // 与 OpenSession 同一对象
       .key = open.key,
       .request_id = session.request_id,        // 服务端回填的 request_id

@@ -15,7 +15,7 @@ MetaRpc::OpenSession(const OpenSessionRequest& request) const {
         MakeError(ErrorCode::kRpcError, init_error(), /*retryable=*/true));
   }
   brpc::Controller controller;
-  ApplyTimeout(controller, request.context);
+  ApplyTimeout(controller, request.timeout);
 
   // GDS-only client:op_type / data_flow / is_multipart_part 恒为定值,
   // 直接内联(proxy 校验这三个字段,见 proxy_control_plane_service.cpp)。
@@ -43,13 +43,13 @@ MetaRpc::OpenSession(const OpenSessionRequest& request) const {
 }
 
 Result<bool> MetaRpc::AbortSession(const std::string& session_id,
-                                   const RpcCallMetadata& context) const {
+                                   std::chrono::milliseconds timeout) const {
   if (!ok()) {
     // best-effort:channel 不可用时也按 success(false) 处理,不干扰主流程。
     return Result<bool>::Success(false);
   }
   brpc::Controller controller;
-  ApplyTimeout(controller, context);
+  ApplyTimeout(controller, timeout);
 
   us3_turbo::proxy::AbortSessionRequest req;
   req.set_session_id(session_id);

@@ -3,12 +3,13 @@
 #include <cassert>
 #include <chrono>
 #include <memory>
+#include <random>
 #include <string>
+#include <thread>
+#include <type_traits>
 #include <utility>
 
 #include "client/src/common/errors.h"
-#include "client/src/common/retry_policy.h"
-#include "client/src/common/rpc_context.h"
 #include "client/src/contracts/request_builder.h"
 #include "client/src/contracts/requests.h"
 #include "client/src/control/meta_rpc.h"
@@ -17,6 +18,42 @@
 
 namespace us3_turbo::client {
 namespace {
+
+// ============================================================
+//  重试策略(指数退避 + 抖动)——仅 PutObject 一处使用,就地内联。
+//  - max_attempts==1 等价于不重试
+//  - 仅对 error.retryable==true 的失败重试;其它错误直接透传
+//  算法:第 n 次重试 sleep = min(max_backoff, initial * 2^(n-1)) * jitter,
+//       jitter ∈ [0.5, 1.5)。
+// ============================================================
+struct RetryPolicy {
+  int                       max_attempts{3};
+  std::chrono::milliseconds initial_backoff{std::chrono::milliseconds(100)};
+  std::chrono::milliseconds max_backoff{std::chrono::milliseconds(2000)};
+};
+
+template <typename Fn>
+auto RetryIfRetryable(const RetryPolicy& policy, Fn&& fn)
+    -> std::invoke_result_t<Fn> {
+  using ResultT = std::invoke_result_t<Fn>;
+  static thread_local std::mt19937_64 rng{std::random_device{}()};
+  std::uniform_real_distribution<double> jitter(0.5, 1.5);
+
+  ResultT last = fn();
+  for (int attempt = 1; attempt < policy.max_attempts; ++attempt) {
+    if (last.success()) return last;
+    if (!last.error().retryable) return last;
+    auto backoff = std::chrono::milliseconds{
+        static_cast<long long>(
+            policy.initial_backoff.count() * (1LL << (attempt - 1)))};
+    if (backoff > policy.max_backoff) backoff = policy.max_backoff;
+    backoff = std::chrono::milliseconds{
+        static_cast<long long>(backoff.count() * jitter(rng))};
+    std::this_thread::sleep_for(backoff);
+    last = fn();
+  }
+  return last;
+}
 
 // 一次 PUT 的核心动作:OpenSession → AcquireToken → GdsChunk(GdsPut)。
 // 失败时 best-effort AbortSession。所有请求/结果结构由 request_builder 工厂
@@ -39,7 +76,7 @@ namespace {
   // 取整段 buffer 的 RDMA token。token 析构(RPC 响应返回后)自动释放。
   auto token = gds_mgr->AcquireToken(buffer.data, buffer.size, 0);
   if (!token.success()) {
-    (void)meta.AbortSession(session.session_id, open_request.context);
+    (void)meta.AbortSession(session.session_id, open_request.timeout);
     return Result<TransferOutcome>::Failure(token.error());
   }
 
@@ -47,7 +84,7 @@ namespace {
                                        token.value().str());
   auto response = chunk.Put(chunk_req);
   if (!response.success()) {
-    (void)meta.AbortSession(session.session_id, open_request.context);
+    (void)meta.AbortSession(session.session_id, open_request.timeout);
     return Result<TransferOutcome>::Failure(response.error());
   }
 
@@ -142,7 +179,7 @@ Result<TransferOutcome> Client::PutObject(const PutObjectRequest& request,
   }
 
   const auto deadline = std::chrono::steady_clock::now() + options_.request_timeout;
-  return RetryIfRetryable(DefaultRetryPolicy(), [&]() -> Result<TransferOutcome> {
+  return RetryIfRetryable(RetryPolicy{}, [&]() -> Result<TransferOutcome> {
     if (std::chrono::steady_clock::now() >= deadline) {
       return Result<TransferOutcome>::Failure(MakeError(
           ErrorCode::kTimeout, "PutObject retry deadline exceeded", true));
