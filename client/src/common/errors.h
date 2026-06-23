@@ -1,35 +1,30 @@
 #pragma once
 
-#include <string_view>
+#include <string>
 
-#include "us3_turbo/client/result.h"
-#include "us3_turbo/client/types.h"  // ToString(DataFlow)
+#include "us3_turbo/client/result.h"  // Error / MakeError
+#include "us3_turbo/client/types.h"   // ErrorCode
 
 namespace us3_turbo::client {
 
 /**
- * @brief client-new 共享的错误构造工厂。
+ * @brief client 所有错误构造的唯一入口。
  *
- * 统一 ErrorCode 选择 / retryable 标记 / failed_path 填充,避免各处自行拼接。
- * 只保留 GDS PUT 链路实际用到的几种;header-only,三处都是单行工厂。
+ * 按 @p code 选择 log level 打一次日志,再返回装配好的 Error:
+ *   - 调用方错误(kInvalidArgument / kPayloadTooLarge)与可恢复瞬时失败
+ *     (kTimeout)→ warn
+ *   - 基础设施不可用(RPC / cuObj / channel 失败)→ error
+ *
+ * 日志在构造点打一次;传播已有 Error 时(直接 Result::Failure(err))
+ * 不要调本函数,避免重复日志。failed_path / request_id 仅 GDS 链路
+ * (gds-cuobject / 会话 id)填充,纯客户端校验错误留空。
+ *
+ * @note 字段装配复用 MakeError;本函数只在其上加日志与统一入口。
  */
-
-[[nodiscard]] inline Error MakeNotInitialized(std::string_view component) {
-  return MakeError(ErrorCode::kInternal,
-                   std::string(component) + " is not initialized. Call Client::Initialize first.",
-                   /*retryable=*/true);
-}
-
-[[nodiscard]] inline Error MakeInvalidArgument(std::string_view message) {
-  return MakeError(ErrorCode::kInvalidArgument, std::string(message));
-}
-
-[[nodiscard]] inline Error MakeTransportFailure(std::string_view message,
-                                                DataFlow path,
-                                                std::string_view request_id,
-                                                bool retryable) {
-  return MakeError(ErrorCode::kTransportError, std::string(message), retryable,
-                   std::string(ToString(path)), std::string(request_id));
-}
+[[nodiscard]] Error Fail(ErrorCode code,
+                         std::string message,
+                         bool retryable,
+                         std::string failed_path = {},
+                         std::string request_id = {});
 
 }  // namespace us3_turbo::client

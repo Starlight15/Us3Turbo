@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <brpc/controller.h>
+#include <spdlog/spdlog.h>
 
 #include "client/src/common/errors.h"
 
@@ -12,7 +13,8 @@ Result<us3_turbo::proxy::OpenSessionResponse>
 MetaRpc::OpenSession(const OpenSessionRequest& request) const {
   if (!ok()) {
     return Result<us3_turbo::proxy::OpenSessionResponse>::Failure(
-        MakeError(ErrorCode::kRpcError, init_error(), /*retryable=*/true));
+        Fail(init_error_code(), init_error(), /*retryable=*/true,
+             std::string(ToString(DataFlow::GPUDirect))));
   }
   brpc::Controller controller;
   ApplyTimeout(controller, request.timeout);
@@ -56,6 +58,7 @@ Result<bool> MetaRpc::AbortSession(const std::string& session_id,
   stub()->AbortSession(&controller, &req, &resp, nullptr);
   // best-effort:RPC 失败也算 success(false),不让重试失败干扰主流程。
   if (controller.Failed()) {
+    spdlog::warn("AbortSession best-effort failed: {}", controller.ErrorText());
     return Result<bool>::Success(false);
   }
   return Result<bool>::Success(resp.erased());

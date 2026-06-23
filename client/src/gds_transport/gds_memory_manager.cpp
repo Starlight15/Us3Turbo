@@ -1,13 +1,13 @@
 #include "client/src/gds_transport/gds_memory_manager.h"
 
 #include <cstddef>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include <cufile.h>
 #include <cuobjclient.h>
+#include <spdlog/spdlog.h>
 
 #include "client/src/common/errors.h"
 
@@ -84,12 +84,11 @@ GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
 }
 
 GdsMemoryManager::~GdsMemoryManager() {
-  // 进程退出 best-effort 反注册，避免下次 cudaFree 时 nvidia-fs 死锁
+  // 进程退出 best-effort 反注册,避免下次 cudaFree 时 nvidia-fs 死锁
   if (!registered_.empty()) {
-    std::cerr << "[GdsMemoryManager] WARNING: " << registered_.size()
-              << " device buffer(s) not unregistered before shutdown; "
-                 "calling cuMemObjPutDescriptor as best-effort"
-              << std::endl;
+    spdlog::warn("[GdsMemoryManager] {} device buffer(s) not unregistered "
+                 "before shutdown; calling cuMemObjPutDescriptor as best-effort",
+                 registered_.size());
     for (auto& [ptr, _] : registered_) {
       if (impl_->client) {
         impl_->client->cuMemObjPutDescriptor(ptr);
@@ -103,8 +102,11 @@ Result<GdsMemoryManager*> GdsMemoryManager::Instance() {
   static Result<GdsMemoryManager*> holder = []() -> Result<GdsMemoryManager*> {
     static GdsMemoryManager mgr;
     if (!mgr.connected_) {
-      return Result<GdsMemoryManager*>::Failure(MakeTransportFailure(
-          "cuObjClient 未连接到可用的 RDMA 服务", DataFlow::GPUDirect, "", true));
+      return Result<GdsMemoryManager*>::Failure(Fail(
+          ErrorCode::kTransportError,
+          "cuObjClient not connected to RDMA service",
+          /*retryable=*/true,
+          std::string(ToString(DataFlow::GPUDirect))));
     }
     return Result<GdsMemoryManager*>::Success(&mgr);
   }();
@@ -113,8 +115,10 @@ Result<GdsMemoryManager*> GdsMemoryManager::Instance() {
 
 Result<bool> GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
   if (ptr == nullptr || size == 0U) {
-    return Result<bool>::Failure(MakeInvalidArgument(
-        "RegisterBuffer requires non-null ptr and positive size"));
+    return Result<bool>::Failure(Fail(
+        ErrorCode::kInvalidArgument,
+        "RegisterBuffer requires non-null ptr and positive size",
+        /*retryable=*/false));
   }
   std::scoped_lock lk(registration_mu_);
   return RegisterBufferUnderLock(ptr, size);
@@ -122,8 +126,10 @@ Result<bool> GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
 
 Result<bool> GdsMemoryManager::UnregisterBuffer(void* ptr) {
   if (ptr == nullptr) {
-    return Result<bool>::Failure(
-        MakeInvalidArgument("UnregisterBuffer requires non-null ptr"));
+    return Result<bool>::Failure(Fail(
+        ErrorCode::kInvalidArgument,
+        "UnregisterBuffer requires non-null ptr",
+        /*retryable=*/false));
   }
   std::scoped_lock lk(registration_mu_);
   auto it = registered_.find(ptr);
@@ -133,8 +139,11 @@ Result<bool> GdsMemoryManager::UnregisterBuffer(void* ptr) {
   const auto rc = impl_->client->cuMemObjPutDescriptor(ptr);
   registered_.erase(it);
   if (rc != CU_OBJ_SUCCESS) {
-    return Result<bool>::Failure(MakeTransportFailure(
-        "cuMemObjPutDescriptor 释放失败", DataFlow::GPUDirect, "", true));
+    return Result<bool>::Failure(Fail(
+        ErrorCode::kTransportError,
+        "cuMemObjPutDescriptor failed",
+        /*retryable=*/true,
+        std::string(ToString(DataFlow::GPUDirect))));
   }
   return Result<bool>::Success(true);
 }
@@ -143,8 +152,10 @@ Result<GdsMemoryManager::Token>
 GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
                                std::size_t offset) {
   if (ptr == nullptr || size == 0U) {
-    return Result<Token>::Failure(MakeInvalidArgument(
-        "AcquireToken requires non-null ptr and positive size"));
+    return Result<Token>::Failure(Fail(
+        ErrorCode::kInvalidArgument,
+        "AcquireToken requires non-null ptr and positive size",
+        /*retryable=*/false));
   }
   // 内部 const_cast 一次：cuMemObjGetRDMAToken 签名是 CUdeviceptr(本质
   // uint64_t)，CUDA 驱动不修改 buffer 内容
@@ -167,8 +178,11 @@ GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
   const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset,
                                                       CUOBJ_PUT, &tok);
   if (rc != CU_OBJ_SUCCESS || tok == nullptr) {
-    return Result<Token>::Failure(MakeTransportFailure(
-        "cuMemObjGetRDMAToken 获取失败", DataFlow::GPUDirect, "", true));
+    return Result<Token>::Failure(Fail(
+        ErrorCode::kTransportError,
+        "cuMemObjGetRDMAToken failed",
+        /*retryable=*/true,
+        std::string(ToString(DataFlow::GPUDirect))));
   }
   return Result<Token>::Success(Token(impl_->client.get(), tok));
 }
@@ -180,8 +194,11 @@ Result<bool> GdsMemoryManager::RegisterBufferUnderLock(void* ptr, std::size_t si
   }
   const auto rc = impl_->client->cuMemObjGetDescriptor(ptr, size);
   if (rc != CU_OBJ_SUCCESS) {
-    return Result<bool>::Failure(MakeTransportFailure(
-        "cuMemObjGetDescriptor 注册失败", DataFlow::GPUDirect, "", true));
+    return Result<bool>::Failure(Fail(
+        ErrorCode::kTransportError,
+        "cuMemObjGetDescriptor failed",
+        /*retryable=*/true,
+        std::string(ToString(DataFlow::GPUDirect))));
   }
   registered_.emplace(ptr, size);
   return Result<bool>::Success(true);

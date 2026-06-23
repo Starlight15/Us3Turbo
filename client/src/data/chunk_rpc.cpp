@@ -12,7 +12,8 @@ Result<us3_turbo::proxy::GdsChunkResponse>
 ChunkRpc::Put(const GdsChunkRequest& request) const {
   if (!ok()) {
     return Result<us3_turbo::proxy::GdsChunkResponse>::Failure(
-        MakeError(ErrorCode::kRpcError, init_error(), /*retryable=*/true));
+        Fail(init_error_code(), init_error(), /*retryable=*/true,
+             std::string(ToString(DataFlow::GPUDirect))));
   }
   brpc::Controller controller;
   ApplyTimeout(controller, request.timeout);
