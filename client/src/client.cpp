@@ -43,7 +43,7 @@ namespace {
     return Result<TransferOutcome>::Failure(token.error());
   }
 
-  auto chunk_req = MakeGdsChunkRequest(open_request, session, request, buffer,
+  auto chunk_req = MakeGdsChunkRequest(open_request, session, buffer,
                                        token.value().str());
   auto response = chunk.Put(chunk_req);
   if (!response.success()) {

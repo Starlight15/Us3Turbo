@@ -34,21 +34,17 @@ ChunkRpc::Put(const GdsChunkRequest& request) const {
   rpc_request.set_transfer_ticket(request.transfer_ticket);
   rpc_request.set_bucket(request.bucket);
   rpc_request.set_object_key(request.key);
-  rpc_request.set_data_flow(std::string(ToString(request.data_flow)));
-  rpc_request.set_checksum_policy(request.checksum_policy);
+  rpc_request.set_data_flow(std::string(ToString(DataFlow::GPUDirect)));
   rpc_request.set_chunk_offset(request.chunk_offset);
   rpc_request.set_chunk_size(request.chunk_size);
   rpc_request.set_rdma_token(request.rdma_token);
-  for (const auto& [key, value] : request.extra_headers) {
-    (*rpc_request.mutable_extra_headers())[key] = value;
-  }
 
   us3_turbo::proxy::GdsChunkResponse rpc_response;
   stub_->GdsPut(&controller, &rpc_request, &rpc_response, nullptr);
 
   // 数据面 RPC:非超时失败归为 kTransportError(而非控制面错误)。
   auto status = CheckRpcFailure(controller, "Failed to execute GDS chunk RPC",
-                                request.data_flow, request.request_id,
+                                DataFlow::GPUDirect, request.request_id,
                                 /*is_data_plane=*/true);
   if (!status.success()) {
     return Result<us3_turbo::proxy::GdsChunkResponse>::Failure(status.error());

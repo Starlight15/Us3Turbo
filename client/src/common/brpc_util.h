@@ -14,9 +14,8 @@
 namespace us3_turbo::client {
 
 /**
- * @brief 把 RpcCallMetadata 应用到一个 brpc::Controller:
- *        default_headers → HTTP header;client_id → x-fa-client-id;
- *        bearer_token → Authorization;timeout → set_timeout_ms。
+ * @brief 把 RpcCallMetadata 应用到一个 brpc::Controller:timeout → set_timeout_ms。
+ *        (鉴权 / 自定义 header 字段已随 RpcCallMetadata 一并移除。)
  */
 void ApplyRequestHeaders(brpc::Controller& controller, const RpcCallMetadata& context);
 

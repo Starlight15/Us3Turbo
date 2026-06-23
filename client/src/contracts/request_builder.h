@@ -23,7 +23,7 @@ namespace us3_turbo::client {
  * chunk_size=buffer.size)直接由工厂钉死,调用侧无需重复填写。
  */
 
-/** @brief 装配 OpenSessionRequest:bucket/key/length/timeout/idempotency_key 来自 PutObjectRequest。 */
+/** @brief 装配 OpenSessionRequest:bucket/key/length/timeout 来自 PutObjectRequest。 */
 [[nodiscard]] OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
                                                         const PutObjectRequest& request);
 
@@ -33,18 +33,16 @@ namespace us3_turbo::client {
 
 /**
  * @brief 装配 GdsChunkRequest:复用 OpenSessionRequest 的 context / bucket /
- *        key / operation / data_flow,补 token / session /
- *        ticket / checksum / extra_headers。
+ *        key,补 token / session / ticket。
  */
 [[nodiscard]] GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
                                                   const SessionMeta& session,
-                                                  const PutObjectRequest& request,
                                                   ConstBufferView buffer,
                                                   std::string_view rdma_token);
 
 /**
- * @brief 从 GdsChunk 响应装配 TransferOutcome:固定 GPUDirect、chunk 全量传输;
- *        gateway_id / transfer_status 缺省回退会话元数据 / "completed"。
+ * @brief 从 GdsChunk 响应装配 TransferOutcome:只回填 etag(backend 唯一填写)
+ *        + bytes_transferred + 会话 request_id / session_id。
  */
 [[nodiscard]] TransferOutcome MakeTransferOutcome(const SessionMeta& session,
                                                   const us3_turbo::proxy::GdsChunkResponse& response,

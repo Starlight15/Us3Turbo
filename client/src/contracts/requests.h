@@ -1,12 +1,9 @@
 #pragma once
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <string_view>
-#include <unordered_map>
 
 #include "client/src/common/rpc_context.h"
 #include "us3_turbo/client/types.h"
@@ -18,19 +15,18 @@ namespace us3_turbo::client {
  *
  * 字段与 control_plane.proto::OpenSessionRequest 一一对应;length 为空
  * 时序列化为 expected_size=0。仅保留 GDS PUT 用得到的字段。
+ *
+ * op_type / data_flow / is_multipart_part 对 GDS-only client 恒为定值
+ * ("PUT" / "gds-cuobject" / false),由 RPC 层直接内联,不再作为可变字段。
  */
 struct OpenSessionRequest {
   RpcCallMetadata context;
-  OperationType operation{OperationType::kPut};
   std::string bucket;
   std::string key;
-  DataFlow data_flow{DataFlow::GPUDirect};
   std::uint64_t offset{0};
   std::optional<std::uint64_t> length;
   std::string request_id;
   std::string session_id;
-  std::string idempotency_key;
-  bool is_multipart_part{false};
 };
 
 /**
@@ -47,15 +43,14 @@ struct SessionMeta {
 
 /**
  * @brief GdsChunk(GdsPut)RPC 的请求载荷。
+ *
+ * data_flow 对 GDS-only client 恒为 "gds-cuobject",由 RPC 层内联,
+ * 不再作为可变字段。checksum_policy / extra_headers 无服务端消费,已移除。
  */
 struct GdsChunkRequest {
   RpcCallMetadata context;
-  OperationType operation{OperationType::kPut};
   std::string bucket;
   std::string key;
-  DataFlow data_flow{DataFlow::GPUDirect};
-  std::string checksum_policy{"none"};
-  std::unordered_map<std::string, std::string> extra_headers;
   std::string request_id;
   std::string session_id;
   std::string transfer_ticket;

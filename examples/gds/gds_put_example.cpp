@@ -42,7 +42,6 @@ int main(int argc, char** argv) {
   ClientOptions opts;
   opts.endpoint = proxy_addr;
   opts.gds_data_endpoint = backend_addr;
-  opts.client_id = "us3-gds-example";
 
   Client client(std::move(opts));
   if (auto r = client.Initialize(); !r.success()) {
@@ -76,8 +75,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::cout << "OK path=" << ToString(put.value().selected_flow)
-            << " bytes=" << put.value().bytes_transferred
+  std::cout << "OK bytes=" << put.value().bytes_transferred
             << " etag=" << put.value().etag << "\n";
   return 0;
 }

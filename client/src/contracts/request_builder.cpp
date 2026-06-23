@@ -30,10 +30,7 @@ constexpr char kDefaultGatewayId[] = "gateway-local";
                                           std::chrono::milliseconds timeout) {
   const auto effective =
       (timeout.count() <= 0) ? options.request_timeout : timeout;
-  return RpcCallMetadata{.client_id = options.client_id,
-                         .bearer_token = options.bearer_token,
-                         .default_headers = options.default_headers,
-                         .timeout = effective};
+  return RpcCallMetadata{.timeout = effective};
 }
 
 }  // namespace
@@ -42,16 +39,12 @@ OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
                                           const PutObjectRequest& request) {
   return OpenSessionRequest{
       .context = MakeContext(options, request.timeout),
-      .operation = OperationType::kPut,
       .bucket = request.bucket,
       .key = request.key,
-      .data_flow = DataFlow::GPUDirect,
       .offset = 0,
       .length = request.expected_size,
       .request_id = MakeId(kRequestIdPrefix),
       .session_id = MakeId(kSessionIdPrefix),
-      .idempotency_key = request.idempotency_key,
-      .is_multipart_part = false,
   };
 }
 
@@ -70,17 +63,12 @@ SessionMeta ImportSession(
 
 GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
                                     const SessionMeta& session,
-                                    const PutObjectRequest& request,
                                     ConstBufferView buffer,
                                     std::string_view rdma_token) {
   return GdsChunkRequest{
       .context = open.context,                 // 复用 OpenSession 的 RPC 上下文
-      .operation = open.operation,             // kPut
       .bucket = open.bucket,                   // 与 OpenSession 同一对象
       .key = open.key,
-      .data_flow = open.data_flow,             // GPUDirect
-      .checksum_policy = request.checksum_policy,
-      .extra_headers = request.extra_headers,
       .request_id = session.request_id,        // 服务端回填的 request_id
       .session_id = session.session_id,
       .transfer_ticket = session.ticket,
@@ -94,22 +82,10 @@ TransferOutcome MakeTransferOutcome(const SessionMeta& session,
                                     const us3_turbo::proxy::GdsChunkResponse& response,
                                     ConstBufferView buffer) {
   TransferOutcome outcome;
-  outcome.selected_flow     = DataFlow::GPUDirect;
+  outcome.bytes_transferred = buffer.size;
   outcome.request_id        = session.request_id;
   outcome.session_id        = session.session_id;
-  outcome.gateway_id        = response.selected_gateway().empty()
-                                  ? session.gateway_id
-                                  : response.selected_gateway();
-  outcome.transfer_status   = response.transfer_status().empty()
-                                  ? std::string{"completed"}
-                                  : response.transfer_status();
-  outcome.rdma_reply        = response.rdma_reply();
   outcome.etag              = response.etag();
-  outcome.version           = response.version();
-  outcome.bytes_transferred = buffer.size;
-  if (response.crc32c() != 0) {
-    outcome.server_crc32c = response.crc32c();
-  }
   return outcome;
 }
 

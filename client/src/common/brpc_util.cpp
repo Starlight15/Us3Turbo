@@ -20,15 +20,6 @@ namespace {
 }  // namespace
 
 void ApplyRequestHeaders(brpc::Controller& controller, const RpcCallMetadata& context) {
-  for (const auto& [key, value] : context.default_headers) {
-    controller.http_request().SetHeader(key, value);
-  }
-  if (!context.client_id.empty()) {
-    controller.http_request().SetHeader("x-fa-client-id", context.client_id);
-  }
-  if (!context.bearer_token.empty()) {
-    controller.http_request().SetHeader("Authorization", "Bearer " + context.bearer_token);
-  }
   controller.set_timeout_ms(static_cast<int>(context.timeout.count()));
 }
 

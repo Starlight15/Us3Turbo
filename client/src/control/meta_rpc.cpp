@@ -28,23 +28,24 @@ MetaRpc::OpenSession(const OpenSessionRequest& request) const {
   brpc::Controller controller;
   ApplyRequestHeaders(controller, request.context);
 
+  // GDS-only client:op_type / data_flow / is_multipart_part 恒为定值,
+  // 直接内联(proxy 校验这三个字段,见 proxy_control_plane_service.cpp)。
   us3_turbo::proxy::OpenSessionRequest rpc_request;
   rpc_request.set_request_id(request.request_id);
   rpc_request.set_session_id(request.session_id);
   rpc_request.set_bucket(request.bucket);
   rpc_request.set_object_key(request.key);
-  rpc_request.set_op_type(std::string(ToString(request.operation)));
-  rpc_request.set_data_flow(std::string(ToString(request.data_flow)));
+  rpc_request.set_op_type("PUT");
+  rpc_request.set_data_flow(std::string(ToString(DataFlow::GPUDirect)));
   rpc_request.set_offset(request.offset);
   rpc_request.set_expected_size(request.length.value_or(0));
-  rpc_request.set_idempotency_key(request.idempotency_key);
-  rpc_request.set_is_multipart_part(request.is_multipart_part);
+  rpc_request.set_is_multipart_part(false);
 
   us3_turbo::proxy::OpenSessionResponse rpc_response;
   stub_->OpenSession(&controller, &rpc_request, &rpc_response, nullptr);
 
   auto status = CheckRpcFailure(controller, "Failed to open transfer session",
-                                request.data_flow, request.request_id);
+                                DataFlow::GPUDirect, request.request_id);
   if (!status.success()) {
     return Result<us3_turbo::proxy::OpenSessionResponse>::Failure(status.error());
   }

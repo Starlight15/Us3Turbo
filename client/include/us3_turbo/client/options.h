@@ -3,24 +3,19 @@
 #include <chrono>
 #include <cstddef>
 #include <string>
-#include <unordered_map>
-
-#include "us3_turbo/client/types.h"
 
 namespace us3_turbo::client {
 
 /**
  * @brief Client instance configuration.
+ *
+ * client_id / bearer_token / default_headers 在 GDS-only 链路无服务端消费
+ * (proxy / backend 不读对应 HTTP header),已移除。只保留 GDS PUT 必需的
+ * endpoint / 超时 / 大小上限配置。
  */
 struct ClientOptions {
   /** 控制面 endpoint "host:port"（→ proxy）。 */
   std::string endpoint;
-  /** Identifier reported to the gateway for telemetry and logs. */
-  std::string client_id{"us3-turbo-access-client"};
-  /** Optional bearer token included in outbound requests. */
-  std::string bearer_token;
-  /** Headers attached to every outbound RPC request. */
-  std::unordered_map<std::string, std::string> default_headers;
   /** Default per-channel timeout（用于 MetaRpc / ChunkRpc channel Init）。 */
   std::chrono::milliseconds default_timeout{std::chrono::milliseconds(30000)};
   /** 端到端单笔 PUT 超时（OpenSession + GdsPut 总体限时）。 */

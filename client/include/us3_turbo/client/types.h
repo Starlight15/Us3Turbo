@@ -7,7 +7,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 #include "us3_turbo/common/error_code.h"
 
@@ -23,19 +22,11 @@ using ErrorCode = ::us3_turbo::common::ErrorCode;
 
 /**
  * @brief Data flow type. The GDS-only client always uses GPUDirect; the enum
- *        is kept as a single value so wire strings ("gds-cuobject") and the
- *        public API remain typed rather than bare strings.
+ *        is kept as a single value so the wire string ("gds-cuobject") stays
+ *        a typed constant rather than a bare literal (proxy validates it).
  */
 enum class DataFlow {
   GPUDirect,
-};
-
-/**
- * @brief Object operation issued through the client. PUT is the only
- *        implemented path; the enum keeps the value typed for the wire.
- */
-enum class OperationType {
-  kPut,
 };
 
 /**
@@ -54,14 +45,14 @@ using ProgressCallback = std::function<void(const TransferProgress&)>;
 
 /**
  * @brief Request parameters for PutObject operations.
+ *
+ * extra_headers / checksum_policy / idempotency_key 在 GDS-only 链路无服务端
+ * 消费(proxy / backend 不读这些字段),已移除;只保留 GDS PUT 真正用到的字段。
  */
 struct PutObjectRequest {
   std::string bucket;
   std::string key;
   std::chrono::milliseconds timeout{std::chrono::milliseconds(30000)};
-  std::unordered_map<std::string, std::string> extra_headers;
-  std::string checksum_policy{"none"};
-  std::string idempotency_key;
   ProgressCallback progress_callback;
   /**
    * GDS 通路必须显式设置且 > 0：proxy 的 OpenSession 据此校验，backend
@@ -72,8 +63,6 @@ struct PutObjectRequest {
   PutObjectRequest& set_bucket(std::string v)                    { bucket = std::move(v); return *this; }
   PutObjectRequest& set_key(std::string v)                       { key = std::move(v); return *this; }
   PutObjectRequest& set_timeout(std::chrono::milliseconds v)     { timeout = v; return *this; }
-  PutObjectRequest& set_checksum_policy(std::string v)           { checksum_policy = std::move(v); return *this; }
-  PutObjectRequest& set_idempotency_key(std::string v)           { idempotency_key = std::move(v); return *this; }
   PutObjectRequest& set_progress_callback(ProgressCallback v)    { progress_callback = std::move(v); return *this; }
   PutObjectRequest& set_expected_size(std::uint64_t v)           { expected_size = v; return *this; }
 };
@@ -92,35 +81,24 @@ struct ConstBufferView {
 
 
 /**
- * @brief Transfer result returned by successful upload and download operations.
+ * @brief Transfer result returned by successful upload operations.
+ *
+ * 只保留 GDS PUT 链路真正有值的字段：backend 的 GdsChunkResponse 只回填
+ * etag + bytes_received,其余原字段(server 端从不填写)已移除。
  */
 struct TransferOutcome {
-  /** Data flow actually used for the transfer (always GPUDirect for this client). */
-  DataFlow selected_flow{DataFlow::GPUDirect};
-  /** Total bytes transferred. */
+  /** Total bytes transferred (== buffer size for single-object PUT). */
   std::size_t bytes_transferred{0};
   /** Service-side request identifier, useful for log correlation. */
   std::string request_id;
   /** Transfer session identifier (control plane). */
   std::string session_id;
-  /** Server-reported terminal status for this transfer (e.g. "completed"). */
-  std::string transfer_status;
-  /** Identifier of the gateway that handled the transfer. */
-  std::string gateway_id;
-  /** Path-specific reply string (RDMA path echoes acknowledgement data here). */
-  std::string rdma_reply;
-  /** ETag assigned by the backend on PUT/UploadPart, empty on GET. */
+  /** ETag assigned by the backend on PUT. */
   std::string etag;
-  /** Object version assigned by the backend, when versioning is enabled. */
-  std::string version;
-  /** Server-computed CRC32C from GdsChunkResponse.crc32c. */
-  std::optional<std::uint32_t> server_crc32c;
 };
 
 
 /** @brief Returns a stable string identifier for the data flow. */
 [[nodiscard]] std::string_view ToString(DataFlow flow);
-/** @brief Returns a stable string identifier for the operation type. */
-[[nodiscard]] std::string_view ToString(OperationType operation);
 
 }  // namespace us3_turbo::client
