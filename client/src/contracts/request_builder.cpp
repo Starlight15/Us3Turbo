@@ -12,7 +12,6 @@ namespace {
 
 constexpr char kRequestIdPrefix[] = "req-";
 constexpr char kSessionIdPrefix[] = "ses-";
-constexpr char kDefaultGatewayId[] = "gateway-local";
 
 [[nodiscard]] std::string MakeId(std::string_view prefix) {
   static thread_local std::mt19937_64 rng{
@@ -39,7 +38,6 @@ OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
       .timeout = MakeContext(options, request.timeout),
       .bucket = request.bucket,
       .key = request.key,
-      .offset = 0,
       .length = request.expected_size,
       .request_id = MakeId(kRequestIdPrefix),
       .session_id = MakeId(kSessionIdPrefix),
@@ -52,10 +50,6 @@ SessionMeta ImportSession(
   session.request_id = response.request_id();
   session.session_id = response.session_id();
   session.ticket = response.ticket();
-  session.expire_at = response.expire_at();
-  session.gateway_id = response.gateway_id().empty()
-                           ? kDefaultGatewayId
-                           : response.gateway_id();
   return session;
 }
 
@@ -71,7 +65,6 @@ GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
       .session_id = session.session_id,
       .transfer_ticket = session.ticket,
       .rdma_token = std::string(rdma_token),
-      .chunk_offset = 0,                       // 单对象 PUT:整段一次传
       .chunk_size = buffer.size,
   };
 }
