@@ -87,17 +87,6 @@ class RpcBase {
   /** Init 失败的原因(ok()==true 时为空)。 */
   [[nodiscard]] const std::string& init_error() const { return init_error_; }
 
-  /**
-   * @brief Init 失败应归入的错误码:数据面 → kTransportError,控制面 →
-   *        kControlPlaneError。让"平面不可用"语义贯穿 init 与调用两阶段,
-   *        取代旧的 kRpcError。子类 / Client::Initialize 在 channel 未就绪时
-   *        据此构造 Fail()。
-   */
-  [[nodiscard]] ErrorCode init_error_code() const {
-    return is_data_plane_ ? ErrorCode::kTransportError
-                          : ErrorCode::kControlPlaneError;
-  }
-
  protected:
   /** 把 timeout 灌进 controller(目前 RPC 上下文只有 timeout)。 */
   void ApplyTimeout(brpc::Controller& controller, std::chrono::milliseconds timeout) const {
@@ -119,16 +108,14 @@ class RpcBase {
     }
     const int err = controller.ErrorCode();
     const bool is_timeout = (err == brpc::ERPCTIMEDOUT) || (err == ETIMEDOUT);
-    const ErrorCode code = is_timeout
-                               ? ErrorCode::kTimeout
-                               : (is_data_plane_ ? ErrorCode::kTransportError
-                                                 : ErrorCode::kControlPlaneError);
-    return Result<bool>::Failure(Fail(
-        code,
-        std::string(message) + ": " + controller.ErrorText(),
-        /*retryable=*/true,
-        std::string(ToString(DataFlow::GPUDirect)),
-        std::string(request_id)));
+    std::string msg = std::string(message) + ": " + controller.ErrorText();
+    std::string rid{request_id};
+    if (is_timeout) {
+      return Result<bool>::Failure(TimeoutError(std::move(msg), std::move(rid)));
+    }
+    return Result<bool>::Failure(
+        is_data_plane_ ? TransportError(std::move(msg), std::move(rid))
+                       : ControlError(std::move(msg), std::move(rid)));
   }
 
   /** Control_Stub 访问器(ok()==false 时为 nullptr)。 */

@@ -52,7 +52,7 @@ auto RetryIfRetryable(const RetryPolicy& policy, Fn&& fn)
             policy.initial_backoff.count() * (1LL << (attempt - 1)))};
     if (backoff > policy.max_backoff) backoff = policy.max_backoff;
     backoff = std::chrono::milliseconds{
-        static_cast<long long>(backoff.count() * jitter(rng))};
+        static_cast<long long>(static_cast<double>(backoff.count()) * jitter(rng))};
     std::this_thread::sleep_for(backoff);
     last = fn();
   }
@@ -125,22 +125,16 @@ Result<bool> Client::Initialize() {
   meta_ = std::make_unique<MetaRpc>(options_.endpoint, options_.default_timeout);
   if (!meta_->ok()) {
     std::string err = meta_->init_error();
-    const ErrorCode code = meta_->init_error_code();
     meta_.reset();
-    return Result<bool>::Failure(
-        Fail(code, err, /*retryable=*/true,
-             std::string(ToString(DataFlow::GPUDirect))));
+    return Result<bool>::Failure(ControlError(std::move(err)));
   }
 
   chunk_ = std::make_unique<ChunkRpc>(options_.gds_data_endpoint, options_.default_timeout);
   if (!chunk_->ok()) {
     std::string err = chunk_->init_error();
-    const ErrorCode code = chunk_->init_error_code();
     chunk_.reset();
     meta_.reset();
-    return Result<bool>::Failure(
-        Fail(code, err, /*retryable=*/true,
-             std::string(ToString(DataFlow::GPUDirect))));
+    return Result<bool>::Failure(TransportError(std::move(err)));
   }
 
   // GDS 通路早期探测:立即构造 cuObjClient 并检查 isConnected(),失败直接返
@@ -175,26 +169,22 @@ bool Client::initialized() const { return initialized_; }
 Result<TransferOutcome> Client::PutObject(const PutObjectRequest& request,
                                           ConstBufferView buffer) const {
   if (!initialized_) {
-    return Result<TransferOutcome>::Failure(
-        Fail(ErrorCode::kInternal, kNotInitializedMsg, /*retryable=*/true));
+    return Result<TransferOutcome>::Failure(InternalError(kNotInitializedMsg));
   }
 
   const auto max_put = options_.put_single_max_bytes;
   if (max_put != 0 && buffer.size > max_put) {
-    return Result<TransferOutcome>::Failure(Fail(
-        ErrorCode::kPayloadTooLarge,
+    return Result<TransferOutcome>::Failure(PayloadTooLarge(
         "GDS PUT body " + std::to_string(buffer.size) +
             " exceeds put_single_max_bytes " + std::to_string(max_put) +
-            "; use multipart upload",
-        /*retryable=*/false));
+            "; use multipart upload"));
   }
 
   const auto deadline = std::chrono::steady_clock::now() + options_.request_timeout;
   return RetryIfRetryable(RetryPolicy{}, [&]() -> Result<TransferOutcome> {
     if (std::chrono::steady_clock::now() >= deadline) {
       return Result<TransferOutcome>::Failure(
-          Fail(ErrorCode::kTimeout, "PutObject retry deadline exceeded",
-               /*retryable=*/true));
+          TimeoutError("PutObject retry deadline exceeded"));
     }
     return PutOnce(options_, *meta_, *chunk_, gds_mgr_, request, buffer);
   });
@@ -206,8 +196,7 @@ Result<TransferOutcome> Client::PutObject(const PutObjectRequest& request,
 
 Result<bool> Client::RegisterDeviceBuffer(void* ptr, std::size_t size) {
   if (!initialized_) {
-    return Result<bool>::Failure(
-        Fail(ErrorCode::kInternal, kNotInitializedMsg, /*retryable=*/true));
+    return Result<bool>::Failure(InternalError(kNotInitializedMsg));
   }
   assert(gds_mgr_ != nullptr);
   return gds_mgr_->RegisterBuffer(ptr, size);
@@ -215,8 +204,7 @@ Result<bool> Client::RegisterDeviceBuffer(void* ptr, std::size_t size) {
 
 Result<bool> Client::UnregisterDeviceBuffer(void* ptr) {
   if (!initialized_) {
-    return Result<bool>::Failure(
-        Fail(ErrorCode::kInternal, kNotInitializedMsg, /*retryable=*/true));
+    return Result<bool>::Failure(InternalError(kNotInitializedMsg));
   }
   assert(gds_mgr_ != nullptr);
   return gds_mgr_->UnregisterBuffer(ptr);

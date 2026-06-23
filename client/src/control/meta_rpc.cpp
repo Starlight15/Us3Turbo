@@ -13,8 +13,7 @@ Result<us3_turbo::proxy::OpenSessionResponse>
 MetaRpc::OpenSession(const OpenSessionRequest& request) const {
   if (!ok()) {
     return Result<us3_turbo::proxy::OpenSessionResponse>::Failure(
-        Fail(init_error_code(), init_error(), /*retryable=*/true,
-             std::string(ToString(DataFlow::GPUDirect))));
+        ControlError(init_error()));
   }
   brpc::Controller controller;
   ApplyTimeout(controller, request.timeout);

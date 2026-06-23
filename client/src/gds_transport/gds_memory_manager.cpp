@@ -102,11 +102,8 @@ Result<GdsMemoryManager*> GdsMemoryManager::Instance() {
   static Result<GdsMemoryManager*> holder = []() -> Result<GdsMemoryManager*> {
     static GdsMemoryManager mgr;
     if (!mgr.connected_) {
-      return Result<GdsMemoryManager*>::Failure(Fail(
-          ErrorCode::kTransportError,
-          "cuObjClient not connected to RDMA service",
-          /*retryable=*/true,
-          std::string(ToString(DataFlow::GPUDirect))));
+      return Result<GdsMemoryManager*>::Failure(
+          TransportError("cuObjClient not connected to RDMA service"));
     }
     return Result<GdsMemoryManager*>::Success(&mgr);
   }();
@@ -115,10 +112,8 @@ Result<GdsMemoryManager*> GdsMemoryManager::Instance() {
 
 Result<bool> GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
   if (ptr == nullptr || size == 0U) {
-    return Result<bool>::Failure(Fail(
-        ErrorCode::kInvalidArgument,
-        "RegisterBuffer requires non-null ptr and positive size",
-        /*retryable=*/false));
+    return Result<bool>::Failure(
+        InvalidArgument("RegisterBuffer requires non-null ptr and positive size"));
   }
   std::scoped_lock lk(registration_mu_);
   return RegisterBufferUnderLock(ptr, size);
@@ -126,10 +121,8 @@ Result<bool> GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
 
 Result<bool> GdsMemoryManager::UnregisterBuffer(void* ptr) {
   if (ptr == nullptr) {
-    return Result<bool>::Failure(Fail(
-        ErrorCode::kInvalidArgument,
-        "UnregisterBuffer requires non-null ptr",
-        /*retryable=*/false));
+    return Result<bool>::Failure(
+        InvalidArgument("UnregisterBuffer requires non-null ptr"));
   }
   std::scoped_lock lk(registration_mu_);
   auto it = registered_.find(ptr);
@@ -139,11 +132,7 @@ Result<bool> GdsMemoryManager::UnregisterBuffer(void* ptr) {
   const auto rc = impl_->client->cuMemObjPutDescriptor(ptr);
   registered_.erase(it);
   if (rc != CU_OBJ_SUCCESS) {
-    return Result<bool>::Failure(Fail(
-        ErrorCode::kTransportError,
-        "cuMemObjPutDescriptor failed",
-        /*retryable=*/true,
-        std::string(ToString(DataFlow::GPUDirect))));
+    return Result<bool>::Failure(TransportError("cuMemObjPutDescriptor failed"));
   }
   return Result<bool>::Success(true);
 }
@@ -152,10 +141,8 @@ Result<GdsMemoryManager::Token>
 GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
                                std::size_t offset) {
   if (ptr == nullptr || size == 0U) {
-    return Result<Token>::Failure(Fail(
-        ErrorCode::kInvalidArgument,
-        "AcquireToken requires non-null ptr and positive size",
-        /*retryable=*/false));
+    return Result<Token>::Failure(
+        InvalidArgument("AcquireToken requires non-null ptr and positive size"));
   }
   // 内部 const_cast 一次：cuMemObjGetRDMAToken 签名是 CUdeviceptr(本质
   // uint64_t)，CUDA 驱动不修改 buffer 内容
@@ -178,11 +165,7 @@ GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
   const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset,
                                                       CUOBJ_PUT, &tok);
   if (rc != CU_OBJ_SUCCESS || tok == nullptr) {
-    return Result<Token>::Failure(Fail(
-        ErrorCode::kTransportError,
-        "cuMemObjGetRDMAToken failed",
-        /*retryable=*/true,
-        std::string(ToString(DataFlow::GPUDirect))));
+    return Result<Token>::Failure(TransportError("cuMemObjGetRDMAToken failed"));
   }
   return Result<Token>::Success(Token(impl_->client.get(), tok));
 }
@@ -194,11 +177,7 @@ Result<bool> GdsMemoryManager::RegisterBufferUnderLock(void* ptr, std::size_t si
   }
   const auto rc = impl_->client->cuMemObjGetDescriptor(ptr, size);
   if (rc != CU_OBJ_SUCCESS) {
-    return Result<bool>::Failure(Fail(
-        ErrorCode::kTransportError,
-        "cuMemObjGetDescriptor failed",
-        /*retryable=*/true,
-        std::string(ToString(DataFlow::GPUDirect))));
+    return Result<bool>::Failure(TransportError("cuMemObjGetDescriptor failed"));
   }
   registered_.emplace(ptr, size);
   return Result<bool>::Success(true);
