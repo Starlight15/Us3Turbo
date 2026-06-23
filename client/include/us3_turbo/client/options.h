@@ -10,17 +10,6 @@
 namespace us3_turbo::client {
 
 /**
- * @brief GDS-specific client tuning.
- */
-struct GdsClientOptions {
-  /**
-   * 单次 GDS PUT 的上限（client 入口拒）。与 gateway 端 cuObjServer 的
-   * 1 GiB chunk 上限对齐，避免发到 server 才被拒。0 表示不限。
-   */
-  std::size_t put_single_max_bytes{1ULL * 1024 * 1024 * 1024};
-};
-
-/**
  * @brief Client instance configuration.
  */
 struct ClientOptions {
@@ -38,15 +27,16 @@ struct ClientOptions {
   std::chrono::milliseconds request_timeout{std::chrono::minutes(5)};
   /**
    * GDS 数据面（GdsPut）目标 "host:port"，指向独立 backend 进程。
-   *   endpoint         = 控制面（proxy，OpenSession 走这里）
+   *   endpoint          = 控制面（proxy，OpenSession 走这里）
    *   gds_data_endpoint = 数据面（backend，GdsPut 走这里）
    */
   std::string gds_data_endpoint;
-  /** 必须设置为 DataFlow::GPUDirect；其他值在 Initialize() 中立即拒绝。 */
-  DataFlow data_flow{DataFlow::NONE};
 
-  /** GDS-specific tunables. */
-  GdsClientOptions gds;
+  /**
+   * 单次 GDS PUT 的上限（client 入口拒）。与 gateway 端 cuObjServer 的
+   * 1 GiB chunk 上限对齐，避免发到 server 才被拒。0 表示不限。
+   */
+  std::size_t put_single_max_bytes{1ULL * 1024 * 1024 * 1024};
 };
 
 }  // namespace us3_turbo::client

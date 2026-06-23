@@ -40,7 +40,7 @@ class Client {
    * 失败 best-effort AbortSession。
    *
    * @param request 必须设置 bucket / key,GDS PUT 还必须 set_expected_size(>0)。
-   * @param buffer  源 buffer,必须 BufferType::kCudaDevice 且在调用返回前有效。
+   * @param buffer  源 device buffer(cudaMalloc 显存),在调用返回前有效。
    */
   [[nodiscard]] Result<TransferOutcome> PutObject(const PutObjectRequest& request,
                                                   ConstBufferView buffer) const;

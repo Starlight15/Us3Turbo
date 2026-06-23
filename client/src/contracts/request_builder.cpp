@@ -39,15 +39,13 @@ constexpr char kDefaultGatewayId[] = "gateway-local";
 }  // namespace
 
 OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
-                                          const PutObjectRequest& request,
-                                          ConstBufferView buffer) {
+                                          const PutObjectRequest& request) {
   return OpenSessionRequest{
       .context = MakeContext(options, request.timeout),
       .operation = OperationType::kPut,
       .bucket = request.bucket,
       .key = request.key,
       .data_flow = DataFlow::GPUDirect,
-      .buffer_type = buffer.type,
       .offset = 0,
       .length = request.expected_size,
       .request_id = MakeId(kRequestIdPrefix),
@@ -81,7 +79,6 @@ GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
       .bucket = open.bucket,                   // 与 OpenSession 同一对象
       .key = open.key,
       .data_flow = open.data_flow,             // GPUDirect
-      .buffer_type = open.buffer_type,         // kCudaDevice
       .checksum_policy = request.checksum_policy,
       .extra_headers = request.extra_headers,
       .request_id = session.request_id,        // 服务端回填的 request_id

@@ -141,7 +141,7 @@ Result<bool> GdsMemoryManager::UnregisterBuffer(void* ptr) {
 
 Result<GdsMemoryManager::Token>
 GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
-                               std::size_t offset, OperationType op) {
+                               std::size_t offset) {
   if (ptr == nullptr || size == 0U) {
     return Result<Token>::Failure(MakeInvalidArgument(
         "AcquireToken requires non-null ptr and positive size"));
@@ -163,9 +163,9 @@ GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
     if (!reg.success()) return Result<Token>::Failure(reg.error());
   }
 
-  const auto cu_op = op == OperationType::kGet ? CUOBJ_GET : CUOBJ_PUT;
   char* tok = nullptr;
-  const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, cu_op, &tok);
+  const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset,
+                                                      CUOBJ_PUT, &tok);
   if (rc != CU_OBJ_SUCCESS || tok == nullptr) {
     return Result<Token>::Failure(MakeTransportFailure(
         "cuMemObjGetRDMAToken 获取失败", DataFlow::GPUDirect, "", true));

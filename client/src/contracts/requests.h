@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "client/src/common/rpc_context.h"
@@ -24,7 +25,6 @@ struct OpenSessionRequest {
   std::string bucket;
   std::string key;
   DataFlow data_flow{DataFlow::GPUDirect};
-  BufferType buffer_type{BufferType::kCudaDevice};
   std::uint64_t offset{0};
   std::optional<std::uint64_t> length;
   std::string request_id;
@@ -54,7 +54,6 @@ struct GdsChunkRequest {
   std::string bucket;
   std::string key;
   DataFlow data_flow{DataFlow::GPUDirect};
-  BufferType buffer_type{BufferType::kCudaDevice};
   std::string checksum_policy{"none"};
   std::unordered_map<std::string, std::string> extra_headers;
   std::string request_id;

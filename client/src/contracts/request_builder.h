@@ -19,15 +19,13 @@ namespace us3_turbo::client {
  * buffer 为唯一信息源,逐层装配 OpenSessionRequest → GdsChunkRequest →
  * TransferOutcome,字段从源头复制一次,不再手写中间结构。
  *
- * 单对象 GDS PUT 的固定语义(op=kPut、data_flow=GPUDirect、buffer_type=
- * kCudaDevice、chunk_offset=0、chunk_size=buffer.size)直接由工厂钉死,
- * 调用侧无需重复填写。
+ * 单对象 GDS PUT 的固定语义(op=kPut、data_flow=GPUDirect、chunk_offset=0、
+ * chunk_size=buffer.size)直接由工厂钉死,调用侧无需重复填写。
  */
 
 /** @brief 装配 OpenSessionRequest:bucket/key/length/timeout/idempotency_key 来自 PutObjectRequest。 */
 [[nodiscard]] OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
-                                                        const PutObjectRequest& request,
-                                                        ConstBufferView buffer);
+                                                        const PutObjectRequest& request);
 
 /** @brief 从 OpenSession 响应回填会话元数据。 */
 [[nodiscard]] SessionMeta ImportSession(
@@ -35,7 +33,7 @@ namespace us3_turbo::client {
 
 /**
  * @brief 装配 GdsChunkRequest:复用 OpenSessionRequest 的 context / bucket /
- *        key / operation / data_flow / buffer_type,补 token / session /
+ *        key / operation / data_flow,补 token / session /
  *        ticket / checksum / extra_headers。
  */
 [[nodiscard]] GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,

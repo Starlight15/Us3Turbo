@@ -35,7 +35,6 @@ MetaRpc::OpenSession(const OpenSessionRequest& request) const {
   rpc_request.set_object_key(request.key);
   rpc_request.set_op_type(std::string(ToString(request.operation)));
   rpc_request.set_data_flow(std::string(ToString(request.data_flow)));
-  rpc_request.set_buffer_type(std::string(ToString(request.buffer_type)));
   rpc_request.set_offset(request.offset);
   rpc_request.set_expected_size(request.length.value_or(0));
   rpc_request.set_idempotency_key(request.idempotency_key);

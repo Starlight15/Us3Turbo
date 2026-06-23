@@ -35,7 +35,6 @@ ChunkRpc::Put(const GdsChunkRequest& request) const {
   rpc_request.set_bucket(request.bucket);
   rpc_request.set_object_key(request.key);
   rpc_request.set_data_flow(std::string(ToString(request.data_flow)));
-  rpc_request.set_buffer_type(std::string(ToString(request.buffer_type)));
   rpc_request.set_checksum_policy(request.checksum_policy);
   rpc_request.set_chunk_offset(request.chunk_offset);
   rpc_request.set_chunk_size(request.chunk_size);

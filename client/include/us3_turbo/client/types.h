@@ -21,31 +21,22 @@ namespace us3_turbo::client {
  */
 using ErrorCode = ::us3_turbo::common::ErrorCode;
 
-/** Data flow types. GPUDirect is the only supported path; others are rejected by Initialize(). */
-enum class DataFlow {
-  NONE,
-  GPUDirect,
-  CPUDirect,
-};
-
 /**
- * @brief Memory buffer categories accepted by transfer APIs.
+ * @brief Data flow type. The GDS-only client always uses GPUDirect; the enum
+ *        is kept as a single value so wire strings ("gds-cuobject") and the
+ *        public API remain typed rather than bare strings.
  */
-enum class BufferType {
-  kHostRegular,
-  kHostPinned,
-  kCudaDevice,
+enum class DataFlow {
+  GPUDirect,
 };
 
 /**
- * @brief Object operations issued through the client.
+ * @brief Object operation issued through the client. PUT is the only
+ *        implemented path; the enum keeps the value typed for the wire.
  */
 enum class OperationType {
-  kGet,
   kPut,
-  kHead,
 };
-
 
 /**
  * @brief Progress snapshot reported during a transfer.
@@ -53,7 +44,7 @@ enum class OperationType {
 struct TransferProgress {
   std::size_t bytes_completed{0};
   std::size_t bytes_total{0};
-  DataFlow data_flow{DataFlow::NONE};
+  DataFlow data_flow{DataFlow::GPUDirect};
 };
 
 /**
@@ -90,11 +81,13 @@ struct PutObjectRequest {
 
 /**
  * @brief Read-only data buffer supplied to upload operations.
+ *
+ * GDS PUT 链路要求 device buffer;data 指向 cudaMalloc 的显存,调用返回前
+ * 必须保持有效。
  */
 struct ConstBufferView {
   const void* data{nullptr};
   std::size_t size{0};
-  BufferType type{BufferType::kHostRegular};
 };
 
 
@@ -102,8 +95,8 @@ struct ConstBufferView {
  * @brief Transfer result returned by successful upload and download operations.
  */
 struct TransferOutcome {
-  /** Data flow actually used for the transfer (may differ from request). */
-  DataFlow selected_flow{DataFlow::NONE};
+  /** Data flow actually used for the transfer (always GPUDirect for this client). */
+  DataFlow selected_flow{DataFlow::GPUDirect};
   /** Total bytes transferred. */
   std::size_t bytes_transferred{0};
   /** Service-side request identifier, useful for log correlation. */
@@ -127,8 +120,6 @@ struct TransferOutcome {
 
 /** @brief Returns a stable string identifier for the data flow. */
 [[nodiscard]] std::string_view ToString(DataFlow flow);
-/** @brief Returns a stable string identifier for the buffer type. */
-[[nodiscard]] std::string_view ToString(BufferType type);
 /** @brief Returns a stable string identifier for the operation type. */
 [[nodiscard]] std::string_view ToString(OperationType operation);
 

@@ -79,10 +79,10 @@ class GdsMemoryManager {
    * @brief 获取 RDMA token（RAII 析构自动释放）。
    *
    * 未注册的 ptr 会 lazy register（建议提前 RegisterBuffer 避免数据面抖动）。
-   * PUT 路径 const 重载内部 const_cast 一次（cuMemObjGetRDMAToken 签名限制）。
+   * 始终按 PUT 语义获取 token（client-new 为 GDS PUT-only）。
    */
   [[nodiscard]] Result<Token> AcquireToken(const void* ptr, std::size_t size,
-                                           std::size_t offset, OperationType op);
+                                           std::size_t offset);
 
   GdsMemoryManager(const GdsMemoryManager&)            = delete;
   GdsMemoryManager& operator=(const GdsMemoryManager&) = delete;

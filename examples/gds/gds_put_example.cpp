@@ -43,7 +43,6 @@ int main(int argc, char** argv) {
   opts.endpoint = proxy_addr;
   opts.gds_data_endpoint = backend_addr;
   opts.client_id = "us3-gds-example";
-  opts.data_flow = DataFlow::GPUDirect;
 
   Client client(std::move(opts));
   if (auto r = client.Initialize(); !r.success()) {
@@ -66,7 +65,7 @@ int main(int argc, char** argv) {
      .set_expected_size(bytes);  // GDS PUT 必须指定 expected_size
 
   auto put = client.PutObject(
-      req, ConstBufferView{.data = dev, .size = bytes, .type = BufferType::kCudaDevice});
+      req, ConstBufferView{.data = dev, .size = bytes});
 
   // ---- 反注册显存后释放 GPU 内存 ----
   (void)client.UnregisterDeviceBuffer(dev);

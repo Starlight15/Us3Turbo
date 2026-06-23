@@ -18,16 +18,6 @@
 namespace us3_turbo::client {
 namespace {
 
-// GDS 入口校验:buffer.type==kCudaDevice。
-[[nodiscard]] Result<bool> PreflightGds(BufferType buffer_type) {
-  if (buffer_type != BufferType::kCudaDevice) {
-    return Result<bool>::Failure(MakeUnsupportedPath(
-        DataFlow::GPUDirect,
-        "GDS (requires kCudaDevice GPU buffer) path requires buffer.type=kCudaDevice"));
-  }
-  return Result<bool>::Success(true);
-}
-
 // 一次 PUT 的核心动作:OpenSession → AcquireToken → GdsChunk(GdsPut)。
 // 失败时 best-effort AbortSession。所有请求/结果结构由 request_builder 工厂
 // 从 PutObjectRequest + buffer 单源装配,不再手写中间字段。
@@ -39,7 +29,7 @@ namespace {
                                               const PutObjectRequest& request,
                                               ConstBufferView buffer) {
   assert(gds_mgr != nullptr);
-  auto open_request = MakeOpenSessionRequest(options, request, buffer);
+  auto open_request = MakeOpenSessionRequest(options, request);
   auto open_response = meta.OpenSession(open_request);
   if (!open_response.success()) {
     return Result<TransferOutcome>::Failure(open_response.error());
@@ -47,7 +37,7 @@ namespace {
   auto session = ImportSession(open_response.value());
 
   // 取整段 buffer 的 RDMA token。token 析构(RPC 响应返回后)自动释放。
-  auto token = gds_mgr->AcquireToken(buffer.data, buffer.size, 0, OperationType::kPut);
+  auto token = gds_mgr->AcquireToken(buffer.data, buffer.size, 0);
   if (!token.success()) {
     (void)meta.AbortSession(session.session_id, open_request.context);
     return Result<TransferOutcome>::Failure(token.error());
@@ -91,13 +81,6 @@ Client::~Client() = default;
 Result<bool> Client::Initialize() {
   if (initialized_) {
     return Result<bool>::Success(true);
-  }
-
-  // 当前 client-new 是 GDS-only 实现,只支持 GPUDirect 通路。
-  if (options_.data_flow != DataFlow::GPUDirect) {
-    return Result<bool>::Failure(MakeUnsupportedPath(
-        options_.data_flow,
-        "client-new 仅支持 DataFlow::GPUDirect;请使用旧 client 或修改 data_flow 配置"));
   }
 
   // 参数校验与 channel 构建都在 MetaRpc / ChunkRpc 内部完成:endpoint 为空或
@@ -153,15 +136,12 @@ Result<TransferOutcome> Client::PutObject(const PutObjectRequest& request,
     return Result<TransferOutcome>::Failure(MakeNotInitialized("Client"));
   }
 
-  auto pre = PreflightGds(buffer.type);
-  if (!pre.success()) return Result<TransferOutcome>::Failure(pre.error());
-
-  const auto max_put = options_.gds.put_single_max_bytes;
+  const auto max_put = options_.put_single_max_bytes;
   if (max_put != 0 && buffer.size > max_put) {
     return Result<TransferOutcome>::Failure(MakeError(
         ErrorCode::kPayloadTooLarge,
         "GDS PUT body " + std::to_string(buffer.size) +
-            " exceeds gds.put_single_max_bytes " + std::to_string(max_put) +
+            " exceeds put_single_max_bytes " + std::to_string(max_put) +
             "; use multipart upload",
         /*retryable=*/false));
   }

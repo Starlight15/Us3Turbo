@@ -15,7 +15,6 @@ namespace us3_turbo::client {
 
 [[nodiscard]] Error MakeNotInitialized(std::string_view component);
 [[nodiscard]] Error MakeInvalidArgument(std::string_view message);
-[[nodiscard]] Error MakeUnsupportedPath(DataFlow path, std::string_view message);
 [[nodiscard]] Error MakeTransportFailure(std::string_view message,
                                          DataFlow path,
                                          std::string_view request_id,
