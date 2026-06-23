@@ -12,7 +12,7 @@
 #include "client/src/control/meta_rpc.h"
 #include "client/src/data/chunk_rpc.h"
 #include "client/src/gds/retry_policy.h"
-#include "client/src/gds_transport/gds_memory_registry.h"
+#include "client/src/gds_transport/gds_memory_manager.h"
 
 namespace us3_turbo::client {
 namespace {
@@ -43,8 +43,12 @@ namespace {
   auto session = ImportSession(open_response.value());
 
   // 取整段 buffer 的 RDMA token。token 析构(RPC 响应返回后)自动释放。
-  GdsMemoryRegistry registry;
-  auto token = registry.AcquireToken(buffer.data, buffer.size, 0, OperationType::kPut);
+  auto mgr = GdsMemoryManager::Instance();
+  if (!mgr.success()) {
+    (void)meta.AbortSession(session.meta.session_id, open_request.context);
+    return Result<TransferOutcome>::Failure(mgr.error());
+  }
+  auto token = mgr.value()->AcquireToken(buffer.data, buffer.size, 0, OperationType::kPut);
   if (!token.success()) {
     (void)meta.AbortSession(session.meta.session_id, open_request.context);
     return Result<TransferOutcome>::Failure(token.error());
@@ -90,6 +94,13 @@ Result<bool> Client::Initialize() {
     return Result<bool>::Success(true);
   }
 
+  // 当前 client-new 是 GDS-only 实现,只支持 GPUDirect 通路。
+  if (options_.data_flow != DataFlow::GPUDirect) {
+    return Result<bool>::Failure(MakeUnsupportedPath(
+        options_.data_flow,
+        "client-new 仅支持 DataFlow::GPUDirect;请使用旧 client 或修改 data_flow 配置"));
+  }
+
   // 参数校验与 channel 构建都在 MetaRpc / ChunkRpc 内部完成:endpoint 为空或
   // Init 失败时 ok() 返回 false、init_error() 存原因。这里只查结果。
   // gds_data_endpoint 必填(不再回退到控制面 endpoint)。
@@ -108,14 +119,13 @@ Result<bool> Client::Initialize() {
     return Result<bool>::Failure(MakeError(ErrorCode::kRpcError, err, /*retryable=*/true));
   }
 
-  // GDS 通路一次性探测 libcuobjclient:与数据面 lazy 加载同源,失败直接报
-  // 带原因的 kTransportError,而非等到首次 PutObject 才崩在半路。
-  if (options_.data_flow == DataFlow::GPUDirect) {
-    if (auto r = GdsMemoryRegistry::ProbeLibrary(); !r.success()) {
-      chunk_.reset();
-      meta_.reset();
-      return Result<bool>::Failure(r.error());
-    }
+  // GDS 通路早期探测:立即构造 cuObjClient 并检查 isConnected(),失败直接返
+  // kTransportError,避免首次 PutObject 才崩在半路。
+  auto mgr = GdsMemoryManager::Instance();
+  if (!mgr.success()) {
+    chunk_.reset();
+    meta_.reset();
+    return Result<bool>::Failure(mgr.error());
   }
 
   initialized_ = true;
@@ -172,14 +182,22 @@ Result<bool> Client::RegisterDeviceBuffer(void* ptr, std::size_t size) {
   if (!initialized_) {
     return Result<bool>::Failure(MakeNotInitialized("Client"));
   }
-  return GdsMemoryRegistry{}.RegisterBuffer(ptr, size);
+  auto mgr = GdsMemoryManager::Instance();
+  if (!mgr.success()) {
+    return Result<bool>::Failure(mgr.error());
+  }
+  return mgr.value()->RegisterBuffer(ptr, size);
 }
 
 Result<bool> Client::UnregisterDeviceBuffer(void* ptr) {
   if (!initialized_) {
     return Result<bool>::Failure(MakeNotInitialized("Client"));
   }
-  return GdsMemoryRegistry{}.UnregisterBuffer(ptr);
+  auto mgr = GdsMemoryManager::Instance();
+  if (!mgr.success()) {
+    return Result<bool>::Failure(mgr.error());
+  }
+  return mgr.value()->UnregisterBuffer(ptr);
 }
 
 }  // namespace us3_turbo::client

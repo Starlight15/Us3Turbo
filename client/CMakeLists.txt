@@ -16,8 +16,7 @@ add_library(us3_turbo_client
   src/control/meta_rpc.cpp
   src/contracts/request_builder.cpp
   src/data/chunk_rpc.cpp
-  src/gds_transport/cuobj_library.cpp
-  src/gds_transport/gds_memory_registry.cpp)
+  src/gds_transport/gds_memory_manager.cpp)
 
 add_dependencies(us3_turbo_client
   us3_turbo_control_plane_proto)
@@ -43,12 +42,8 @@ target_link_libraries(us3_turbo_client
     us3_turbo_spdlog
     nlohmann_json::nlohmann_json
     us3_turbo_brpc
-    ${CUOBJSERVER_LIBRARY}
+    ${CUOBJCLIENT_LIBRARY}
     ${CUDART_LIBRARY})
-
-if(UNIX AND NOT APPLE)
-  target_link_libraries(us3_turbo_client PRIVATE dl)
-endif()
 
 target_compile_options(us3_turbo_client
   PRIVATE

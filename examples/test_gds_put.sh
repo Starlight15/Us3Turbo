@@ -9,7 +9,8 @@
 
 set -euo pipefail
 
-BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BUILD_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)/build"
 
 # 日志目录（/tmp 可能满，改用 /var/log）
 LOG_DIR="/var/log"

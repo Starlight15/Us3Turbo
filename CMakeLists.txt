@@ -90,6 +90,12 @@ list(SORT ABSEIL_STATIC_LIBRARIES)
 find_library(IBVERBS_LIBRARY NAMES ibverbs REQUIRED)
 find_library(RDMACM_LIBRARY NAMES rdmacm REQUIRED)
 find_library(CUOBJSERVER_LIBRARY NAMES cuobjserver REQUIRED)
+find_library(CUOBJCLIENT_LIBRARY NAMES cuobjclient
+  HINTS
+    /usr/local/cuda/targets/x86_64-linux/lib
+    /usr/local/cuda-13.1/targets/x86_64-linux/lib
+    /usr/local/cuda-13.2/targets/x86_64-linux/lib
+  REQUIRED)
 find_library(CUDART_LIBRARY NAMES cudart_static cudart
   HINTS
     /usr/local/cuda/targets/x86_64-linux/lib

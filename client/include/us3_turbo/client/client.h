@@ -5,28 +5,14 @@
 
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/result.h"
-#include "us3_turbo/client/status.h"
 #include "us3_turbo/client/types.h"
-
-namespace brpc { class Channel; }  // 前向声明:成员是 unique_ptr<Channel>,无需完整类型
 
 namespace us3_turbo::client {
 
-class MetaRpc;   // 前向声明:成员是 unique_ptr<MetaRpc>,析构带外在 cpp 定义
-class ChunkRpc;  // 前向声明:同上
+class MetaRpc;
+class ChunkRpc;
 
-/**
- * @brief Top-level GDS client SDK entry point (client-new).
- *
- * 通路完全分离重构：本 Client 只实现 GDS PUT。不再有 TransferRouter /
- * TransferPath / ClientCore / UploadCoordinator 等抽象 —— 客户端构造时只
- * 实例化 GDS 这一通路,PutObject 直接走 OpenSession → GdsPut。分段上传、
- * HeadObject、GetObject、RDMA 通路均不在本实现内。
- *
- * 内部状态扁平化持有(无 Impl 中间层):channel 所有权已下沉进 MetaRpc /
- * ChunkRpc,这里只持两个 RPC 对象 + 配置/能力。成员为前向声明类型的
- * unique_ptr,析构带外在 client.cpp 定义,故 brpc/protobuf 头不进公共头。
- */
+/** @brief GDS-only client SDK 入口。只实现 GDS PUT 链路：OpenSession → GdsPut。 */
 class Client {
  public:
   explicit Client(ClientOptions options);
