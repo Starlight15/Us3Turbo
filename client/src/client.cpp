@@ -51,11 +51,6 @@ namespace {
     return Result<TransferOutcome>::Failure(response.error());
   }
 
-  if (request.progress_callback) {
-    request.progress_callback({.bytes_completed = buffer.size,
-                               .bytes_total = buffer.size,
-                               .data_flow = DataFlow::GPUDirect});
-  }
   return Result<TransferOutcome>::Success(
       MakeTransferOutcome(session, response.value(), buffer));
 }

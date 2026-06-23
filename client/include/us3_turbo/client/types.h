@@ -3,7 +3,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -30,20 +29,6 @@ enum class DataFlow {
 };
 
 /**
- * @brief Progress snapshot reported during a transfer.
- */
-struct TransferProgress {
-  std::size_t bytes_completed{0};
-  std::size_t bytes_total{0};
-  DataFlow data_flow{DataFlow::GPUDirect};
-};
-
-/**
- * @brief Callback invoked with incremental transfer progress.
- */
-using ProgressCallback = std::function<void(const TransferProgress&)>;
-
-/**
  * @brief Request parameters for PutObject operations.
  *
  * extra_headers / checksum_policy / idempotency_key 在 GDS-only 链路无服务端
@@ -53,7 +38,6 @@ struct PutObjectRequest {
   std::string bucket;
   std::string key;
   std::chrono::milliseconds timeout{std::chrono::milliseconds(30000)};
-  ProgressCallback progress_callback;
   /**
    * GDS 通路必须显式设置且 > 0：proxy 的 OpenSession 据此校验，backend
    * 据此 RDMA-READ。未设置时 GDS PUT 会被 proxy 以 "expected_size must be > 0" 拒绝。
@@ -63,7 +47,6 @@ struct PutObjectRequest {
   PutObjectRequest& set_bucket(std::string v)                    { bucket = std::move(v); return *this; }
   PutObjectRequest& set_key(std::string v)                       { key = std::move(v); return *this; }
   PutObjectRequest& set_timeout(std::chrono::milliseconds v)     { timeout = v; return *this; }
-  PutObjectRequest& set_progress_callback(ProgressCallback v)    { progress_callback = std::move(v); return *this; }
   PutObjectRequest& set_expected_size(std::uint64_t v)           { expected_size = v; return *this; }
 };
 
