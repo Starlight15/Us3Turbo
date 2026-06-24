@@ -1,0 +1,11 @@
+prefix=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install
+exec_prefix=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install
+libdir=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install/lib
+includedir=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install/include
+
+Name: UTF8 Range
+Description: Google's UTF8 Library
+Version: 1.0
+Requires: absl_strings
+Libs: -L${libdir} -lutf8_validity -lutf8_range 
+Cflags: -I${includedir}

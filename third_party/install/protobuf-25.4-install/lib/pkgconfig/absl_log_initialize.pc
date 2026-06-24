@@ -1,0 +1,12 @@
+prefix=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install
+exec_prefix=${prefix}
+libdir=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install/lib
+includedir=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install/include
+
+Name: absl_log_initialize
+Description: Abseil log_initialize library
+URL: https://abseil.io/
+Version: 20230802
+Requires: absl_config = 20230802, absl_log_globals = 20230802, absl_log_internal_globals = 20230802, absl_time = 20230802
+Libs: -L${libdir}  -labsl_log_initialize 
+Cflags: -I${includedir} -DNOMINMAX

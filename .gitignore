@@ -2,9 +2,6 @@
 build/
 .claude_tmp/
 
-# third_party is a symlink to an external path — do not track
-third_party
-
 # Build-output binary symlinks (point into build/)
 us3_turbo_backend
 us3_turbo_proxy

@@ -1,0 +1,12 @@
+prefix=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install
+exec_prefix=${prefix}
+libdir=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install/lib
+includedir=/mnt/n0test/xinghui.shao/FusionAccess/third_party/install/protobuf-25.4-install/include
+
+Name: absl_random_internal_randen_slow
+Description: Abseil random_internal_randen_slow library
+URL: https://abseil.io/
+Version: 20230802
+Requires: absl_random_internal_platform = 20230802, absl_config = 20230802
+Libs: -L${libdir}  -labsl_random_internal_randen_slow 
+Cflags: -I${includedir} -DNOMINMAX
