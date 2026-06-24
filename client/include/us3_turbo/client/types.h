@@ -7,17 +7,7 @@
 #include <string>
 #include <string_view>
 
-#include "us3_turbo/common/error_code.h"
-
 namespace us3_turbo::client {
-
-/**
- * @brief Error codes returned by the public client API.
- *
- * The enum is an alias of the project-wide canonical enum so the same code
- * values flow between the client SDK and the gateway without translation.
- */
-using ErrorCode = ::us3_turbo::common::ErrorCode;
 
 /**
  * @brief Data flow type. The GDS-only client always uses GPUDirect; the enum

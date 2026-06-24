@@ -4,7 +4,6 @@
 #include <string_view>
 
 #include "client/src/contracts/requests.h"
-#include "control_plane.pb.h"
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"
 
@@ -19,16 +18,13 @@ namespace us3_turbo::client {
  * TransferOutcome,字段从源头复制一次,不再手写中间结构。
  *
  * 单对象 GDS PUT 的固定语义(op=kPut、data_flow=GPUDirect、chunk_offset=0、
- * chunk_size=buffer.size)直接由工厂钉死,调用侧无需重复填写。
+ * chunk_size=buffer.size)直接由工厂钉死,调用侧无需重复填写。本头文件不
+ * 依赖任何 protobuf 类型。
  */
 
 /** @brief 装配 OpenSessionRequest:bucket/key/length/timeout 来自 PutObjectRequest。 */
 [[nodiscard]] OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
                                                         const PutObjectRequest& request);
-
-/** @brief 从 OpenSession 响应回填会话元数据。 */
-[[nodiscard]] SessionMeta ImportSession(
-    const us3_turbo::proxy::OpenSessionResponse& response);
 
 /**
  * @brief 装配 GdsChunkRequest:复用 OpenSessionRequest 的 context / bucket /
@@ -40,11 +36,11 @@ namespace us3_turbo::client {
                                                   std::string_view rdma_token);
 
 /**
- * @brief 从 GdsChunk 响应装配 TransferOutcome:只回填 etag(backend 唯一填写)
- *        + bytes_transferred + 会话 request_id / session_id。
+ * @brief 从会话元数据 + GdsPut 结果装配 TransferOutcome:回填 etag +
+ *        bytes_transferred(buffer.size)+ 会话 request_id / session_id。
  */
 [[nodiscard]] TransferOutcome MakeTransferOutcome(const SessionMeta& session,
-                                                  const us3_turbo::proxy::GdsChunkResponse& response,
+                                                  const GdsPutResult& result,
                                                   ConstBufferView buffer);
 
 }  // namespace us3_turbo::client

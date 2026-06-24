@@ -1,7 +1,6 @@
 #include "client/src/gds_transport/gds_memory_manager.h"
 
 #include <cstddef>
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -9,147 +8,98 @@
 #include <cuobjclient.h>
 #include <spdlog/spdlog.h>
 
-#include "client/src/common/errors.h"
-
 namespace us3_turbo::client {
 namespace {
-
-// cuObj PUT/GET 回调在 token-direct 路径下永远不会触发；SDK 构造 client
-// 时要求 ops 表两个字段非空，给一个返回 -1 的桩。
-ssize_t StubGet(const void*, char*, size_t, loff_t, const cufileRDMAInfo_t*) {
-  return -1;
-}
-ssize_t StubPut(const void*, const char*, size_t, loff_t, const cufileRDMAInfo_t*) {
-  return -1;
-}
-
+ssize_t StubGet(const void*, char*, size_t, loff_t, const cufileRDMAInfo_t*) { return -1; }
+ssize_t StubPut(const void*, const char*, size_t, loff_t, const cufileRDMAInfo_t*) { return -1; }
 }  // namespace
 
-/* ===== GdsMemoryManager::Impl ===== */
-
 struct GdsMemoryManager::Impl {
-  // cuObjClient 构造需要 ops 引用，必须持久化存储
   CUObjOps_t                   ops{};
   std::unique_ptr<cuObjClient> client;
-
   Impl() {
     ops.get = &StubGet;
     ops.put = &StubPut;
-    try {
-      client = std::make_unique<cuObjClient>(ops, CUOBJ_PROTO_RDMA_DC_V1);
-    } catch (...) {
-      client.reset();
-    }
+    try { client = std::make_unique<cuObjClient>(ops, CUOBJ_PROTO_RDMA_DC_V1); }
+    catch (...) { client.reset(); }
   }
 };
 
-/* ===== GdsMemoryManager::Token ===== */
-
-GdsMemoryManager::Token::Token(Token&& other) noexcept
-    : client_(other.client_), tok_(other.tok_) {
-  other.client_ = nullptr;
-  other.tok_    = nullptr;
+GdsMemoryManager::Token::Token(Token&& o) noexcept : client_(o.client_), tok_(o.tok_) {
+  o.client_ = nullptr; o.tok_ = nullptr;
 }
-
-GdsMemoryManager::Token& GdsMemoryManager::Token::operator=(Token&& other) noexcept {
-  if (this != &other) {
-    Reset();
-    client_       = other.client_;
-    tok_          = other.tok_;
-    other.client_ = nullptr;
-    other.tok_    = nullptr;
-  }
+GdsMemoryManager::Token& GdsMemoryManager::Token::operator=(Token&& o) noexcept {
+  if (this != &o) { Reset(); client_ = o.client_; tok_ = o.tok_; o.client_ = nullptr; o.tok_ = nullptr; }
   return *this;
 }
-
 GdsMemoryManager::Token::~Token() { Reset(); }
-
 void GdsMemoryManager::Token::Reset() noexcept {
-  if (tok_ != nullptr && client_ != nullptr) {
-    client_->cuMemObjPutRDMAToken(tok_);
-  }
-  client_ = nullptr;
-  tok_    = nullptr;
+  if (tok_ && client_) client_->cuMemObjPutRDMAToken(tok_);
+  client_ = nullptr; tok_ = nullptr;
 }
-
 std::string_view GdsMemoryManager::Token::str() const noexcept {
-  if (tok_ == nullptr) return {};
-  return std::string_view(tok_);
+  return tok_ ? std::string_view(tok_) : std::string_view{};
 }
-
-/* ===== GdsMemoryManager ===== */
 
 GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
   connected_ = impl_->client && impl_->client->isConnected();
 }
-
 GdsMemoryManager::~GdsMemoryManager() {
-  // 进程退出 best-effort 反注册,避免下次 cudaFree 时 nvidia-fs 死锁
   if (!registered_.empty()) {
-    spdlog::warn("[GdsMemoryManager] {} device buffer(s) not unregistered "
-                 "before shutdown; calling cuMemObjPutDescriptor as best-effort",
-                 registered_.size());
-    for (auto& [ptr, _] : registered_) {
-      if (impl_->client) {
-        impl_->client->cuMemObjPutDescriptor(ptr);
-      }
-    }
+    spdlog::warn("[GdsMemoryManager] {} buffer(s) not unregistered before shutdown", registered_.size());
+    for (auto& [ptr, _] : registered_)
+      if (impl_->client) impl_->client->cuMemObjPutDescriptor(ptr);
     registered_.clear();
   }
 }
 
-Result<GdsMemoryManager*> GdsMemoryManager::Instance() {
-  static Result<GdsMemoryManager*> holder = []() -> Result<GdsMemoryManager*> {
-    static GdsMemoryManager mgr;
-    if (!mgr.connected_) {
-      return Result<GdsMemoryManager*>::Failure(
-          TransportError("cuObjClient not connected to RDMA service"));
-    }
-    return Result<GdsMemoryManager*>::Success(&mgr);
+bool GdsMemoryManager::Instance(GdsMemoryManager*& out) {
+  static GdsMemoryManager mgr;
+  static bool init_ok = [&]() -> bool {
+    if (mgr.connected_) return true;
+    spdlog::error("GdsMemoryManager: cuObjClient not connected to RDMA service");
+    return false;
   }();
-  return holder;
+  if (!init_ok) return false;
+  out = &mgr;
+  return true;
 }
 
-Result<bool> GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
-  if (ptr == nullptr || size == 0U) {
-    return Result<bool>::Failure(
-        InvalidArgument("RegisterBuffer requires non-null ptr and positive size"));
+bool GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
+  if (!ptr || size == 0U) {
+    spdlog::warn("RegisterBuffer: requires non-null ptr and positive size (ptr={} size={})",
+                 ptr, size);
+    return false;
   }
   std::scoped_lock lk(registration_mu_);
   return RegisterBufferUnderLock(ptr, size);
 }
 
-Result<bool> GdsMemoryManager::UnregisterBuffer(void* ptr) {
-  if (ptr == nullptr) {
-    return Result<bool>::Failure(
-        InvalidArgument("UnregisterBuffer requires non-null ptr"));
+bool GdsMemoryManager::UnregisterBuffer(void* ptr) {
+  if (!ptr) {
+    spdlog::warn("UnregisterBuffer: requires non-null ptr");
+    return false;
   }
   std::scoped_lock lk(registration_mu_);
   auto it = registered_.find(ptr);
-  if (it == registered_.end()) {
-    return Result<bool>::Success(true);  // 双反注册 / 从未注册过，幂等
-  }
+  if (it == registered_.end()) return true;
   const auto rc = impl_->client->cuMemObjPutDescriptor(ptr);
   registered_.erase(it);
   if (rc != CU_OBJ_SUCCESS) {
-    return Result<bool>::Failure(TransportError("cuMemObjPutDescriptor failed"));
+    spdlog::error("UnregisterBuffer: cuMemObjPutDescriptor failed (ptr={} rc={})", ptr, rc);
+    return false;
   }
-  return Result<bool>::Success(true);
+  return true;
 }
 
-Result<GdsMemoryManager::Token>
-GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
-                               std::size_t offset) {
-  if (ptr == nullptr || size == 0U) {
-    return Result<Token>::Failure(
-        InvalidArgument("AcquireToken requires non-null ptr and positive size"));
+bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
+                                   std::size_t offset, Token& out) {
+  if (!ptr || size == 0U) {
+    spdlog::warn("AcquireToken: requires non-null ptr and positive size (ptr={} size={})",
+                 ptr, size);
+    return false;
   }
-  // 内部 const_cast 一次：cuMemObjGetRDMAToken 签名是 CUdeviceptr(本质
-  // uint64_t)，CUDA 驱动不修改 buffer 内容
   void* mut_ptr = const_cast<void*>(ptr);
-
-  // 数据路径不持锁：注册路径已在 RegisterBuffer 完成；这里只读 descriptor
-  // 表确认存在，未存在则 lazy register(持锁)
   bool need_register = false;
   {
     std::scoped_lock lk(registration_mu_);
@@ -157,30 +107,29 @@ GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
   }
   if (need_register) {
     std::scoped_lock lk(registration_mu_);
-    auto reg = RegisterBufferUnderLock(mut_ptr, size + offset);
-    if (!reg.success()) return Result<Token>::Failure(reg.error());
+    if (!RegisterBufferUnderLock(mut_ptr, size + offset)) return false;
   }
-
   char* tok = nullptr;
-  const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset,
-                                                      CUOBJ_PUT, &tok);
-  if (rc != CU_OBJ_SUCCESS || tok == nullptr) {
-    return Result<Token>::Failure(TransportError("cuMemObjGetRDMAToken failed"));
+  const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, CUOBJ_PUT, &tok);
+  if (rc != CU_OBJ_SUCCESS || !tok) {
+    spdlog::error("AcquireToken: cuMemObjGetRDMAToken failed (ptr={} size={} offset={} rc={})",
+                  ptr, size, offset, rc);
+    return false;
   }
-  return Result<Token>::Success(Token(impl_->client.get(), tok));
+  out = Token(impl_->client.get(), tok);
+  return true;
 }
 
-Result<bool> GdsMemoryManager::RegisterBufferUnderLock(void* ptr, std::size_t size) {
-  // 调用方持 registration_mu_
-  if (registered_.find(ptr) != registered_.end()) {
-    return Result<bool>::Success(true);  // 已注册，size 已在 SDK 内部记下
-  }
+bool GdsMemoryManager::RegisterBufferUnderLock(void* ptr, std::size_t size) {
+  if (registered_.find(ptr) != registered_.end()) return true;
   const auto rc = impl_->client->cuMemObjGetDescriptor(ptr, size);
   if (rc != CU_OBJ_SUCCESS) {
-    return Result<bool>::Failure(TransportError("cuMemObjGetDescriptor failed"));
+    spdlog::error("RegisterBuffer: cuMemObjGetDescriptor failed (ptr={} size={} rc={})",
+                  ptr, size, rc);
+    return false;
   }
   registered_.emplace(ptr, size);
-  return Result<bool>::Success(true);
+  return true;
 }
 
 }  // namespace us3_turbo::client

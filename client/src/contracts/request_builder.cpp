@@ -44,15 +44,6 @@ OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
   };
 }
 
-SessionMeta ImportSession(
-    const us3_turbo::proxy::OpenSessionResponse& response) {
-  SessionMeta session;
-  session.request_id = response.request_id();
-  session.session_id = response.session_id();
-  session.ticket = response.ticket();
-  return session;
-}
-
 GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
                                     const SessionMeta& session,
                                     ConstBufferView buffer,
@@ -70,13 +61,13 @@ GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
 }
 
 TransferOutcome MakeTransferOutcome(const SessionMeta& session,
-                                    const us3_turbo::proxy::GdsChunkResponse& response,
+                                    const GdsPutResult& result,
                                     ConstBufferView buffer) {
   TransferOutcome outcome;
   outcome.bytes_transferred = buffer.size;
   outcome.request_id        = session.request_id;
   outcome.session_id        = session.session_id;
-  outcome.etag              = response.etag();
+  outcome.etag              = result.etag;
   return outcome;
 }
 

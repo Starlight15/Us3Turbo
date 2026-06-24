@@ -1,25 +1,24 @@
 #include "client/src/control/meta_rpc.h"
 
-#include <utility>
-
 #include <brpc/controller.h>
+#include <brpc/errno.pb.h>
 #include <spdlog/spdlog.h>
 
-#include "client/src/common/errors.h"
+#include "control_plane.pb.h"
 
 namespace us3_turbo::client {
 
-Result<us3_turbo::proxy::OpenSessionResponse>
-MetaRpc::OpenSession(const OpenSessionRequest& request) const {
+bool MetaRpc::OpenSession(const OpenSessionRequest& request,
+                         SessionMeta& out) const {
   if (!ok()) {
-    return Result<us3_turbo::proxy::OpenSessionResponse>::Failure(
-        ControlError(init_error()));
+    spdlog::error("OpenSession (req={}): control-plane channel not ready: {}",
+                  request.request_id, init_error());
+    return false;
   }
+
   brpc::Controller controller;
   ApplyTimeout(controller, request.timeout);
 
-  // GDS-only client:op_type / data_flow / is_multipart_part 恒为定值,
-  // 直接内联(proxy 校验这三个字段,见 proxy_control_plane_service.cpp)。
   us3_turbo::proxy::OpenSessionRequest rpc_request;
   rpc_request.set_request_id(request.request_id);
   rpc_request.set_session_id(request.session_id);
@@ -30,24 +29,28 @@ MetaRpc::OpenSession(const OpenSessionRequest& request) const {
   rpc_request.set_expected_size(request.length.value_or(0));
   rpc_request.set_is_multipart_part(false);
 
-  us3_turbo::proxy::OpenSessionResponse rpc_response;
-  stub()->OpenSession(&controller, &rpc_request, &rpc_response, nullptr);
+  us3_turbo::proxy::OpenSessionResponse resp;
+  stub()->OpenSession(&controller, &rpc_request, &resp, nullptr);
 
-  auto status = CheckFailure(controller, "Failed to open transfer session",
-                             request.request_id);
-  if (!status.success()) {
-    return Result<us3_turbo::proxy::OpenSessionResponse>::Failure(status.error());
+  if (controller.Failed()) {
+    const bool is_timeout =
+        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) || (controller.ErrorCode() == ETIMEDOUT);
+    spdlog::error("{} (req={}): failed to open transfer session: {}",
+                  is_timeout ? "timeout" : "control-plane",
+                  request.request_id, controller.ErrorText());
+    return false;
   }
-  return Result<us3_turbo::proxy::OpenSessionResponse>::Success(
-      std::move(rpc_response));
+
+  out.request_id = resp.request_id();
+  out.session_id = resp.session_id();
+  out.ticket     = resp.ticket();
+  return true;
 }
 
-Result<bool> MetaRpc::AbortSession(const std::string& session_id,
-                                   std::chrono::milliseconds timeout) const {
-  if (!ok()) {
-    // best-effort:channel 不可用时也按 success(false) 处理,不干扰主流程。
-    return Result<bool>::Success(false);
-  }
+void MetaRpc::AbortSession(const std::string& session_id,
+                           std::chrono::milliseconds timeout) const {
+  if (!ok()) return;
+
   brpc::Controller controller;
   ApplyTimeout(controller, timeout);
 
@@ -55,12 +58,10 @@ Result<bool> MetaRpc::AbortSession(const std::string& session_id,
   req.set_session_id(session_id);
   us3_turbo::proxy::AbortSessionResponse resp;
   stub()->AbortSession(&controller, &req, &resp, nullptr);
-  // best-effort:RPC 失败也算 success(false),不让重试失败干扰主流程。
+
   if (controller.Failed()) {
     spdlog::warn("AbortSession best-effort failed: {}", controller.ErrorText());
-    return Result<bool>::Success(false);
   }
-  return Result<bool>::Success(resp.erased());
 }
 
 }  // namespace us3_turbo::client

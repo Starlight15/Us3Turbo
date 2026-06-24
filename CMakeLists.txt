@@ -51,7 +51,7 @@ else()
   target_link_libraries(us3_turbo_spdlog INTERFACE spdlog::spdlog)
 endif()
 
-# 公共头(error_code.h)所在目录。
+# 公共头所在目录（当前仅 client 使用）。
 add_library(us3_turbo_common INTERFACE)
 target_include_directories(us3_turbo_common INTERFACE
   ${CMAKE_CURRENT_SOURCE_DIR}/include)

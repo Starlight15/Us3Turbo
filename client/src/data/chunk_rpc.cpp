@@ -3,17 +3,21 @@
 #include <utility>
 
 #include <brpc/controller.h>
+#include <brpc/errno.pb.h>
+#include <spdlog/spdlog.h>
 
-#include "client/src/common/errors.h"
+#include "control_plane.pb.h"
 
 namespace us3_turbo::client {
 
-Result<us3_turbo::proxy::GdsChunkResponse>
-ChunkRpc::Put(const GdsChunkRequest& request) const {
+bool ChunkRpc::Put(const GdsChunkRequest& request,
+                  GdsPutResult& out) const {
   if (!ok()) {
-    return Result<us3_turbo::proxy::GdsChunkResponse>::Failure(
-        TransportError(init_error()));
+    spdlog::error("GdsPut (req={}): data-plane channel not ready: {}",
+                  request.request_id, init_error());
+    return false;
   }
+
   brpc::Controller controller;
   ApplyTimeout(controller, request.timeout);
 
@@ -27,15 +31,20 @@ ChunkRpc::Put(const GdsChunkRequest& request) const {
   rpc_request.set_chunk_size(request.chunk_size);
   rpc_request.set_rdma_token(request.rdma_token);
 
-  us3_turbo::proxy::GdsChunkResponse rpc_response;
-  stub()->GdsPut(&controller, &rpc_request, &rpc_response, nullptr);
+  us3_turbo::proxy::GdsChunkResponse resp;
+  stub()->GdsPut(&controller, &rpc_request, &resp, nullptr);
 
-  auto status = CheckFailure(controller, "Failed to execute GDS chunk RPC",
-                             request.request_id);
-  if (!status.success()) {
-    return Result<us3_turbo::proxy::GdsChunkResponse>::Failure(status.error());
+  if (controller.Failed()) {
+    const bool is_timeout =
+        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) || (controller.ErrorCode() == ETIMEDOUT);
+    spdlog::error("{} (req={}): failed to execute GDS chunk RPC: {}",
+                  is_timeout ? "timeout" : "data-plane",
+                  request.request_id, controller.ErrorText());
+    return false;
   }
-  return Result<us3_turbo::proxy::GdsChunkResponse>::Success(std::move(rpc_response));
+
+  out.etag = resp.etag();
+  return true;
 }
 
 }  // namespace us3_turbo::client

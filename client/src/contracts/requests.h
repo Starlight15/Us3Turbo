@@ -63,4 +63,14 @@ struct GdsChunkRequest {
   std::size_t chunk_size{0};
 };
 
+/**
+ * @brief GdsPut(GdsChunk)RPC 成功后回填的结果。
+ *
+ * 只保留 backend 实际填写且 client 后续用到的 etag;bytes_transferred 由
+ * buffer.size 推导(单对象 PUT 恒等于 buffer 大小),不随 RPC 回传。
+ */
+struct GdsPutResult {
+  std::string etag;
+};
+
 }  // namespace us3_turbo::client
