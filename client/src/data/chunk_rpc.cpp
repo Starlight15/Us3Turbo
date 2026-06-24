@@ -10,26 +10,29 @@
 
 namespace us3_turbo::client {
 
-bool ChunkRpc::Put(const GdsChunkRequest& request,
-                  GdsPutResult& out) const {
+bool ChunkRpc::Put(const PutAttempt& attempt,
+                  const SessionGrant& grant,
+                  std::string_view rdma_token,
+                  std::size_t chunk_size,
+                  GdsPutResult& result) const {
   if (!ok()) {
     spdlog::error("GdsPut (req={}): data-plane channel not ready: {}",
-                  request.request_id, init_error());
+                  attempt.request_id, init_error());
     return false;
   }
 
   brpc::Controller controller;
-  ApplyTimeout(controller, request.timeout);
+  ApplyTimeout(controller, attempt.timeout);
 
   us3_turbo::proxy::GdsChunkRequest rpc_request;
-  rpc_request.set_request_id(request.request_id);
-  rpc_request.set_session_id(request.session_id);
-  rpc_request.set_transfer_ticket(request.transfer_ticket);
-  rpc_request.set_bucket(request.bucket);
-  rpc_request.set_object_key(request.key);
+  rpc_request.set_request_id(attempt.request_id);
+  rpc_request.set_session_id(attempt.session_id);
+  rpc_request.set_transfer_ticket(grant.ticket);
+  rpc_request.set_bucket(attempt.bucket);
+  rpc_request.set_object_key(attempt.key);
   rpc_request.set_data_flow(std::string(ToString(DataFlow::GPUDirect)));
-  rpc_request.set_chunk_size(request.chunk_size);
-  rpc_request.set_rdma_token(request.rdma_token);
+  rpc_request.set_chunk_size(chunk_size);
+  rpc_request.set_rdma_token(std::string(rdma_token));
 
   us3_turbo::proxy::GdsChunkResponse resp;
   stub()->GdsPut(&controller, &rpc_request, &resp, nullptr);
@@ -39,11 +42,11 @@ bool ChunkRpc::Put(const GdsChunkRequest& request,
         (controller.ErrorCode() == brpc::ERPCTIMEDOUT) || (controller.ErrorCode() == ETIMEDOUT);
     spdlog::error("{} (req={}): failed to execute GDS chunk RPC: {}",
                   is_timeout ? "timeout" : "data-plane",
-                  request.request_id, controller.ErrorText());
+                  attempt.request_id, controller.ErrorText());
     return false;
   }
 
-  out.etag = resp.etag();
+  result.etag = resp.etag();
   return true;
 }
 

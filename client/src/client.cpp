@@ -57,25 +57,24 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
                           ConstBufferView buffer,
                           TransferOutcome& out) {
   assert(gds_mgr != nullptr);
-  auto open_request = MakeOpenSessionRequest(options, request);
+  auto attempt = MakePutAttempt(options, request);
 
-  SessionMeta session;
-  if (!meta.OpenSession(open_request, session)) return false;
+  SessionGrant grant;
+  if (!meta.OpenSession(attempt, grant)) return false;
 
   GdsMemoryManager::Token token;
   if (!gds_mgr->AcquireToken(buffer.data, buffer.size, 0, token)) {
-    meta.AbortSession(session.session_id, open_request.timeout);
+    meta.AbortSession(attempt.session_id, attempt.timeout);
     return false;
   }
 
-  auto chunk_req = MakeGdsChunkRequest(open_request, session, buffer, token.str());
   GdsPutResult result;
-  if (!chunk.Put(chunk_req, result)) {
-    meta.AbortSession(session.session_id, open_request.timeout);
+  if (!chunk.Put(attempt, grant, token.str(), buffer.size, result)) {
+    meta.AbortSession(attempt.session_id, attempt.timeout);
     return false;
   }
 
-  out = MakeTransferOutcome(session, result, buffer);
+  out = MakeTransferOutcome(attempt, result, buffer);
   return true;
 }
 

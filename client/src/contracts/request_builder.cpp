@@ -32,9 +32,9 @@ constexpr char kSessionIdPrefix[] = "ses-";
 
 }  // namespace
 
-OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
-                                          const PutObjectRequest& request) {
-  return OpenSessionRequest{
+PutAttempt MakePutAttempt(const ClientOptions& options,
+                          const PutObjectRequest& request) {
+  return PutAttempt{
       .timeout = MakeContext(options, request.timeout),
       .bucket = request.bucket,
       .key = request.key,
@@ -44,29 +44,13 @@ OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
   };
 }
 
-GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
-                                    const SessionMeta& session,
-                                    ConstBufferView buffer,
-                                    std::string_view rdma_token) {
-  return GdsChunkRequest{
-      .timeout = open.timeout,                 // 复用 OpenSession 的超时
-      .bucket = open.bucket,                   // 与 OpenSession 同一对象
-      .key = open.key,
-      .request_id = session.request_id,        // 服务端回填的 request_id
-      .session_id = session.session_id,
-      .transfer_ticket = session.ticket,
-      .rdma_token = std::string(rdma_token),
-      .chunk_size = buffer.size,
-  };
-}
-
-TransferOutcome MakeTransferOutcome(const SessionMeta& session,
+TransferOutcome MakeTransferOutcome(const PutAttempt& attempt,
                                     const GdsPutResult& result,
                                     ConstBufferView buffer) {
   TransferOutcome outcome;
   outcome.bytes_transferred = buffer.size;
-  outcome.request_id        = session.request_id;
-  outcome.session_id        = session.session_id;
+  outcome.request_id        = attempt.request_id;
+  outcome.session_id        = attempt.session_id;
   outcome.etag              = result.etag;
   return outcome;
 }

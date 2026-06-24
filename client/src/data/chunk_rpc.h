@@ -1,7 +1,9 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <string>
+#include <string_view>
 
 #include "client/src/common/rpc_base.h"
 #include "client/src/contracts/requests.h"
@@ -19,8 +21,11 @@ class ChunkRpc : public RpcBase {
   ChunkRpc(const std::string& endpoint, std::chrono::milliseconds timeout)
       : RpcBase(endpoint, timeout, "data") {}
 
-  [[nodiscard]] bool Put(const GdsChunkRequest& request,
-                        GdsPutResult& out) const;
+  [[nodiscard]] bool Put(const PutAttempt& attempt,
+                        const SessionGrant& grant,
+                        std::string_view rdma_token,
+                        std::size_t chunk_size,
+                        GdsPutResult& result) const;
 };
 
 }  // namespace us3_turbo::client

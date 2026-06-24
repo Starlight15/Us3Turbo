@@ -1,5 +1,7 @@
 #include "client/src/control/meta_rpc.h"
 
+#include <string>
+
 #include <brpc/controller.h>
 #include <brpc/errno.pb.h>
 #include <spdlog/spdlog.h>
@@ -8,25 +10,25 @@
 
 namespace us3_turbo::client {
 
-bool MetaRpc::OpenSession(const OpenSessionRequest& request,
-                         SessionMeta& out) const {
+bool MetaRpc::OpenSession(const PutAttempt& attempt,
+                         SessionGrant& grant) const {
   if (!ok()) {
     spdlog::error("OpenSession (req={}): control-plane channel not ready: {}",
-                  request.request_id, init_error());
+                  attempt.request_id, init_error());
     return false;
   }
 
   brpc::Controller controller;
-  ApplyTimeout(controller, request.timeout);
+  ApplyTimeout(controller, attempt.timeout);
 
   us3_turbo::proxy::OpenSessionRequest rpc_request;
-  rpc_request.set_request_id(request.request_id);
-  rpc_request.set_session_id(request.session_id);
-  rpc_request.set_bucket(request.bucket);
-  rpc_request.set_object_key(request.key);
+  rpc_request.set_request_id(attempt.request_id);
+  rpc_request.set_session_id(attempt.session_id);
+  rpc_request.set_bucket(attempt.bucket);
+  rpc_request.set_object_key(attempt.key);
   rpc_request.set_op_type("PUT");
   rpc_request.set_data_flow(std::string(ToString(DataFlow::GPUDirect)));
-  rpc_request.set_expected_size(request.length.value_or(0));
+  rpc_request.set_expected_size(attempt.length.value_or(0));
   rpc_request.set_is_multipart_part(false);
 
   us3_turbo::proxy::OpenSessionResponse resp;
@@ -37,13 +39,22 @@ bool MetaRpc::OpenSession(const OpenSessionRequest& request,
         (controller.ErrorCode() == brpc::ERPCTIMEDOUT) || (controller.ErrorCode() == ETIMEDOUT);
     spdlog::error("{} (req={}): failed to open transfer session: {}",
                   is_timeout ? "timeout" : "control-plane",
-                  request.request_id, controller.ErrorText());
+                  attempt.request_id, controller.ErrorText());
     return false;
   }
 
-  out.request_id = resp.request_id();
-  out.session_id = resp.session_id();
-  out.ticket     = resp.ticket();
+  // 防御性校验:proxy 应原样回显 request_id 并复用 client 提供的 session_id。
+  // 不一致说明对端实现异常,拒绝继续以免把错误的会话句柄传给数据面。
+  if (resp.request_id() != attempt.request_id ||
+      resp.session_id() != attempt.session_id) {
+    spdlog::error("OpenSession (req={}): response identity mismatch "
+                  "(got req={}, ses={}; expected ses={})",
+                  attempt.request_id, resp.request_id(), resp.session_id(),
+                  attempt.session_id);
+    return false;
+  }
+
+  grant.ticket = resp.ticket();
   return true;
 }
 

@@ -10,36 +10,23 @@
 namespace us3_turbo::client {
 
 /**
- * @brief client-new 的请求 / 会话 / 结果装配工厂。
+ * @brief client-new 的请求 / 结果装配工厂。
  *
- * 旧 client 用 SessionPlan / ChunkOpPlan / SessionOpening / ChunkOp 一串
- * 中转结构;client-new 把它们折叠成三个函数,直接以 PutObjectRequest +
- * buffer 为唯一信息源,逐层装配 OpenSessionRequest → GdsChunkRequest →
- * TransferOutcome,字段从源头复制一次,不再手写中间结构。
- *
- * 单对象 GDS PUT 的固定语义(op=kPut、data_flow=GPUDirect、chunk_offset=0、
- * chunk_size=buffer.size)直接由工厂钉死,调用侧无需重复填写。本头文件不
- * 依赖任何 protobuf 类型。
+ * 单对象 GDS PUT 的固定语义(op=PUT、data_flow=GPUDirect、chunk_size=buffer.size)
+ * 由调用侧钉死,工厂只把 PutObjectRequest + buffer 折叠成一次尝试上下文
+ * (PutAttempt)与最终结果(TransferOutcome),字段从源头复制一次,不再手写
+ * 中间结构。本头文件不依赖任何 protobuf 类型。
  */
 
-/** @brief 装配 OpenSessionRequest:bucket/key/length/timeout 来自 PutObjectRequest。 */
-[[nodiscard]] OpenSessionRequest MakeOpenSessionRequest(const ClientOptions& options,
-                                                        const PutObjectRequest& request);
+/** @brief 装配 PutAttempt:timeout/bucket/key/length 来自 PutObjectRequest,生成新 id。 */
+[[nodiscard]] PutAttempt MakePutAttempt(const ClientOptions& options,
+                                        const PutObjectRequest& request);
 
 /**
- * @brief 装配 GdsChunkRequest:复用 OpenSessionRequest 的 context / bucket /
- *        key,补 token / session / ticket。
+ * @brief 从尝试上下文 + GdsPut 结果装配 TransferOutcome:回填 etag +
+ *        bytes_transferred(buffer.size)+ attempt 的 request_id / session_id。
  */
-[[nodiscard]] GdsChunkRequest MakeGdsChunkRequest(const OpenSessionRequest& open,
-                                                  const SessionMeta& session,
-                                                  ConstBufferView buffer,
-                                                  std::string_view rdma_token);
-
-/**
- * @brief 从会话元数据 + GdsPut 结果装配 TransferOutcome:回填 etag +
- *        bytes_transferred(buffer.size)+ 会话 request_id / session_id。
- */
-[[nodiscard]] TransferOutcome MakeTransferOutcome(const SessionMeta& session,
+[[nodiscard]] TransferOutcome MakeTransferOutcome(const PutAttempt& attempt,
                                                   const GdsPutResult& result,
                                                   ConstBufferView buffer);
 
