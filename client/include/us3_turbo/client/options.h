@@ -42,6 +42,13 @@ struct ClientOptions {
    * 默认关闭。开启会引入一次 D2H 拷贝 + 软件计算开销,仅用于一致性验证。
    */
   bool verify_crc32c{false};
+
+  /**
+   * 单次 PUT 阶段耗时埋点开关。开启后 PutOnce 按 OpenSession / AcquireToken /
+   * GdsPut 分段计时并 spdlog::info 输出,用于定位性能瓶颈。默认关闭,关闭时
+   * 不产生任何计时/日志开销。
+   */
+  bool latency_trace{false};
 };
 
 }  // namespace us3_turbo::client

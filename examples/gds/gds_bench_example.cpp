@@ -47,6 +47,7 @@ struct Args {
   std::string   bucket{"test-bucket"};
   std::string   key_prefix{"obj"};
   bool          verify_crc32c{false};
+  bool          trace{false};
 };
 
 // 支持 "100" / "100K" / "100M" / "1G"(大小写无关)。
@@ -95,7 +96,8 @@ void PrintUsage() {
       "  --warmup N               warmup ops, not counted (default 0)\n"
       "  --bucket NAME            (default test-bucket)\n"
       "  --key-prefix STR         (default obj)\n"
-      "  --verify-crc32c          enable client-side CRC32C verification\n";
+      "  --verify-crc32c          enable client-side CRC32C verification\n"
+      "  --trace                  log per-PUT stage latency (open/token/put)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Args& a) {
@@ -119,6 +121,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     else if (arg == "--bucket") { if (!need(i, val)) return false; a.bucket = std::string(val); }
     else if (arg == "--key-prefix") { if (!need(i, val)) return false; a.key_prefix = std::string(val); }
     else if (arg == "--verify-crc32c") { a.verify_crc32c = true; }
+    else if (arg == "--trace") { a.trace = true; }
     else if (arg == "--help" || arg == "-h") { PrintUsage(); std::exit(0); }
     else { std::cerr << "unknown arg: " << arg << "\n"; return false; }
   }
@@ -262,6 +265,7 @@ int main(int argc, char** argv) {
   opts.endpoint          = a.proxy;
   opts.gds_data_endpoint = a.backend;
   opts.verify_crc32c     = a.verify_crc32c;
+  opts.latency_trace     = a.trace;
   Client client(std::move(opts));
   if (!client.Initialize()) {
     std::cerr << "Client::Initialize failed\n";

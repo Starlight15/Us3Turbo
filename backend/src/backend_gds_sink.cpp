@@ -1,5 +1,6 @@
 #include "backend/src/backend_gds_sink.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <span>
 #include <string>
@@ -15,6 +16,11 @@
 namespace us3_turbo::backend {
 
 namespace {
+
+using clk = std::chrono::steady_clock;
+inline double MsSince(clk::time_point t) {
+  return std::chrono::duration<double, std::milli>(clk::now() - t).count();
+}
 
 // 与 gateway GdsOptions 默认值对齐：1MB / 16MB / 256MB / 1GB，每 class 4 份。
 // 读自 gateway/include/us3_turbo/gateway/options.h，v1 照填。
@@ -52,8 +58,11 @@ constexpr std::size_t kBufferMaxPerClass = 4;
 
 }  // namespace
 
-BackendGdsSink::BackendGdsSink(std::string bind_host, int rdma_port)
-    : bind_host_(std::move(bind_host)), rdma_port_(rdma_port) {}
+BackendGdsSink::BackendGdsSink(std::string bind_host, int rdma_port,
+                               bool compute_crc32c)
+    : bind_host_(std::move(bind_host)),
+      rdma_port_(rdma_port),
+      compute_crc32c_(compute_crc32c) {}
 
 BackendGdsSink::~BackendGdsSink() { Stop(); }
 
@@ -126,25 +135,37 @@ DiscardOutcome BackendGdsSink::ReceiveAndDiscard(const std::string& object_id,
 
   const auto remote_buf_start = ParseRemoteBufferAddress(rdma_token);
   ibv_wc_status status = IBV_WC_SUCCESS;
+  const auto rdma_t0 = clk::now();
   const auto transferred = server_->handlePutObject(
       object_id, lease.mr(), remote_buf_start,
       static_cast<std::size_t>(length), rdma_token, channel, 0, &status,
       nullptr);
-  spdlog::info(
-      "backend.put object={} length={} transferred={} status={}",
-      object_id, length, transferred, DescribeStatus(status));
+  const double rdma_ms = MsSince(rdma_t0);
 
   if (transferred < 0) {
+    spdlog::info("backend.put object={} length={} transferred={} rdma_ms={:.3f} "
+                 "status={}",
+                 object_id, length, transferred, rdma_ms, DescribeStatus(status));
     outcome.error =
         "cuObjServer handlePutObject failed: " + DescribeStatus(status);
     return outcome;
   }
 
   const auto bytes = static_cast<std::size_t>(transferred);
-  // 对前 transferred 字节算 CRC32C（复用 gateway common::Crc32c），供端到端校验。
-  outcome.crc32c = us3_turbo::gateway::common::Crc32c(
-      std::span<const std::byte>(static_cast<const std::byte*>(lease.data()),
-                                 bytes));
+  double crc_ms = 0.0;
+  if (compute_crc32c_) {
+    const auto crc_t0 = clk::now();
+    outcome.crc32c = us3_turbo::gateway::common::Crc32c(
+        std::span<const std::byte>(static_cast<const std::byte*>(lease.data()),
+                                   bytes));
+    crc_ms = MsSince(crc_t0);
+  } else {
+    outcome.crc32c = 0;
+  }
+  spdlog::info("backend.put object={} length={} transferred={} rdma_ms={:.3f} "
+               "crc_ms={:.3f} crc32c={:x} status={}",
+               object_id, length, transferred, rdma_ms, crc_ms, outcome.crc32c,
+               DescribeStatus(status));
   // 【丢弃】不接 IDataStore、不写盘。
   outcome.ok = true;
   outcome.bytes_transferred = static_cast<std::uint64_t>(bytes);

@@ -35,7 +35,12 @@ struct DiscardOutcome {
  */
 class BackendGdsSink {
  public:
-  BackendGdsSink(std::string bind_host, int rdma_port);
+  /**
+   * @param compute_crc32c 为 false 时跳过对收到字节的 CRC32C 扫描
+   *        (outcome.crc32c 恒为 0),用于关闭校验做纯吞吐压测。
+   */
+  BackendGdsSink(std::string bind_host, int rdma_port,
+                 bool compute_crc32c = true);
   ~BackendGdsSink();
 
   BackendGdsSink(const BackendGdsSink&) = delete;
@@ -62,6 +67,7 @@ class BackendGdsSink {
  private:
   std::string bind_host_;
   int         rdma_port_;
+  bool        compute_crc32c_;
   std::shared_ptr<cuObjServer> server_;
   std::shared_ptr<us3_turbo::gateway::data_flow::gds::PinnedBufferPool>
       pool_;

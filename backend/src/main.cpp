@@ -19,6 +19,10 @@ DEFINE_string(backend_id, "backend-0", "Backend identifier");
 DEFINE_string(proxy_endpoint, "192.168.1.198:9100",
               "Proxy control plane endpoint for completion notification "
               "(empty disables ReportGdsPut)");
+DEFINE_bool(backend_compute_crc32c, true,
+            "Compute CRC32C over received bytes in the GDS sink (for "
+            "end-to-end verification). Turn off to skip the scan and "
+            "measure raw transfer throughput (crc32c/etag then 0).");
 
 namespace {
 
@@ -41,7 +45,8 @@ int main(int argc, char** argv) {
 
   // 启动顺序：先 cuObjServer + PinnedBufferPool，失败即退出。
   us3_turbo::backend::BackendGdsSink sink(FLAGS_bind_host,
-                                                  FLAGS_backend_rdma_port);
+                                                  FLAGS_backend_rdma_port,
+                                                  FLAGS_backend_compute_crc32c);
   if (!sink.Start()) {
     spdlog::error("backend: failed to start cuObjServer, exiting");
     return EXIT_FAILURE;

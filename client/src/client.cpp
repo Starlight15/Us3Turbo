@@ -24,6 +24,8 @@
 namespace us3_turbo::client {
 namespace {
 
+using clk = std::chrono::steady_clock;
+
 constexpr char kNotInitializedMsg[] =
     "Client is not initialized. Call Client::Initialize first.";
 
@@ -64,20 +66,26 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
   assert(gds_mgr != nullptr);
   auto attempt = MakePutAttempt(options, request);
 
+  const bool trace = options.latency_trace;
+  auto t0 = clk::now();
+
   SessionGrant grant;
   if (!meta.OpenSession(attempt, grant)) return false;
+  auto t_open = clk::now();
 
   GdsMemoryManager::Token token;
   if (!gds_mgr->AcquireToken(buffer.data, buffer.size, 0, token)) {
     meta.AbortSession(attempt.session_id, attempt.timeout);
     return false;
   }
+  auto t_token = clk::now();
 
   GdsPutResult result;
   if (!chunk.Put(attempt, grant, token.str(), buffer.size, result)) {
     meta.AbortSession(attempt.session_id, attempt.timeout);
     return false;
   }
+  auto t_put = clk::now();
 
   out = MakeTransferOutcome(attempt, result, buffer);
 
@@ -108,6 +116,16 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
       meta.AbortSession(attempt.session_id, attempt.timeout);
       return false;
     }
+  }
+
+  if (trace) {
+    const auto ms = [](clk::time_point a, clk::time_point b) {
+      return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    spdlog::info("GdsPut trace (req={}): open={:.3f}ms token={:.3f}ms "
+                 "put={:.3f}ms total={:.3f}ms bytes={}",
+                 attempt.request_id, ms(t0, t_open), ms(t_open, t_token),
+                 ms(t_token, t_put), ms(t0, t_put), buffer.size);
   }
 
   return true;
