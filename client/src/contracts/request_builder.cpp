@@ -52,6 +52,7 @@ TransferOutcome MakeTransferOutcome(const PutAttempt& attempt,
   outcome.request_id        = attempt.request_id;
   outcome.session_id        = attempt.session_id;
   outcome.etag              = result.etag;
+  outcome.crc32c            = result.crc32c;
   return outcome;
 }
 

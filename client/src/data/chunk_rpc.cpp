@@ -47,6 +47,7 @@ bool ChunkRpc::Put(const PutAttempt& attempt,
   }
 
   result.etag = resp.etag();
+  result.crc32c = resp.crc32c();
   return true;
 }
 

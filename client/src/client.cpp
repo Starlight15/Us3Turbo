@@ -3,10 +3,14 @@
 #include <cassert>
 #include <chrono>
 #include <random>
+#include <span>
 #include <string>
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <vector>
+
+#include <cuda_runtime.h>
 
 #include <spdlog/spdlog.h>
 
@@ -14,6 +18,7 @@
 #include "client/src/contracts/requests.h"
 #include "client/src/control/meta_rpc.h"
 #include "client/src/data/chunk_rpc.h"
+#include "client/src/data/crc32c.h"
 #include "client/src/gds_transport/gds_memory_manager.h"
 
 namespace us3_turbo::client {
@@ -75,6 +80,36 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
   }
 
   out = MakeTransferOutcome(attempt, result, buffer);
+
+  // 端到端 CRC32C 一致性校验(可选):把 device buffer 拷回 host 计算本地 CRC32C,
+  // 与 backend 在 GdsChunkResponse.crc32c 回传的值比对。不一致视为失败(返回 false,
+  // 上层 RetryIfRetryable 会重试),并记录 MISMATCH 日志。
+  if (options.verify_crc32c) {
+    std::vector<std::byte> host(buffer.size);
+    if (cudaError_t e = cudaMemcpy(host.data(), buffer.data, buffer.size,
+                                   cudaMemcpyDeviceToHost); e != cudaSuccess) {
+      spdlog::error("GdsPut (req={}): verify_crc32c D2H copy failed: {}",
+                    attempt.request_id, cudaGetErrorString(e));
+      meta.AbortSession(attempt.session_id, attempt.timeout);
+      return false;
+    }
+    const std::uint32_t local = Crc32c(std::span<const std::byte>(host.data(), host.size()));
+    const std::uint32_t remote = result.crc32c;
+    if (local == remote) {
+      spdlog::info("GdsPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
+                   "bucket={}/{} bytes={}",
+                   attempt.request_id, local, remote, attempt.bucket, attempt.key,
+                   buffer.size);
+    } else {
+      spdlog::error("GdsPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
+                    "bucket={}/{} bytes={}",
+                    attempt.request_id, local, remote, attempt.bucket, attempt.key,
+                    buffer.size);
+      meta.AbortSession(attempt.session_id, attempt.timeout);
+      return false;
+    }
+  }
+
   return true;
 }
 

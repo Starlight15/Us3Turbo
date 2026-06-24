@@ -32,6 +32,16 @@ struct ClientOptions {
    * 1 GiB chunk 上限对齐，避免发到 server 才被拒。0 表示不限。
    */
   std::size_t put_single_max_bytes{1ULL * 1024 * 1024 * 1024};
+
+  /**
+   * 端到端 CRC32C 一致性校验开关。开启后 PutObject 会在 GdsPut 成功后,
+   * 把 device buffer 拷回 host 计算 CRC32C,并与 backend 在
+   * GdsChunkResponse.crc32c 回传的值比对:
+   *   - 一致: spdlog::info 记录 MATCH;
+   *   - 不一致: spdlog::error 记录 MISMATCH 并视为失败(返回 false,触发重试)。
+   * 默认关闭。开启会引入一次 D2H 拷贝 + 软件计算开销,仅用于一致性验证。
+   */
+  bool verify_crc32c{false};
 };
 
 }  // namespace us3_turbo::client

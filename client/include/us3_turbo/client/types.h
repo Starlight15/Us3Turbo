@@ -56,8 +56,8 @@ struct ConstBufferView {
 /**
  * @brief Transfer result returned by successful upload operations.
  *
- * 只保留 GDS PUT 链路真正有值的字段：backend 的 GdsChunkResponse 只回填
- * etag + bytes_received,其余原字段(server 端从不填写)已移除。
+ * 只保留 GDS PUT 链路真正有值的字段：backend 的 GdsChunkResponse 回填
+ * etag + bytes_received + crc32c,其余原字段(server 端从不填写)已移除。
  */
 struct TransferOutcome {
   /** Total bytes transferred (== buffer size for single-object PUT). */
@@ -68,6 +68,11 @@ struct TransferOutcome {
   std::string session_id;
   /** ETag assigned by the backend on PUT. */
   std::string etag;
+  /**
+   * Backend 端对实际 RDMA-READ 到的字节计算的 CRC32C。0 表示未计算。
+   * verify_crc32c 开启时,client 据此与本地计算值比对。
+   */
+  std::uint32_t crc32c{0};
 };
 
 

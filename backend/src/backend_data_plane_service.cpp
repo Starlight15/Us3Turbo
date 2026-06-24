@@ -92,10 +92,11 @@ void BackendDataPlaneService::GdsPut(
     return;
   }
 
-  // 合成响应：skill.md §3.3 只返回 etag + bytes_received。
+  // 合成响应：etag + bytes_received + crc32c（供 client 端 end-to-end 校验）。
   const std::string etag = BuildEtag(outcome.crc32c);
   response->set_etag(etag);
   response->set_bytes_received(outcome.bytes_transferred);
+  response->set_crc32c(outcome.crc32c);
 
   // 通知 proxy 数据传输完成（异步、仅 warn，不影响对 client 的返回）。
   if (proxy_stub_ != nullptr) {

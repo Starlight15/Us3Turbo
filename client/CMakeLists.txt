@@ -13,6 +13,7 @@ add_library(us3_turbo_client
   src/control/meta_rpc.cpp
   src/contracts/request_builder.cpp
   src/data/chunk_rpc.cpp
+  src/data/crc32c.cpp
   src/gds_transport/gds_memory_manager.cpp)
 
 add_dependencies(us3_turbo_client
