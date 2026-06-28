@@ -74,19 +74,22 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # ---- 启动 Backend ----
+BACKEND_CMD="\"$BACKEND_BIN\" --bind_host=\"$BACKEND_HOST\" --backend_brpc_port=\"$BACKEND_PORT\" --backend_rdma_port=\"$RDMA_PORT\" --backend_id=backend-0"
 echo "[start] backend on ${BACKEND_EP} (RDMA port ${RDMA_PORT})"
+echo "[cmd] backend: ${BACKEND_CMD}"
 "$BACKEND_BIN" \
   --bind_host="$BACKEND_HOST" \
   --backend_brpc_port="$BACKEND_PORT" \
   --backend_rdma_port="$RDMA_PORT" \
   --backend_id=backend-0 \
-  --proxy_endpoint="$PROXY_EP" \
   &> ${LOG_DIR}/backend_gds_test.log &
 BACKEND_PID=$!
 echo "        backend pid=$BACKEND_PID, logs: ${LOG_DIR}/backend_gds_test.log"
 
 # ---- 启动 Proxy ----
+PROXY_CMD="\"$PROXY_BIN\" --bind_host=\"$PROXY_HOST\" --proxy_port=\"$PROXY_PORT\" --backend_endpoint=\"$BACKEND_EP\""
 echo "[start] proxy on ${PROXY_EP}"
+echo "[cmd] proxy: ${PROXY_CMD}"
 "$PROXY_BIN" \
   --bind_host="$PROXY_HOST" \
   --proxy_port="$PROXY_PORT" \
@@ -129,6 +132,8 @@ echo "  Client:  gds_put_example (hardcoded params)"
 echo "============================================================"
 echo ""
 
+CLIENT_CMD="\"$CLIENT_BIN\""
+echo "[cmd] client: ${CLIENT_CMD}"
 "$CLIENT_BIN"
 RC=$?
 

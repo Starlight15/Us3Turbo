@@ -1,8 +1,11 @@
-# client — GDS-only 通路分离实现
+# client — GDS-only 通路分离实现（Mode B：单 channel 指向 proxy）
 #
 # 消除旧 client 的过度抽象(TransferRouter / TransferPath / ClientCore /
 # UploadCoordinator 等)。本期范围:只实现 GDS PUT(跑通 gds_put_example),
 # 不实现分段上传、HeadObject、GetObject、RDMA。
+#
+# Mode B：MetaRpc + ChunkRpc 合并为单 ProxyRpc（OpenSession / GdsPut /
+# AbortSession 共用一条到 proxy 的 brpc channel）。
 #
 # proto 生成产物(control_plane.pb.*)由根 CMake 生成在
 # US3_TURBO_ACCESS_GENERATED_DIR,直接 include 即可。
@@ -10,9 +13,8 @@
 add_library(us3_turbo_client
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
-  src/control/meta_rpc.cpp
   src/contracts/request_builder.cpp
-  src/data/chunk_rpc.cpp
+  src/proxy_rpc.cpp
   src/data/crc32c.cpp
   src/gds_transport/gds_memory_manager.cpp)
 

@@ -10,9 +10,8 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr   = "192.168.1.198:9100";
-  const std::string backend_addr = "192.168.1.198:9200";
-  const std::size_t bytes        = 100UL * 1024UL * 1024UL;
+  const std::string proxy_addr = "192.168.1.198:9100";
+  const std::size_t bytes      = 100UL * 1024UL * 1024UL;
 
   void* dev = nullptr;
   if (cudaError_t e = cudaMalloc(&dev, bytes); e != cudaSuccess) {
@@ -28,8 +27,7 @@ int main(int argc, char** argv) {
   }
 
   ClientOptions opts;
-  opts.endpoint          = proxy_addr;
-  opts.gds_data_endpoint = backend_addr;
+  opts.endpoint = proxy_addr;
 
   Client client(std::move(opts));
   if (!client.Initialize()) { std::cerr << "Initialize failed\n"; cudaFree(dev); return 1; }

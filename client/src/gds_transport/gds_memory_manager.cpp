@@ -116,6 +116,10 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
                   ptr, size, offset, rc);
     return false;
   }
+  // 打印 backend 用以 RDMA-READ 的 token（形如 "hexaddr:rkey"），
+  // 便于跨机调试时核对 client 显存地址 + remote key 是否落在对端可达的 fabric 上。
+  spdlog::info("AcquireToken: ptr={} size={} offset={} rdma_token={}",
+               ptr, size, offset, tok);
   out = Token(impl_->client.get(), tok);
   return true;
 }

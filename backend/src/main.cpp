@@ -16,9 +16,6 @@ DEFINE_string(bind_host, "192.168.1.198", "Bind host for brpc and cuObjServer");
 DEFINE_string(public_host, "192.168.1.198", "Public host (unused in v1)");
 DEFINE_int32(num_threads, 4, "brpc worker thread count");
 DEFINE_string(backend_id, "backend-0", "Backend identifier");
-DEFINE_string(proxy_endpoint, "192.168.1.198:9100",
-              "Proxy control plane endpoint for completion notification "
-              "(empty disables ReportGdsPut)");
 DEFINE_bool(backend_compute_crc32c, true,
             "Compute CRC32C over received bytes in the GDS sink (for "
             "end-to-end verification). Turn off to skip the scan and "
@@ -52,9 +49,7 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  us3_turbo::backend::BackendDataPlaneService service(sink,
-                                                             FLAGS_backend_id,
-                                                             FLAGS_proxy_endpoint);
+  us3_turbo::backend::BackendDataPlaneService service(sink);
 
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

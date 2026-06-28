@@ -11,21 +11,35 @@
 
 namespace us3_turbo::proxy {
 
-namespace {
-
-// GDS 通道标识，与 client DataFlow::GPUDirect → ToString("gds-cuobject") 一致。
-constexpr std::string_view kGdsDataPath = "gds-cuobject";
-constexpr std::string_view kOpTypePut   = "PUT";
-
-}  // namespace
-
 ProxyControlPlaneService::ProxyControlPlaneService(
     std::string gateway_id,
     std::string backend_endpoint,
+    int backend_timeout_ms,
     SessionManager& session_mgr)
     : gateway_id_(std::move(gateway_id)),
       backend_endpoint_(std::move(backend_endpoint)),
-      session_mgr_(session_mgr) {}
+      backend_timeout_ms_(backend_timeout_ms),
+      session_mgr_(session_mgr) {
+  if (backend_endpoint_.empty()) {
+    spdlog::warn("proxy: backend_endpoint empty, GdsPut will reject as "
+                 "PROXY_ERR_BACKEND_UNAVAILABLE");
+    return;
+  }
+  auto channel = std::make_shared<brpc::Channel>();
+  brpc::ChannelOptions options;
+  options.timeout_ms = backend_timeout_ms_;
+  options.connection_type = brpc::CONNECTION_TYPE_SINGLE;
+  if (channel->Init(backend_endpoint_.c_str(), nullptr, &options) != 0) {
+    spdlog::warn("proxy: failed to init backend channel to {}, GdsPut disabled",
+                 backend_endpoint_);
+    return;
+  }
+  backend_channel_ = std::move(channel);
+  backend_stub_ = std::make_unique<::us3_turbo::proxy::Control_Stub>(
+      backend_channel_.get());
+  spdlog::info("proxy: backend forward channel ready at {} (timeout {}ms)",
+               backend_endpoint_, backend_timeout_ms_);
+}
 
 void ProxyControlPlaneService::OpenSession(
     google::protobuf::RpcController* cntl_base,
@@ -35,24 +49,6 @@ void ProxyControlPlaneService::OpenSession(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  // ---- 校验 ----
-  if (request->data_flow() != kGdsDataPath) {
-    cntl->SetFailed(PROXY_ERR_UNSUPPORTED_PATH,
-                    "proxy v1 only accepts data_flow=gds-cuobject, got: %s",
-                    request->data_flow().c_str());
-    return;
-  }
-  if (request->op_type() != kOpTypePut) {
-    cntl->SetFailed(PROXY_ERR_UNSUPPORTED_PATH,
-                    "proxy v1 only accepts op_type=PUT, got: %s",
-                    request->op_type().c_str());
-    return;
-  }
-  if (request->is_multipart_part()) {
-    cntl->SetFailed(PROXY_ERR_INVALID_PARAM,
-                    "proxy v1 does not support multipart part sessions");
-    return;
-  }
   // GDS PUT 必填：bucket / object_key / expected_size。
   if (request->bucket().empty() || request->object_key().empty()) {
     cntl->SetFailed(PROXY_ERR_INVALID_PARAM, "missing bucket or object_key");
@@ -69,126 +65,74 @@ void ProxyControlPlaneService::OpenSession(
       request->session_id(), request->bucket(), request->object_key(),
       request->expected_size());
 
-  // ---- 填充响应 ----
+  // ---- 填充响应（Mode B：不下发 data_endpoint）----
   response->set_request_id(request->request_id());
   response->set_session_id(session.session_id);
   response->set_ticket(session.ticket);
-  response->set_gateway_id(gateway_id_);
-  response->set_data_endpoint(backend_endpoint_);
-  response->set_expire_at(session.expire_at);
 
   spdlog::info("OpenSession: session_id={}, ticket={}, bucket={}, key={}, "
-               "size={}, data_endpoint={}",
+               "size={}",
                session.session_id, session.ticket, request->bucket(),
-               request->object_key(), request->expected_size(),
-               backend_endpoint_);
-}
-
-void ProxyControlPlaneService::ReportGdsPut(
-    google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::ReportGdsPutRequest* request,
-    ::us3_turbo::proxy::ReportGdsPutResponse* response,
-    google::protobuf::Closure* done) {
-  brpc::ClosureGuard done_guard(done);
-  static_cast<void>(cntl_base);
-
-  const bool ok = session_mgr_.CompleteSession(
-      request->session_id(), request->etag(), request->crc32c(),
-      request->bytes_transferred());
-  response->set_accepted(ok);
-  if (ok) {
-    spdlog::info("ReportGdsPut: session_id={} etag={} crc32c={:x} bytes={}",
-                 request->session_id(), request->etag(),
-                 request->crc32c(), request->bytes_transferred());
-  } else {
-    spdlog::warn("ReportGdsPut: unknown or expired session_id={}",
-                 request->session_id());
-  }
-}
-
-void ProxyControlPlaneService::CompleteUpload(
-    google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::CompleteUploadRequest* request,
-    ::us3_turbo::proxy::CompleteUploadResponse* response,
-    google::protobuf::Closure* done) {
-  brpc::ClosureGuard done_guard(done);
-  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-
-  // upload_id 字段复用传 ticket：单对象 PUT 无独立 upload_id，
-  // client 用 OpenSession 拿到的 ticket 作为完成查询凭证。
-  const auto* session = session_mgr_.GetCompletedSession(request->upload_id());
-  if (session == nullptr) {
-    cntl->SetFailed(PROXY_ERR_SESSION_NOT_FOUND,
-                    "session not found or not yet completed");
-    return;
-  }
-  response->set_etag(session->etag);
-}
-
-// ---------------------------------------------------------------------------
-// v1 占位方法：一律返回 "not implemented in proxy v1"
-// ---------------------------------------------------------------------------
-
-void ProxyControlPlaneService::HeadObject(
-    google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::HeadObjectRequest* /*request*/,
-    ::us3_turbo::proxy::HeadObjectResponse* /*response*/,
-    google::protobuf::Closure* done) {
-  brpc::ClosureGuard done_guard(done);
-  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-  cntl->SetFailed(PROXY_ERR_NOT_IMPLEMENTED, "%s",
-                  std::string(ErrorMessage(PROXY_ERR_NOT_IMPLEMENTED)).c_str());
-}
-
-void ProxyControlPlaneService::GdsGet(
-    google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::GdsChunkRequest* /*request*/,
-    ::us3_turbo::proxy::GdsChunkResponse* /*response*/,
-    google::protobuf::Closure* done) {
-  brpc::ClosureGuard done_guard(done);
-  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-  cntl->SetFailed(PROXY_ERR_NOT_IMPLEMENTED, "%s",
-                  std::string(ErrorMessage(PROXY_ERR_NOT_IMPLEMENTED)).c_str());
+               request->object_key(), request->expected_size());
 }
 
 void ProxyControlPlaneService::GdsPut(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::GdsChunkRequest* /*request*/,
-    ::us3_turbo::proxy::GdsChunkResponse* /*response*/,
+    const ::us3_turbo::proxy::GdsChunkRequest* request,
+    ::us3_turbo::proxy::GdsChunkResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-  cntl->SetFailed(PROXY_ERR_NOT_IMPLEMENTED, "%s",
-                  std::string(ErrorMessage(PROXY_ERR_NOT_IMPLEMENTED)).c_str());
+
+  // 校验 session 存在（仅存在性判空，不持有返回指针跨 RPC）。
+  if (session_mgr_.GetSession(request->session_id()) == nullptr) {
+    cntl->SetFailed(PROXY_ERR_SESSION_NOT_FOUND,
+                    "unknown or expired session_id=%s",
+                    request->session_id().c_str());
+    return;
+  }
+  if (backend_stub_ == nullptr) {
+    cntl->SetFailed(PROXY_ERR_BACKEND_UNAVAILABLE, "no backend channel");
+    return;
+  }
+
+  // ---- 同步转发给 backend（bthread 阻塞，会 yield 让出）----
+  brpc::Controller bcntl;
+  bcntl.set_timeout_ms(backend_timeout_ms_);
+  ::us3_turbo::proxy::GdsChunkResponse bresp;
+  backend_stub_->GdsPut(&bcntl, request, &bresp, nullptr);
+  if (bcntl.Failed()) {
+    cntl->SetFailed(PROXY_ERR_BACKEND_RPC,
+                    "backend GdsPut failed: %s",
+                    bcntl.ErrorText().c_str());
+    return;
+  }
+
+  // ---- 索引提交钩子：backend 传完、proxy 落索引后再回 client ----
+  const bool committed = session_mgr_.CompleteSession(
+      request->session_id(), bresp.etag(), bresp.crc32c(),
+      bresp.bytes_received());
+  if (!committed) {
+    spdlog::warn("GdsPut: CompleteSession failed (session gone?) session_id={}",
+                 request->session_id());
+    // 仍返回数据：backend 已传完，对 client 报失败会触发无谓重传。
+  }
+
+  response->set_etag(bresp.etag());
+  response->set_crc32c(bresp.crc32c());
+  response->set_bytes_received(bresp.bytes_received());
+
+  spdlog::info("GdsPut: forwarded session_id={} etag={} crc32c={:x} bytes={}",
+               request->session_id(), bresp.etag(), bresp.crc32c(),
+               bresp.bytes_received());
 }
 
-// 客户端失败路径会调 AbortSession；v1 happy path 不触发，留 SetFailed 占位。
+// v1 占位：proxy 不直接处理 AbortSession 语义（client 失败路径 best-effort
+// 调用并忽略失败）。返回 ENOMETHOD 与历史行为一致。
 void ProxyControlPlaneService::AbortSession(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::AbortSessionRequest* /*request*/,
     ::us3_turbo::proxy::AbortSessionResponse* /*response*/,
-    google::protobuf::Closure* done) {
-  brpc::ClosureGuard done_guard(done);
-  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-  cntl->SetFailed(PROXY_ERR_NOT_IMPLEMENTED, "%s",
-                  std::string(ErrorMessage(PROXY_ERR_NOT_IMPLEMENTED)).c_str());
-}
-
-void ProxyControlPlaneService::StartUpload(
-    google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::StartUploadRequest* /*request*/,
-    ::us3_turbo::proxy::StartUploadResponse* /*response*/,
-    google::protobuf::Closure* done) {
-  brpc::ClosureGuard done_guard(done);
-  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-  cntl->SetFailed(PROXY_ERR_NOT_IMPLEMENTED, "%s",
-                  std::string(ErrorMessage(PROXY_ERR_NOT_IMPLEMENTED)).c_str());
-}
-
-void ProxyControlPlaneService::AbortUpload(
-    google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::AbortUploadRequest* /*request*/,
-    ::us3_turbo::proxy::AbortUploadResponse* /*response*/,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);

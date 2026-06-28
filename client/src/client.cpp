@@ -16,10 +16,9 @@
 
 #include "client/src/contracts/request_builder.h"
 #include "client/src/contracts/requests.h"
-#include "client/src/control/meta_rpc.h"
-#include "client/src/data/chunk_rpc.h"
 #include "client/src/data/crc32c.h"
 #include "client/src/gds_transport/gds_memory_manager.h"
+#include "client/src/proxy_rpc.h"
 
 namespace us3_turbo::client {
 namespace {
@@ -57,8 +56,7 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
 }
 
 [[nodiscard]] bool PutOnce(const ClientOptions& options,
-                          MetaRpc& meta,
-                          const ChunkRpc& chunk,
+                          const ProxyRpc& proxy,
                           GdsMemoryManager* gds_mgr,
                           const PutObjectRequest& request,
                           ConstBufferView buffer,
@@ -70,19 +68,19 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
   auto t0 = clk::now();
 
   SessionGrant grant;
-  if (!meta.OpenSession(attempt, grant)) return false;
+  if (!proxy.OpenSession(attempt, grant)) return false;
   auto t_open = clk::now();
 
   GdsMemoryManager::Token token;
   if (!gds_mgr->AcquireToken(buffer.data, buffer.size, 0, token)) {
-    meta.AbortSession(attempt.session_id, attempt.timeout);
+    proxy.AbortSession(attempt.session_id, attempt.timeout);
     return false;
   }
   auto t_token = clk::now();
 
   GdsPutResult result;
-  if (!chunk.Put(attempt, grant, token.str(), buffer.size, result)) {
-    meta.AbortSession(attempt.session_id, attempt.timeout);
+  if (!proxy.Put(attempt, grant, token.str(), buffer.size, result)) {
+    proxy.AbortSession(attempt.session_id, attempt.timeout);
     return false;
   }
   auto t_put = clk::now();
@@ -98,7 +96,7 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
                                    cudaMemcpyDeviceToHost); e != cudaSuccess) {
       spdlog::error("GdsPut (req={}): verify_crc32c D2H copy failed: {}",
                     attempt.request_id, cudaGetErrorString(e));
-      meta.AbortSession(attempt.session_id, attempt.timeout);
+      proxy.AbortSession(attempt.session_id, attempt.timeout);
       return false;
     }
     const std::uint32_t local = Crc32c(std::span<const std::byte>(host.data(), host.size()));
@@ -113,7 +111,7 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
                     "bucket={}/{} bytes={}",
                     attempt.request_id, local, remote, attempt.bucket, attempt.key,
                     buffer.size);
-      meta.AbortSession(attempt.session_id, attempt.timeout);
+      proxy.AbortSession(attempt.session_id, attempt.timeout);
       return false;
     }
   }
@@ -139,26 +137,19 @@ Client::~Client() = default;
 bool Client::Initialize() {
   if (initialized_) return true;
 
-  meta_ = std::make_unique<MetaRpc>(options_.endpoint, options_.default_timeout);
-  if (!meta_->ok()) {
-    spdlog::error("Initialize: control-plane channel({}) init failed: {}",
-                  options_.endpoint, meta_->init_error());
-    meta_.reset();
-    return false;
-  }
-
-  chunk_ = std::make_unique<ChunkRpc>(options_.gds_data_endpoint, options_.default_timeout);
-  if (!chunk_->ok()) {
-    spdlog::error("Initialize: data-plane channel({}) init failed: {}",
-                  options_.gds_data_endpoint, chunk_->init_error());
-    chunk_.reset();
-    meta_.reset();
+  // Mode B：单 channel 指向 proxy，承载 OpenSession / GdsPut / AbortSession。
+  // brpc::Channel 线程安全、内部带连接复用，PutObject 重试与 bench 多 worker
+  // 共享同一个 Client 时可并发调用。
+  proxy_ = std::make_unique<ProxyRpc>(options_.endpoint, options_.default_timeout);
+  if (!proxy_->ok()) {
+    spdlog::error("Initialize: proxy channel({}) init failed: {}",
+                  options_.endpoint, proxy_->init_error());
+    proxy_.reset();
     return false;
   }
 
   if (!GdsMemoryManager::Instance(gds_mgr_)) {
-    chunk_.reset();
-    meta_.reset();
+    proxy_.reset();
     return false;
   }
 
@@ -167,8 +158,7 @@ bool Client::Initialize() {
 }
 
 void Client::Shutdown() {
-  chunk_.reset();
-  meta_.reset();
+  proxy_.reset();
   gds_mgr_ = nullptr;
   initialized_ = false;
 }
@@ -197,7 +187,7 @@ bool Client::PutObject(const PutObjectRequest& request,
       spdlog::warn("PutObject: bucket={}/{} retry deadline exceeded", request.bucket, request.key);
       return false;
     }
-    return PutOnce(options_, *meta_, *chunk_, gds_mgr_, request, buffer, out);
+    return PutOnce(options_, *proxy_, gds_mgr_, request, buffer, out);
   });
 }
 

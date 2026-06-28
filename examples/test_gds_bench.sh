@@ -84,7 +84,6 @@ echo "[start] backend on ${BACKEND_EP} (RDMA port ${RDMA_PORT})"
   --backend_brpc_port="$BACKEND_PORT" \
   --backend_rdma_port="$RDMA_PORT" \
   --backend_id=backend-0 \
-  --proxy_endpoint="$PROXY_EP" \
   &> "${LOG_DIR}/backend_bench.log" &
 BACKEND_PID=$!
 echo "        backend pid=$BACKEND_PID, logs: ${LOG_DIR}/backend_bench.log"
@@ -140,7 +139,7 @@ echo "============================================================"
 echo ""
 
 "$BENCH_BIN" \
-  --proxy "$PROXY_EP" --backend "$BACKEND_EP" \
+  --proxy "$PROXY_EP" \
   "${BENCH_ARGS[@]}" 2>&1 | tee "${LOG_DIR}/bench.log"
 RC=${PIPESTATUS[0]}
 

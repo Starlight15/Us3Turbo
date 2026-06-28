@@ -23,6 +23,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# cuObjServer (libcuobjserver.so) 用 GCC 新 ABI 编译(std::__cxx11::basic_string);
+# devtoolset-11 默认 _GLIBCXX_USE_CXX11_ABI=0(为兼容 CentOS 7 系统 libstdc++),
+# 会导致 handlePutObject 等 string 参数符号 mangle 成旧 ABI 而链接失败。
+# 强制新 ABI,与 cuobjserver.so / .198 构建保持一致。
+add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-D_GLIBCXX_USE_CXX11_ABI=1>)
+
+# 静态链接 libstdc++ / libgcc:cuobjserver.so 需要 GLIBCXX_3.4.21,而 CentOS 7
+# 系统 libstdc++.so.6 只到 3.4.19。devtoolset-11 不随附运行期 libstdc++.so.6,
+# 故把 C++ 运行时符号静态烤进可执行文件,运行期不再依赖高版本 libstdc++。
+add_link_options(-static-libstdc++ -static-libgcc)
+
 option(US3_TURBO_ACCESS_BUILD_EXAMPLES "Build Us3Turbo examples" ON)
 option(US3_TURBO_ACCESS_USE_SPDLOG_HEADER_ONLY "Use spdlog header-only target" ON)
 

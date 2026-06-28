@@ -1,7 +1,9 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
+#include <brpc/channel.h>
 #include <brpc/controller.h>
 #include <google/protobuf/service.h>
 #include <google/protobuf/stubs/callback.h>
@@ -12,81 +14,56 @@
 namespace us3_turbo::proxy {
 
 /**
- * @brief 控制面服务：实现 GDS 单对象 PUT 的完整闭环
- *        （OpenSession → GdsPut[backend] → ReportGdsPut → CompleteUpload），
- *        其余 6 个 RPC 一律返回 "not implemented in proxy v1"。
+ * @brief 控制面服务（Mode B）：client 只与本服务交互。
  *
- * v1：发 session + ticket + data_endpoint，由 backend 回调 ReportGdsPut 标记完成，
- *     CompleteUpload 查询结果。不连 cuObjServer，写盘由 backend 负责。
+ * 链路：client → OpenSession(拿 ticket) → GdsPut(带 rdma_token)；
+ *   GdsPut 同步转发给 backend RDMA-READ，backend 返回 etag/crc/bytes 后，
+ *   proxy 先 CompleteSession（索引提交钩子）再回 client 成功，确保闭环。
+ *
+ * backend 不再暴露给 client：OpenSession 不下发 data_endpoint。
  *
  * session 凭证/状态由 SessionManager 持有（引用，非拥有）。
  *
- * 线程安全：本类无状态（gateway_id_ / backend_endpoint_ 构造后只读），所有 RPC
- * handler 可被 brpc 并发调用；session 状态的并发安全由 SessionManager 的 mu_ 保证。
+ * 线程安全：本类无状态（gateway_id_/backend_endpoint_ 构造后只读），
+ * backend_channel_/backend_stub_ 构造后恒定不变，所有 RPC handler 可被
+ * brpc 并发调用；session 状态的并发安全由 SessionManager 的 mu_ 保证。
  */
 class ProxyControlPlaneService final
     : public ::us3_turbo::proxy::Control {
  public:
   ProxyControlPlaneService(std::string gateway_id,
                            std::string backend_endpoint,
+                           int backend_timeout_ms,
                            SessionManager& session_mgr);
 
-  // ---- 真实实现的 RPC ----
   void OpenSession(
       google::protobuf::RpcController* cntl,
       const ::us3_turbo::proxy::OpenSessionRequest* request,
       ::us3_turbo::proxy::OpenSessionResponse* response,
       google::protobuf::Closure* done) override;
 
-  // backend → proxy 完成通知
-  void ReportGdsPut(
+  void GdsPut(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::ReportGdsPutRequest* request,
-      ::us3_turbo::proxy::ReportGdsPutResponse* response,
+      const ::us3_turbo::proxy::GdsChunkRequest* request,
+      ::us3_turbo::proxy::GdsChunkResponse* response,
       google::protobuf::Closure* done) override;
 
-  // client 查询 PUT 结果
-  void CompleteUpload(
+  void AbortSession(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::CompleteUploadRequest* request,
-      ::us3_turbo::proxy::CompleteUploadResponse* response,
+      const ::us3_turbo::proxy::AbortSessionRequest* request,
+      ::us3_turbo::proxy::AbortSessionResponse* response,
       google::protobuf::Closure* done) override;
-
-  // ---- v1 占位：不实现 ----
-  void HeadObject(google::protobuf::RpcController* cntl,
-                  const ::us3_turbo::proxy::HeadObjectRequest* request,
-                  ::us3_turbo::proxy::HeadObjectResponse* response,
-                  google::protobuf::Closure* done) override;
-
-  void GdsGet(google::protobuf::RpcController* cntl,
-              const ::us3_turbo::proxy::GdsChunkRequest* request,
-              ::us3_turbo::proxy::GdsChunkResponse* response,
-              google::protobuf::Closure* done) override;
-
-  void GdsPut(google::protobuf::RpcController* cntl,
-              const ::us3_turbo::proxy::GdsChunkRequest* request,
-              ::us3_turbo::proxy::GdsChunkResponse* response,
-              google::protobuf::Closure* done) override;
-
-  void AbortSession(google::protobuf::RpcController* cntl,
-                    const ::us3_turbo::proxy::AbortSessionRequest* request,
-                    ::us3_turbo::proxy::AbortSessionResponse* response,
-                    google::protobuf::Closure* done) override;
-
-  void StartUpload(google::protobuf::RpcController* cntl,
-                   const ::us3_turbo::proxy::StartUploadRequest* request,
-                   ::us3_turbo::proxy::StartUploadResponse* response,
-                   google::protobuf::Closure* done) override;
-
-  void AbortUpload(google::protobuf::RpcController* cntl,
-                   const ::us3_turbo::proxy::AbortUploadRequest* request,
-                   ::us3_turbo::proxy::AbortUploadResponse* response,
-                   google::protobuf::Closure* done) override;
 
  private:
   std::string gateway_id_;
-  std::string backend_endpoint_;  // 回填进 OpenSessionResponse.data_endpoint
-  SessionManager& session_mgr_;
+  std::string backend_endpoint_;  // backend 数据面地址，用于建 brpc channel
+  int         backend_timeout_ms_;
+
+  // 到 backend 的同步转发 channel（Mode B）。构造失败则 stub 为空，
+  // GdsPut 以 PROXY_ERR_BACKEND_UNAVAILABLE 拒绝。
+  std::shared_ptr<brpc::Channel>                     backend_channel_;
+  std::unique_ptr<::us3_turbo::proxy::Control_Stub>   backend_stub_;
+  SessionManager&                                     session_mgr_;
 };
 
 }  // namespace us3_turbo::proxy

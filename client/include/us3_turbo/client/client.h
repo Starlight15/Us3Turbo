@@ -1,14 +1,14 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"
 
 namespace us3_turbo::client {
 
-class MetaRpc;
-class ChunkRpc;
+class ProxyRpc;
 class GdsMemoryManager;
 
 class Client {
@@ -41,8 +41,8 @@ class Client {
 
  private:
   ClientOptions              options_;
-  std::unique_ptr<MetaRpc>   meta_;
-  std::unique_ptr<ChunkRpc>  chunk_;
+  // Mode B：单 channel 指向 proxy，承载 OpenSession / GdsPut / AbortSession。
+  std::unique_ptr<ProxyRpc>  proxy_;
   GdsMemoryManager*          gds_mgr_{nullptr};
   bool                       initialized_{false};
 };

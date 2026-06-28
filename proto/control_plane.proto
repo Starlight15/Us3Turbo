@@ -4,168 +4,50 @@ package us3_turbo.proxy;
 
 option cc_generic_services = true;
 
+// Mode B：所有控制面经 proxy。client 只与 proxy 交互；proxy 同步转发 GdsPut
+// 给 backend，backend RDMA-READ 完返回 etag/crc/bytes，proxy 先 CompleteSession
+// （索引提交钩子）再回 client。backend 不再单独暴露给 client。
+//
+// v1 只实现单对象 GDS PUT；无 HeadObject/Get/multipart/CompleteUpload。
+
 message OpenSessionRequest {
-  string request_id = 1;
-  string session_id = 2;
-  string bucket = 3;
-  string object_key = 4;
-  string op_type = 5;
-  string data_flow = 6;
-  string buffer_type = 7;
-  // 8 was channel_id        (removed: just echoed, never consumed)
-  uint64 offset = 9;
-  uint64 expected_size = 10;
-  // 11 was buffer_descriptor (removed: set by client, never read by server)
-  string idempotency_key = 12;
-  // 标记本 session 是 multipart upload 的单个 part：
-  //   expected_size 解释为本 part 字节数（用于 RDMA 路径预分配 buffer），
-  //   gateway 跳过整对象 Reserve（整对象在 StartUpload 时已预留）。
-  bool is_multipart_part = 13;
-  reserved 8, 11;
+  string request_id   = 1;
+  string session_id   = 2;
+  string bucket       = 3;
+  string object_key   = 4;
+  uint64 expected_size = 5;
 }
 
 message OpenSessionResponse {
   string request_id = 1;
   string session_id = 2;
-  string ticket = 3;
-  string gateway_id = 4;
-  // backend 数据面地址，如 "192.168.1.198:9200"，client 据此直连 GdsPut。
-  // 复用历史 reserved 的 field 5（原 gateway_endpoint 已移除）。
-  string data_endpoint = 5;
-  // 6 was channel_id        (removed: just echoed from request)
-  // 7 was async_handle      (removed: gateway-generated but client never reads)
-  string expire_at = 8;
-  // 9  was repeated ChunkPlanItem chunk_plan  (removed: client never enforces)
-  // 10 was map<string,string> rdma_parameters (removed: GDS uses cuObj; native-RDMA not impl)
-  reserved 6, 7, 9, 10;
-}
-
-message HeadObjectRequest {
-  string bucket = 1;
-  string object_key = 2;
-}
-
-message HeadObjectResponse {
-  uint64 content_length = 1;
-  string etag = 2;
-  string version = 3;
-  map<string, string> headers = 4;
+  string ticket     = 3;
 }
 
 message GdsChunkRequest {
-  string request_id = 1;
-  string session_id = 2;
-  string transfer_ticket = 3;
-  string bucket = 4;
-  string object_key = 5;
-  string data_flow = 6;
-  string buffer_type = 7;
-  string checksum_policy = 8;
-  uint64 chunk_offset = 9;
-  uint64 chunk_size = 10;
-  string rdma_token = 11;
-  map<string, string> extra_headers = 12;
-  // Multipart-aware fields. When upload_id is non-empty the chunk bytes are
-  // attributed to (upload_id, part_number); the gateway stores them via
-  // backend.WritePart rather than backend.WriteRange.
-  string upload_id = 13;
-  uint32 part_number = 14;
+  string request_id       = 1;
+  string session_id       = 2;
+  string transfer_ticket  = 3;
+  string bucket           = 4;
+  string object_key       = 5;
+  uint64 chunk_size       = 6;
+  string rdma_token       = 7;
 }
 
 message GdsChunkResponse {
-  string selected_gateway = 1;
-  string gateway_id = 2;
-  string transfer_status = 3;
-  string rdma_reply = 4;
-  string etag = 5;
-  string version = 6;
-  // Server 端算出的 CRC32C（host pinned buffer 阶段）。
-  // GET 路径让 client 做 end-to-end 校验；PUT 路径用于响应回写。
-  // 0 表示未计算（向后兼容）。
-  uint32 crc32c = 7;
-  // GdsPut 实际接收到的字节数（backend 数据面 RDMA-READ 拉到的字节数）。
-  uint64 bytes_received = 8;
+  string etag          = 1;
+  uint32 crc32c        = 2;
+  uint64 bytes_received = 3;
 }
 
-message StartUploadRequest {
-  string bucket = 1;
-  string object_key = 2;
-  uint64 expected_total_size = 3;       // optional hint; 0 == unknown
-  string data_flow = 4;
-  string idempotency_key = 5;
-}
-
-message StartUploadResponse {
-  string upload_id = 1;
-  uint64 max_part_size = 2;             // server-side limit (1 GiB today)
-}
-
-message PartEtag {
-  uint32 part_number = 1;
-  string etag = 2;
-}
-
-message CompleteUploadRequest {
-  string upload_id = 1;
-  repeated PartEtag parts = 2;
-  string data_flow = 3;  // 调用方通道标识,用于校验与 StartUpload 一致
-}
-
-message CompleteUploadResponse {
-  string etag = 1;
-  string version = 2;
-  uint64 content_length = 3;
-}
-
-message AbortUploadRequest {
-  string upload_id = 1;
-  string data_flow = 2;  // 调用方通道标识，用于校验与 StartUpload 一致
-}
-
-message AbortUploadResponse {
-}
-
-// 通知 gateway 立即把 session 标记为 failed，释放资源。
-// 与 RdmaDataPlaneService.AbortSession 平行，但走 ControlPlaneService
-// 以便 GDS 通路在 PutObject 重试前清理上一次失败的 session。
-// 不存在的 session_id 视为 no-op，返回 erased=false。
 message AbortSessionRequest {
   string session_id = 1;
 }
 
-message AbortSessionResponse {
-  bool erased = 1;
-}
-
-// backend 完成 RDMA-READ 后通知 proxy（control-plane）数据已就位。
-// proxy 据 session_id 标记 session 为 completed，供后续 CompleteUpload 查询。
-message ReportGdsPutRequest {
-  string session_id        = 1;
-  string etag              = 2;
-  uint32 crc32c            = 3;
-  uint64 bytes_transferred = 4;
-}
-
-message ReportGdsPutResponse {
-  // false 表示 session 不存在或已过期。
-  bool accepted = 1;
-}
+message AbortSessionResponse {}
 
 service Control {
-  rpc OpenSession(OpenSessionRequest)
-      returns (OpenSessionResponse);
-  rpc HeadObject(HeadObjectRequest) returns (HeadObjectResponse);
-  rpc GdsGet(GdsChunkRequest) returns (GdsChunkResponse);
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc GdsPut(GdsChunkRequest) returns (GdsChunkResponse);
-
-  // Session lifecycle
   rpc AbortSession(AbortSessionRequest) returns (AbortSessionResponse);
-
-  // Multipart upload
-  rpc StartUpload(StartUploadRequest) returns (StartUploadResponse);
-  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
-  rpc AbortUpload(AbortUploadRequest) returns (AbortUploadResponse);
-
-  // backend → proxy 完成通知（GDS PUT 链路闭环）。
-  rpc ReportGdsPut(ReportGdsPutRequest) returns (ReportGdsPutResponse);
 }

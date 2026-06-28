@@ -15,7 +15,9 @@ DEFINE_int32(num_threads, 4, "brpc worker thread count");
 DEFINE_int64(session_ttl_sec, 300, "Session TTL in seconds");
 DEFINE_string(gateway_id, "proxy-0", "Proxy identifier");
 DEFINE_string(backend_endpoint, "192.168.1.198:9200",
-              "GDS backend data plane endpoint (returned to client in OpenSession)");
+              "GDS backend data plane endpoint (proxy forwards GdsPut here)");
+DEFINE_int32(backend_timeout_ms, 30000,
+             "Timeout (ms) for proxy→backend GdsPut forward");
 
 namespace {
 
@@ -38,7 +40,8 @@ int main(int argc, char** argv) {
 
   us3_turbo::proxy::SessionManager session_mgr(FLAGS_session_ttl_sec);
   us3_turbo::proxy::ProxyControlPlaneService service(
-      FLAGS_gateway_id, FLAGS_backend_endpoint, session_mgr);
+      FLAGS_gateway_id, FLAGS_backend_endpoint, FLAGS_backend_timeout_ms,
+      session_mgr);
 
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

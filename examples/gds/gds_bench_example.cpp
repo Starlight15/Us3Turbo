@@ -4,7 +4,7 @@
 //
 // 用法:
 //   us3_turbo_gds_bench_example \
-//     --proxy 192.168.1.198:9100 --backend 192.168.1.198:9200 \
+//     --proxy 192.168.1.198:9100 \
 //     --size 100M --count 100 --concurrency 8
 //
 // 模型:进程内共享一个 Client(PutObject 为 const,brpc channel 与
@@ -39,7 +39,6 @@ using ms_double = std::chrono::duration<double, std::milli>;
 
 struct Args {
   std::string   proxy{"192.168.1.198:9100"};
-  std::string   backend{"192.168.1.198:9200"};
   std::uint64_t size{100ULL * 1024 * 1024};
   std::uint64_t count{10};
   std::uint64_t concurrency{1};
@@ -88,8 +87,7 @@ bool ParseUint(std::string_view s, std::uint64_t& out) {
 void PrintUsage() {
   std::cout <<
       "usage: us3_turbo_gds_bench_example [options]\n"
-      "  --proxy HOST:PORT        control plane   (default 192.168.1.198:9100)\n"
-      "  --backend HOST:PORT      data plane      (default 192.168.1.198:9200)\n"
+      "  --proxy HOST:PORT        control plane (proxy; GdsPut goes through it) (default 192.168.1.198:9100)\n"
       "  --size N[K|M|G]          object size     (default 100M)\n"
       "  --count N                number of objects (default 10)\n"
       "  --concurrency N          worker threads  (default 1)\n"
@@ -113,7 +111,6 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     std::string_view arg = argv[i];
     std::string_view val;
     if (arg == "--proxy") { if (!need(i, val)) return false; a.proxy = std::string(val); }
-    else if (arg == "--backend") { if (!need(i, val)) return false; a.backend = std::string(val); }
     else if (arg == "--size") { if (!need(i, val) || !ParseSize(val, a.size)) { std::cerr << "bad --size\n"; return false; } }
     else if (arg == "--count") { if (!need(i, val) || !ParseUint(val, a.count)) { std::cerr << "bad --count\n"; return false; } }
     else if (arg == "--concurrency") { if (!need(i, val) || !ParseUint(val, a.concurrency)) { std::cerr << "bad --concurrency\n"; return false; } }
@@ -247,7 +244,6 @@ int main(int argc, char** argv) {
 
   std::cout << "=== GDS PUT bench ===\n"
             << "  proxy       : " << a.proxy << "\n"
-            << "  backend     : " << a.backend << "\n"
             << "  object size : " << HumanBytes(a.size) << "\n"
             << "  count       : " << a.count << "\n"
             << "  concurrency : " << a.concurrency << "\n"
@@ -262,10 +258,9 @@ int main(int argc, char** argv) {
   for (std::size_t i = 0; i < a.size; ++i) host[i] = static_cast<std::byte>(i % 251U);
 
   ClientOptions opts;
-  opts.endpoint          = a.proxy;
-  opts.gds_data_endpoint = a.backend;
-  opts.verify_crc32c     = a.verify_crc32c;
-  opts.latency_trace     = a.trace;
+  opts.endpoint       = a.proxy;
+  opts.verify_crc32c = a.verify_crc32c;
+  opts.latency_trace = a.trace;
   Client client(std::move(opts));
   if (!client.Initialize()) {
     std::cerr << "Client::Initialize failed\n";
