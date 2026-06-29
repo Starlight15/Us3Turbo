@@ -4,30 +4,18 @@ package us3_turbo.proxy;
 
 option cc_generic_services = true;
 
-// Mode B：所有控制面经 proxy。client 只与 proxy 交互；proxy 同步转发 GdsPut
-// 给 backend，backend RDMA-READ 完返回 etag/crc/bytes，proxy 先 CompleteSession
-// （索引提交钩子）再回 client。backend 不再单独暴露给 client。
+// Mode B：所有控制面经 proxy。client 只与 proxy 交互；单次 PUT RPC（GdsPut /
+// RdmaPut）自带 bucket/key/chunk_size + 描述符，proxy 内联校验后同步转发给
+// backend，backend 反向 RDMA-READ 完返回 etag/crc/bytes，proxy 直接回 client。
+// 不再有 OpenSession/session/ticket：Mode B 下 client 只与 proxy 一跳，无需跨
+// 跳关联，session 记录在 v1（无 CompleteUpload/multipart）里是无读者的死路径。
 //
-// v1 只实现单对象 GDS PUT；无 HeadObject/Get/multipart/CompleteUpload。
-
-message OpenSessionRequest {
-  string request_id   = 1;
-  string session_id   = 2;
-  string bucket       = 3;
-  string object_key   = 4;
-  uint64 expected_size = 5;
-}
-
-message OpenSessionResponse {
-  string request_id = 1;
-  string session_id = 2;
-  string ticket     = 3;
-}
+// v1 实现 GDS PUT + RDMA PUT（UCX）两条独立链路；gds 与 rdma 两条链路第一版不
+// 做任何共同逻辑抽象，各自独立实现。
 
 message GdsChunkRequest {
   string request_id       = 1;
-  string session_id       = 2;
-  string transfer_ticket  = 3;
+  // 字段 2 (session_id) / 3 (transfer_ticket) 已随 OpenSession 移除，留空隙。
   string bucket           = 4;
   string object_key       = 5;
   uint64 chunk_size       = 6;
@@ -40,14 +28,34 @@ message GdsChunkResponse {
   uint64 bytes_received = 3;
 }
 
-message AbortSessionRequest {
-  string session_id = 1;
+// RDMA PUT 链路（UCX，host↔host，无 GPU）：client CPU 内存 → backend CPU 内存，
+// backend 经已建立的 UCX ep 用 ucp_get_nbx 反向拉取。与 Gds 链路独立、不共享逻辑。
+//
+// 与 GdsChunkRequest 的本质差异：UCX RMA 是连接式，ucp_get_nbx 必须在已建 ep
+// 上发起，故不能像 Gds 的 cuObj DC token 那样自描述塞进 RPC 一次透传。
+// 改由 client 监听 UCX listener，把 listener 地址 + remote_addr + packed rkey
+// 一并塞进 RdmaPut，backend 收到后主动 dial client 建 ep、unpack rkey、get_nbx 拉。
+message RdmaChunkRequest {
+  string request_id       = 1;
+  // 字段 2 (session_id) / 3 (transfer_ticket) 已随 OpenSession 移除，留空隙。
+  string bucket           = 4;
+  string object_key       = 5;
+  uint64 chunk_size       = 6;
+  // client 侧 host buffer 的虚拟地址（供 backend ucp_get_nbx 作 remote_addr）。
+  uint64 remote_addr      = 7;
+  // ucp_rkey_pack 导出的 packed rkey（供 backend ucp_ep_rkey_unpack）。
+  bytes  rkey             = 8;
+  // client UCX listener 的 "ip:port"（供 backend ucp_ep_create(SOCK_ADDR) dial）。
+  string client_ucx_addr  = 9;
 }
 
-message AbortSessionResponse {}
+message RdmaChunkResponse {
+  string etag          = 1;
+  uint32 crc32c        = 2;
+  uint64 bytes_received = 3;
+}
 
 service Control {
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc GdsPut(GdsChunkRequest) returns (GdsChunkResponse);
-  rpc AbortSession(AbortSessionRequest) returns (AbortSessionResponse);
+  rpc RdmaPut(RdmaChunkRequest) returns (RdmaChunkResponse);
 }

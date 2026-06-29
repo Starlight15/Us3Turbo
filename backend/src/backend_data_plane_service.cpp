@@ -13,9 +13,6 @@ namespace us3_turbo::backend {
 
 namespace {
 
-constexpr std::string_view kNotImplemented =
-    "backend v1: only single-object GdsPut";
-
 [[nodiscard]] std::string BuildEtag(std::uint32_t crc) {
   char buf[9] = {};
   std::snprintf(buf, sizeof(buf), "%08x", crc);
@@ -29,8 +26,9 @@ constexpr std::string_view kNotImplemented =
 
 }  // namespace
 
-BackendDataPlaneService::BackendDataPlaneService(BackendGdsSink& sink)
-    : sink_(sink) {}
+BackendDataPlaneService::BackendDataPlaneService(BackendGdsSink& sink,
+                                                 rdma::UcxSink& ucx_sink)
+    : sink_(sink), ucx_sink_(ucx_sink) {}
 
 void BackendDataPlaneService::GdsPut(
     google::protobuf::RpcController* cntl_base,
@@ -79,27 +77,59 @@ void BackendDataPlaneService::GdsPut(
 }
 
 // ---------------------------------------------------------------------------
-// v1 占位方法：一律返回 "backend v1: only single-object GdsPut"
+// RdmaPut（UCX 链路）：委托给 ucx_sink_。与 GdsPut 代码独立、无共享逻辑，
+// 仅因 brpc 一个 proto service 只能注册一个 C++ 实例而共处本类。
 // ---------------------------------------------------------------------------
 
-void BackendDataPlaneService::OpenSession(
+void BackendDataPlaneService::RdmaPut(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::OpenSessionRequest* /*request*/,
-    ::us3_turbo::proxy::OpenSessionResponse* /*response*/,
+    const ::us3_turbo::proxy::RdmaChunkRequest* request,
+    ::us3_turbo::proxy::RdmaChunkResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-  cntl->SetFailed(brpc::ENOMETHOD, "%s", std::string(kNotImplemented).c_str());
-}
 
-void BackendDataPlaneService::AbortSession(
-    google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::AbortSessionRequest* /*request*/,
-    ::us3_turbo::proxy::AbortSessionResponse* /*response*/,
-    google::protobuf::Closure* done) {
-  brpc::ClosureGuard done_guard(done);
-  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
-  cntl->SetFailed(brpc::ENOMETHOD, "%s", std::string(kNotImplemented).c_str());
+  if (request->remote_addr() == 0) {
+    cntl->SetFailed("backend v1: missing remote_addr for RdmaPut");
+    return;
+  }
+  if (request->rkey().empty()) {
+    cntl->SetFailed("backend v1: missing rkey for RdmaPut");
+    return;
+  }
+  if (request->client_ucx_addr().empty()) {
+    cntl->SetFailed("backend v1: missing client_ucx_addr for RdmaPut");
+    return;
+  }
+  if (!ucx_sink_.available()) {
+    cntl->SetFailed("backend v1: UCX worker not available");
+    return;
+  }
+
+  const std::string object_id =
+      BuildObjectId(request->bucket(), request->object_key());
+  const auto chunk_size = request->chunk_size();
+
+  spdlog::info("backend.rdmaput recv object={} chunk_size={} "
+               "remote_addr=0x{:x} rkey_bytes={} client_ucx_addr={}",
+               object_id, chunk_size, request->remote_addr(),
+               request->rkey().size(), request->client_ucx_addr());
+
+  auto outcome = ucx_sink_.ReceiveAndDiscard(
+      object_id, request->client_ucx_addr(), request->remote_addr(),
+      request->rkey(), chunk_size);
+  if (!outcome.ok) {
+    cntl->SetFailed("backend v1: " + outcome.error);
+    return;
+  }
+
+  const std::string etag = BuildEtag(outcome.crc32c);
+  response->set_etag(etag);
+  response->set_bytes_received(outcome.bytes_transferred);
+  response->set_crc32c(outcome.crc32c);
+
+  spdlog::info("backend.rdmaput object={} bytes={} crc32c={:x}", object_id,
+               outcome.bytes_transferred, outcome.crc32c);
 }
 
 }  // namespace us3_turbo::backend

@@ -8,8 +8,9 @@
 
 #include "backend/src/backend_data_plane_service.h"
 #include "backend/src/backend_gds_sink.h"
+#include "backend/src/rdma/ucx_sink.h"
 
-DEFINE_int32(backend_brpc_port, 9200, "backend GdsPut brpc port");
+DEFINE_int32(backend_brpc_port, 9200, "backend control-plane brpc port");
 DEFINE_int32(backend_rdma_port, 18516,
              "cuObjServer RDMA listener port (matches gateway default)");
 DEFINE_string(bind_host, "192.168.1.198", "Bind host for brpc and cuObjServer");
@@ -17,7 +18,7 @@ DEFINE_string(public_host, "192.168.1.198", "Public host (unused in v1)");
 DEFINE_int32(num_threads, 4, "brpc worker thread count");
 DEFINE_string(backend_id, "backend-0", "Backend identifier");
 DEFINE_bool(backend_compute_crc32c, true,
-            "Compute CRC32C over received bytes in the GDS sink (for "
+            "Compute CRC32C over received bytes in the GDS/UCX sinks (for "
             "end-to-end verification). Turn off to skip the scan and "
             "measure raw transfer throughput (crc32c/etag then 0).");
 
@@ -49,7 +50,17 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  us3_turbo::backend::BackendDataPlaneService service(sink);
+  // UCX rdma 链路 sink（与 gds sink 独立）。Start 失败不致命：gds 链路仍可用，
+  // 但 RdmaPut 会拒绝。日志告警，不退出。
+  us3_turbo::backend::rdma::UcxSink ucx_sink(FLAGS_backend_compute_crc32c);
+  if (!ucx_sink.Start()) {
+    spdlog::warn("backend: UCX sink start failed, RdmaPut will be unavailable");
+  }
+
+  // gds 与 rdma 两条链路共处一个 BackendDataPlaneService：brpc 一个 proto
+  // service 只能注册一个 C++ 实例（按 service descriptor full_name 去重），
+  // 故 RdmaPut 与 GdsPut 由同一对象持有，但内部代码独立、无共享逻辑。
+  us3_turbo::backend::BackendDataPlaneService service(sink, ucx_sink);
 
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
@@ -72,6 +83,7 @@ int main(int argc, char** argv) {
 
   server.Stop(0);
   server.Join();
+  ucx_sink.Stop();
   sink.Stop();
   spdlog::info("backend stopped");
   return EXIT_SUCCESS;

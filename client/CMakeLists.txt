@@ -4,8 +4,8 @@
 # UploadCoordinator 等)。本期范围:只实现 GDS PUT(跑通 gds_put_example),
 # 不实现分段上传、HeadObject、GetObject、RDMA。
 #
-# Mode B：MetaRpc + ChunkRpc 合并为单 ProxyRpc（OpenSession / GdsPut /
-# AbortSession 共用一条到 proxy 的 brpc channel）。
+# Mode B：MetaRpc + ChunkRpc 合并为单 ProxyRpc（GdsPut / RdmaPut
+# 共用一条到 proxy 的 brpc channel）。
 #
 # proto 生成产物(control_plane.pb.*)由根 CMake 生成在
 # US3_TURBO_ACCESS_GENERATED_DIR,直接 include 即可。
@@ -16,7 +16,8 @@ add_library(us3_turbo_client
   src/contracts/request_builder.cpp
   src/proxy_rpc.cpp
   src/data/crc32c.cpp
-  src/gds_transport/gds_memory_manager.cpp)
+  src/gds_transport/gds_memory_manager.cpp
+  src/rdma_transport/ucx_memory_manager.cpp)
 
 add_dependencies(us3_turbo_client
   us3_turbo_control_plane_proto)
@@ -43,7 +44,8 @@ target_link_libraries(us3_turbo_client
     nlohmann_json::nlohmann_json
     us3_turbo_brpc
     ${CUOBJCLIENT_LIBRARY}
-    ${CUDART_LIBRARY})
+    ${CUDART_LIBRARY}
+    ${UCP_LIBRARY} ${UCS_LIBRARY} ${UCT_LIBRARY} ${UCM_LIBRARY})
 
 target_compile_options(us3_turbo_client
   PRIVATE

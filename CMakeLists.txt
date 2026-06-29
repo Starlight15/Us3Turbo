@@ -100,6 +100,12 @@ list(SORT ABSEIL_STATIC_LIBRARIES)
 
 find_library(IBVERBS_LIBRARY NAMES ibverbs REQUIRED)
 find_library(RDMACM_LIBRARY NAMES rdmacm REQUIRED)
+# UCX (libucp) — RDMA(host↔host) 链路用 ucp_get_nbx 后端拉取。系统级 1.18.0。
+# ucp 依赖 ucs/uct/ucm；ucx 的 .so 无内部 DT_NEEDED 全连，故显式列齐。
+find_library(UCP_LIBRARY NAMES ucp REQUIRED)
+find_library(UCS_LIBRARY NAMES ucs REQUIRED)
+find_library(UCT_LIBRARY NAMES uct REQUIRED)
+find_library(UCM_LIBRARY NAMES ucm REQUIRED)
 find_library(CUOBJSERVER_LIBRARY NAMES cuobjserver REQUIRED)
 find_library(CUOBJCLIENT_LIBRARY NAMES cuobjclient
   HINTS

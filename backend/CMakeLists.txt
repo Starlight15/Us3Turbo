@@ -8,7 +8,10 @@ add_executable(us3_turbo_backend
   #   common/crc32c.cpp —— 自包含 CRC32C,供 PUT 丢弃前算校验和做端到端校验
   src/gds/buffer_pool.cpp
   src/gds/cuobj_resources.cpp
-  src/common/crc32c.cpp)
+  src/common/crc32c.cpp
+  # RDMA(UCX)数据面:与 gds 链路独立,不复用 gds 资源。
+  src/rdma/ucx_resources.cpp
+  src/rdma/ucx_sink.cpp)
 
 add_dependencies(us3_turbo_backend
   us3_turbo_control_plane_proto)
@@ -28,7 +31,8 @@ target_link_libraries(us3_turbo_backend
     us3_turbo_brpc
     ${CUOBJSERVER_LIBRARY}
     ${IBVERBS_LIBRARY}
-    ${CUDART_LIBRARY})
+    ${CUDART_LIBRARY}
+    ${UCP_LIBRARY} ${UCS_LIBRARY} ${UCT_LIBRARY} ${UCM_LIBRARY})
 
 if(UNIX AND NOT APPLE)
   target_link_libraries(us3_turbo_backend PRIVATE dl)

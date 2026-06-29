@@ -1,8 +1,7 @@
 add_executable(us3_turbo_proxy
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/main.cpp
-  src/service/proxy_control_plane_service.cpp
-  src/session/session_manager.cpp)
+  src/service/proxy_control_plane_service.cpp)
 
 add_dependencies(us3_turbo_proxy
   us3_turbo_control_plane_proto)
@@ -18,6 +17,13 @@ target_link_libraries(us3_turbo_proxy
     us3_turbo_common
     us3_turbo_spdlog
     us3_turbo_brpc)
+
+target_compile_options(us3_turbo_proxy
+  PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion)
 
 target_compile_options(us3_turbo_proxy
   PRIVATE

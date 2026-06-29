@@ -29,8 +29,8 @@ struct PutObjectRequest {
   std::string key;
   std::chrono::milliseconds timeout{std::chrono::milliseconds(30000)};
   /**
-   * GDS 通路必须显式设置且 > 0：proxy 的 OpenSession 据此校验，backend
-   * 据此 RDMA-READ。未设置时 GDS PUT 会被 proxy 以 "expected_size must be > 0" 拒绝。
+   * GDS 通路必须显式设置且 > 0：proxy 的 GdsPut 据此校验，backend
+   * 据此 RDMA-READ。未设置时 GDS PUT 会被 proxy 以 "chunk_size must be > 0" 拒绝。
    */
   std::optional<std::uint64_t> expected_size;
 
@@ -64,8 +64,6 @@ struct TransferOutcome {
   std::size_t bytes_transferred{0};
   /** Service-side request identifier, useful for log correlation. */
   std::string request_id;
-  /** Transfer session identifier (control plane). */
-  std::string session_id;
   /** ETag assigned by the backend on PUT. */
   std::string etag;
   /**

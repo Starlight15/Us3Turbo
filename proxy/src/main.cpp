@@ -7,12 +7,10 @@
 #include <spdlog/spdlog.h>
 
 #include "proxy/src/service/proxy_control_plane_service.h"
-#include "proxy/src/session/session_manager.h"
 
 DEFINE_int32(proxy_port, 9100, "proxy control-plane brpc port");
 DEFINE_string(bind_host, "192.168.1.198", "Bind host for the brpc listener");
 DEFINE_int32(num_threads, 4, "brpc worker thread count");
-DEFINE_int64(session_ttl_sec, 300, "Session TTL in seconds");
 DEFINE_string(gateway_id, "proxy-0", "Proxy identifier");
 DEFINE_string(backend_endpoint, "192.168.1.198:9200",
               "GDS backend data plane endpoint (proxy forwards GdsPut here)");
@@ -38,10 +36,8 @@ void RunUntilAskedToQuit() {
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  us3_turbo::proxy::SessionManager session_mgr(FLAGS_session_ttl_sec);
   us3_turbo::proxy::ProxyControlPlaneService service(
-      FLAGS_gateway_id, FLAGS_backend_endpoint, FLAGS_backend_timeout_ms,
-      session_mgr);
+      FLAGS_gateway_id, FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
 
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

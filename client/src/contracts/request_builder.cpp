@@ -11,7 +11,6 @@ namespace us3_turbo::client {
 namespace {
 
 constexpr char kRequestIdPrefix[] = "req-";
-constexpr char kSessionIdPrefix[] = "ses-";
 
 [[nodiscard]] std::string MakeId(std::string_view prefix) {
   static thread_local std::mt19937_64 rng{
@@ -40,7 +39,6 @@ PutAttempt MakePutAttempt(const ClientOptions& options,
       .key = request.key,
       .length = request.expected_size,
       .request_id = MakeId(kRequestIdPrefix),
-      .session_id = MakeId(kSessionIdPrefix),
   };
 }
 
@@ -50,7 +48,6 @@ TransferOutcome MakeTransferOutcome(const PutAttempt& attempt,
   TransferOutcome outcome;
   outcome.bytes_transferred = buffer.size;
   outcome.request_id        = attempt.request_id;
-  outcome.session_id        = attempt.session_id;
   outcome.etag              = result.etag;
   outcome.crc32c            = result.crc32c;
   return outcome;
