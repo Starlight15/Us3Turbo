@@ -13,7 +13,6 @@
 add_library(us3_turbo_client
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
-  src/contracts/request_builder.cpp
   src/proxy_rpc.cpp
   src/data/crc32c.cpp
   src/gds_transport/gds_memory_manager.cpp

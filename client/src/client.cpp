@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstdio>
 #include <random>
 #include <span>
 #include <string>
@@ -14,7 +15,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include "client/src/contracts/request_builder.h"
 #include "client/src/contracts/requests.h"
 #include "client/src/data/crc32c.h"
 #include "client/src/gds_transport/gds_memory_manager.h"
@@ -28,6 +28,23 @@ using clk = std::chrono::steady_clock;
 
 constexpr char kNotInitializedMsg[] =
     "Client is not initialized. Call Client::Initialize first.";
+
+// 每次（含每次重试）生成新 request_id，用于跨端日志关联。
+[[nodiscard]] std::string MakeRequestId() {
+  static thread_local std::mt19937_64 rng{
+      static_cast<std::uint64_t>(std::random_device{}()) ^
+      static_cast<std::uint64_t>(
+          std::chrono::steady_clock::now().time_since_epoch().count())};
+  char buf[17];
+  std::snprintf(buf, sizeof(buf), "%016lx", rng());
+  return std::string("req-") + buf;
+}
+
+// per-attempt 超时：request.timeout > 0 则用之，否则回退到 options.request_timeout。
+[[nodiscard]] std::chrono::milliseconds ResolveTimeout(
+    const ClientOptions& options, const PutObjectRequest& request) {
+  return (request.timeout.count() > 0) ? request.timeout : options.request_timeout;
+}
 
 struct RetryPolicy {
   int                       max_attempts{3};
@@ -63,7 +80,8 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
                           ConstBufferView buffer,
                           TransferOutcome& out) {
   assert(gds_mgr != nullptr);
-  auto attempt = MakePutAttempt(options, request);
+  const std::string request_id = MakeRequestId();
+  const auto timeout = ResolveTimeout(options, request);
 
   const bool trace = options.latency_trace;
   auto t0 = clk::now();
@@ -75,12 +93,15 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
   auto t_token = clk::now();
 
   GdsPutResult result;
-  if (!proxy.Put(attempt, token.str(), buffer.size, result)) {
+  if (!proxy.Put(request, request_id, timeout, token.str(), buffer.size, result)) {
     return false;
   }
   auto t_put = clk::now();
 
-  out = MakeTransferOutcome(attempt, result, buffer);
+  out.bytes_transferred = buffer.size;
+  out.request_id        = request_id;
+  out.etag              = result.etag;
+  out.crc32c            = result.crc32c;
 
   // 端到端 CRC32C 一致性校验(可选):把 device buffer 拷回 host 计算本地 CRC32C,
   // 与 backend 在 GdsChunkResponse.crc32c 回传的值比对。不一致视为失败(返回 false,
@@ -90,7 +111,7 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
     if (cudaError_t e = cudaMemcpy(host.data(), buffer.data, buffer.size,
                                    cudaMemcpyDeviceToHost); e != cudaSuccess) {
       spdlog::error("GdsPut (req={}): verify_crc32c D2H copy failed: {}",
-                    attempt.request_id, cudaGetErrorString(e));
+                    request_id, cudaGetErrorString(e));
       return false;
     }
     const std::uint32_t local = Crc32c(std::span<const std::byte>(host.data(), host.size()));
@@ -98,12 +119,12 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
     if (local == remote) {
       spdlog::info("GdsPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
                    "bucket={}/{} bytes={}",
-                   attempt.request_id, local, remote, attempt.bucket, attempt.key,
+                   request_id, local, remote, request.bucket, request.key,
                    buffer.size);
     } else {
       spdlog::error("GdsPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
                     "bucket={}/{} bytes={}",
-                    attempt.request_id, local, remote, attempt.bucket, attempt.key,
+                    request_id, local, remote, request.bucket, request.key,
                     buffer.size);
       return false;
     }
@@ -115,7 +136,7 @@ bool RetryIfRetryable(const RetryPolicy& policy, Fn&& fn) {
     };
     spdlog::info("GdsPut trace (req={}): token={:.3f}ms "
                  "put={:.3f}ms total={:.3f}ms bytes={}",
-                 attempt.request_id, ms(t0, t_token),
+                 request_id, ms(t0, t_token),
                  ms(t_token, t_put), ms(t0, t_put), buffer.size);
   }
 
@@ -202,7 +223,8 @@ bool Client::PutObject(const PutObjectRequest& request,
                                ConstBufferView buffer,
                                TransferOutcome& out) {
   assert(ucx_mgr != nullptr);
-  auto attempt = MakePutAttempt(options, request);
+  const std::string request_id = MakeRequestId();
+  const auto timeout = ResolveTimeout(options, request);
 
   const bool trace = options.latency_trace;
   auto t0 = clk::now();
@@ -214,13 +236,16 @@ bool Client::PutObject(const PutObjectRequest& request,
   auto t_desc = clk::now();
 
   GdsPutResult result;
-  if (!proxy.RdmaPut(attempt, desc.remote_addr, desc.rkey,
+  if (!proxy.RdmaPut(request, request_id, timeout, desc.remote_addr, desc.rkey,
                      desc.client_ucx_addr, buffer.size, result)) {
     return false;
   }
   auto t_put = clk::now();
 
-  out = MakeTransferOutcome(attempt, result, buffer);
+  out.bytes_transferred = buffer.size;
+  out.request_id        = request_id;
+  out.etag              = result.etag;
+  out.crc32c            = result.crc32c;
 
   // 端到端 CRC32C 校验（可选）：host buffer 直接算本地 CRC（无需 D2H 拷贝，
   // 这是 rdma 链路相比 gds 的一个便利），与 backend 回传的 crc32c 比对。
@@ -232,12 +257,12 @@ bool Client::PutObject(const PutObjectRequest& request,
     if (local == remote) {
       spdlog::info("RdmaPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
                    "bucket={}/{} bytes={}",
-                   attempt.request_id, local, remote, attempt.bucket, attempt.key,
+                   request_id, local, remote, request.bucket, request.key,
                    buffer.size);
     } else {
       spdlog::error("RdmaPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
                     "bucket={}/{} bytes={}",
-                    attempt.request_id, local, remote, attempt.bucket, attempt.key,
+                    request_id, local, remote, request.bucket, request.key,
                     buffer.size);
       return false;
     }
@@ -249,7 +274,7 @@ bool Client::PutObject(const PutObjectRequest& request,
     };
     spdlog::info("RdmaPut trace (req={}): desc={:.3f}ms "
                  "put={:.3f}ms total={:.3f}ms bytes={}",
-                 attempt.request_id, ms(t0, t_desc),
+                 request_id, ms(t0, t_desc),
                  ms(t_desc, t_put), ms(t0, t_put), buffer.size);
   }
 
