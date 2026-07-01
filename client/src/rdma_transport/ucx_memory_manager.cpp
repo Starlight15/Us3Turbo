@@ -5,6 +5,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -50,21 +52,35 @@ void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   }
 }
 
-UcxMemoryManager::UcxMemoryManager() {
-  ucp_params_t ctx_params{};
-  ctx_params.field_mask = UCP_PARAM_FIELD_FEATURES;
-  ctx_params.features = UCP_FEATURE_RMA;
+// ===========================================================================
+//  分阶段 init：构造函数逐阶段调用，失败时由调用方按反向顺序 cleanup。
+// ===========================================================================
+
+bool UcxMemoryManager::InitContext() {
   ucp_config_t* config = nullptr;
   if (ucp_config_read(nullptr, nullptr, &config) != UCS_OK) {
     spdlog::error("UcxMemoryManager: ucp_config_read failed");
-    return;
+    return false;
   }
+
+  ucp_params_t ctx_params{};
+  ctx_params.field_mask = UCP_PARAM_FIELD_FEATURES;
+  ctx_params.features = UCP_FEATURE_RMA;
+
   ucs_status_t st = ucp_init(&ctx_params, config, &context_);
   ucp_config_release(config);
+
   if (st != UCS_OK) {
     spdlog::error("UcxMemoryManager: ucp_init failed: {}", ucs_status_string(st));
-    return;
+    context_ = nullptr;
+    return false;
   }
+
+  return true;
+}
+
+bool UcxMemoryManager::InitWorker() {
+  assert(context_ != nullptr);  // 前置条件：InitContext 成功
 
   // UCS_THREAD_MODE_MULTI：client 单例被 bench 多 worker 线程共享，且
   // listener conn_handler 在 UCX 内部线程触发、与 AcquireDescriptor 调用
@@ -72,14 +88,20 @@ UcxMemoryManager::UcxMemoryManager() {
   ucp_worker_params_t wparams{};
   wparams.field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
   wparams.thread_mode = UCS_THREAD_MODE_MULTI;
-  st = ucp_worker_create(context_, &wparams, &worker_);
+
+  ucs_status_t st = ucp_worker_create(context_, &wparams, &worker_);
   if (st != UCS_OK) {
     spdlog::error("UcxMemoryManager: ucp_worker_create failed: {}",
                   ucs_status_string(st));
-    ucp_cleanup(context_);
-    context_ = nullptr;
-    return;
+    worker_ = nullptr;
+    return false;
   }
+
+  return true;
+}
+
+bool UcxMemoryManager::InitListener() {
+  assert(worker_ != nullptr);  // 前置条件：InitWorker 成功
 
   // listener 绑定 kDefaultBindIp，端口 0 让系统分配，再 query 取回。
   sockaddr_in addr{};
@@ -87,8 +109,9 @@ UcxMemoryManager::UcxMemoryManager() {
   addr.sin_port = 0;  // 系统分配
   if (inet_pton(AF_INET, kDefaultBindIp, &addr.sin_addr) != 1) {
     spdlog::error("UcxMemoryManager: invalid bind ip {}", kDefaultBindIp);
-    return;
+    return false;
   }
+
   ucp_listener_params_t lparams{};
   lparams.field_mask =
       UCP_LISTENER_PARAM_FIELD_SOCK_ADDR | UCP_LISTENER_PARAM_FIELD_CONN_HANDLER;
@@ -96,18 +119,21 @@ UcxMemoryManager::UcxMemoryManager() {
   lparams.sockaddr.addrlen = sizeof(addr);
   lparams.conn_handler.cb = &UcxMemoryManager::ConnCallback;
   lparams.conn_handler.arg = this;
-  st = ucp_listener_create(worker_, &lparams, &listener_);
+
+  ucs_status_t st = ucp_listener_create(worker_, &lparams, &listener_);
   if (st != UCS_OK) {
     spdlog::error("UcxMemoryManager: ucp_listener_create failed: {}",
                   ucs_status_string(st));
-    return;
+    listener_ = nullptr;
+    return false;
   }
 
+  // 查询实际绑定地址，随 Descriptor 透传给 backend。
   ucp_listener_attr_t lattr{};
   lattr.field_mask = UCP_LISTENER_ATTR_FIELD_SOCKADDR;
   if (ucp_listener_query(listener_, &lattr) != UCS_OK) {
     spdlog::error("UcxMemoryManager: ucp_listener_query failed");
-    return;
+    return false;
   }
   char host[NI_MAXHOST] = {};
   char serv[NI_MAXSERV] = {};
@@ -115,12 +141,16 @@ UcxMemoryManager::UcxMemoryManager() {
                   sizeof(lattr.sockaddr), host, sizeof(host), serv, sizeof(serv),
                   NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
     spdlog::error("UcxMemoryManager: getnameinfo failed");
-    return;
+    return false;
   }
   listen_addr_ = std::string(host) + ":" + std::string(serv);
 
-  started_ = true;
   spdlog::info("UcxMemoryManager: listener at {}", listen_addr_);
+  return true;
+}
+
+void UcxMemoryManager::StartProgressThread() {
+  assert(worker_ != nullptr);  // 前置条件
 
   // 起后台 progress 线程驱动 listener 的 conn_handler（见头注释）。
   // 不请求 UCP_FEATURE_WAKEUP（避免 eventfd/signal 路径），用 spin + idle
@@ -136,6 +166,49 @@ UcxMemoryManager::UcxMemoryManager() {
   });
 }
 
+void UcxMemoryManager::CleanupContext() {
+  if (context_ != nullptr) {
+    ucp_cleanup(context_);
+    context_ = nullptr;
+  }
+}
+
+void UcxMemoryManager::CleanupWorker() {
+  if (worker_ != nullptr) {
+    ucp_worker_destroy(worker_);
+    worker_ = nullptr;
+  }
+}
+
+void UcxMemoryManager::CleanupListener() {
+  if (listener_ != nullptr) {
+    ucp_listener_destroy(listener_);
+    listener_ = nullptr;
+  }
+}
+
+// ===========================================================================
+//  构造/析构：逐阶段 init，失败按反向顺序回滚。
+// ===========================================================================
+
+UcxMemoryManager::UcxMemoryManager() {
+  if (!InitContext()) {
+    return;
+  }
+  if (!InitWorker()) {
+    CleanupContext();
+    return;
+  }
+  if (!InitListener()) {
+    CleanupWorker();
+    CleanupContext();
+    return;
+  }
+
+  StartProgressThread();
+  started_ = true;
+}
+
 UcxMemoryManager::~UcxMemoryManager() {
   stop_.store(true, std::memory_order_release);
   if (progress_thread_.joinable()) {
@@ -148,9 +221,9 @@ UcxMemoryManager::~UcxMemoryManager() {
     }
     registered_.clear();
   }
-  if (listener_ != nullptr) ucp_listener_destroy(listener_);
-  if (worker_ != nullptr) ucp_worker_destroy(worker_);
-  if (context_ != nullptr) ucp_cleanup(context_);
+  CleanupListener();
+  CleanupWorker();
+  CleanupContext();
 }
 
 bool UcxMemoryManager::Instance(UcxMemoryManager*& out) {

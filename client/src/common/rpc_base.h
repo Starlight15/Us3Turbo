@@ -23,7 +23,7 @@ class RpcBase {
  public:
   RpcBase(const std::string& endpoint,
           std::chrono::milliseconds timeout,
-          std::string_view role) {
+          std::string_view role) : default_timeout_(timeout) {
     if (endpoint.empty()) {
       init_error_ = role.empty()
                         ? std::string{"endpoint must not be empty"}
@@ -59,11 +59,15 @@ class RpcBase {
   [[nodiscard]] const std::string& init_error() const { return init_error_; }
 
  protected:
-  void ApplyTimeout(brpc::Controller& controller, std::chrono::milliseconds timeout) const {
-    controller.set_timeout_ms(static_cast<int>(timeout.count()));
+  void ApplyTimeout(brpc::Controller& controller) const {
+    controller.set_timeout_ms(static_cast<int>(default_timeout_.count()));
   }
 
   [[nodiscard]] us3_turbo::proxy::Control_Stub* stub() const { return stub_.get(); }
+
+  // 构造时传入的默认 RPC 超时（统一用 options.default_timeout；per-request
+  // 超时已移除）。ApplyTimeout 据此设 controller 超时。
+  std::chrono::milliseconds default_timeout_{};
 
  private:
   std::unique_ptr<brpc::Channel>                  channel_;

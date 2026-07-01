@@ -12,8 +12,8 @@ namespace us3_turbo::client {
  *        us3_turbo::gateway::common::Crc32c 算法完全一致
  *        (reflected 多项式 0x82F63B78 / init 0xFFFFFFFF / finalize ^0xFFFFFFFF)。
  *
- * 用于 GDS PUT 端到端一致性校验:client 对 device buffer 拷回 host 的内容算
- *        CRC32C,与 backend 在 GdsChunkResponse.crc32c 里回传的值比对。
+ * 用于 PUT 端到端一致性校验:client 对 buffer（GDS 通路先 D2H 拷回 host）
+ *        的内容算 CRC32C,与 backend 在 PutPathResult.crc32c 里回传的值比对。
  *
  * 两端各自维护一份实现,故意不共用,避免一端改动牵动另一端 wire 行为;
  *        任何对算法的修改都必须两端同步并通过 bench --verify-crc32c 校验。

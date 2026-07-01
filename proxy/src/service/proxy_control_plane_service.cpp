@@ -11,6 +11,16 @@
 
 namespace us3_turbo::proxy {
 
+namespace {
+
+// path 是否包含某通路（bitflags：PATH_ALL=PATH_GDS|PATH_UCX）。
+bool HasPath(::us3_turbo::proxy::PutDataPath flags,
+             ::us3_turbo::proxy::PutDataPath check) {
+  return (static_cast<int>(flags) & static_cast<int>(check)) != 0;
+}
+
+}  // namespace
+
 ProxyControlPlaneService::ProxyControlPlaneService(
     std::string gateway_id,
     std::string backend_endpoint,
@@ -39,22 +49,39 @@ ProxyControlPlaneService::ProxyControlPlaneService(
                backend_endpoint_, backend_timeout_ms_);
 }
 
+// 把 backend 返回的 PutPathResult 原样回填给 client 响应。backend 已填好
+// ok/etag/crc32c/bytes_written（失败时 ok=false + error_*）。
+static void ForwardResult(::us3_turbo::proxy::PutPathResult* response,
+                          const ::us3_turbo::proxy::PutPathResult& bresp) {
+  response->CopyFrom(bresp);
+}
+
 void ProxyControlPlaneService::GdsPut(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::GdsChunkRequest* request,
-    ::us3_turbo::proxy::GdsChunkResponse* response,
+    const ::us3_turbo::proxy::ClientProxyPutRequest* request,
+    ::us3_turbo::proxy::PutPathResult* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  // 内联参数校验（原 OpenSession 职责塌入此处）。
-  if (request->bucket().empty() || request->object_key().empty()) {
-    cntl->SetFailed(PROXY_ERR_INVALID_PARAM, "missing bucket or object_key");
+  // 内联参数校验。
+  if (request->bucket().empty() || request->key().empty()) {
+    cntl->SetFailed(PROXY_ERR_INVALID_PARAM, "missing bucket or key");
     return;
   }
-  if (request->chunk_size() == 0) {
+  if (request->object_size() == 0) {
     cntl->SetFailed(PROXY_ERR_INVALID_PARAM,
-                    "chunk_size must be > 0 for GDS PUT");
+                    "object_size must be > 0 for GDS PUT");
+    return;
+  }
+  if (!HasPath(request->path(), ::us3_turbo::proxy::PATH_GDS)) {
+    cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED,
+                    "GdsPut requires path with PATH_GDS");
+    return;
+  }
+  if (!request->has_gds_source()) {
+    cntl->SetFailed(PROXY_ERR_MISSING_SOURCE,
+                    "GdsPut requires gds_source");
     return;
   }
   if (backend_stub_ == nullptr) {
@@ -65,7 +92,7 @@ void ProxyControlPlaneService::GdsPut(
   // ---- 同步转发给 backend（bthread 阻塞，会 yield 让出）----
   brpc::Controller bcntl;
   bcntl.set_timeout_ms(backend_timeout_ms_);
-  ::us3_turbo::proxy::GdsChunkResponse bresp;
+  ::us3_turbo::proxy::PutPathResult bresp;
   backend_stub_->GdsPut(&bcntl, request, &bresp, nullptr);
   if (bcntl.Failed()) {
     cntl->SetFailed(PROXY_ERR_BACKEND_RPC,
@@ -74,33 +101,41 @@ void ProxyControlPlaneService::GdsPut(
     return;
   }
 
-  response->set_etag(bresp.etag());
-  response->set_crc32c(bresp.crc32c());
-  response->set_bytes_received(bresp.bytes_received());
+  ForwardResult(response, bresp);
 
   spdlog::info("GdsPut: forwarded etag={} crc32c={:x} bytes={}",
-               bresp.etag(), bresp.crc32c(), bresp.bytes_received());
+               bresp.etag(), bresp.crc32c(), bresp.bytes_written());
 }
 
 // ---------------------------------------------------------------------------
-// RdmaPut（UCX 链路）：同步转发给 backend。与 GdsPut 代码独立、无共享逻辑，
+// UcxPut（UCX 链路）：同步转发给 backend。与 GdsPut 代码独立、无共享逻辑，
 // 仅因 brpc 一个 proto service 只能注册一个 C++ 实例而共处本类。
 // ---------------------------------------------------------------------------
-void ProxyControlPlaneService::RdmaPut(
+void ProxyControlPlaneService::UcxPut(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::RdmaChunkRequest* request,
-    ::us3_turbo::proxy::RdmaChunkResponse* response,
+    const ::us3_turbo::proxy::ClientProxyPutRequest* request,
+    ::us3_turbo::proxy::PutPathResult* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  if (request->bucket().empty() || request->object_key().empty()) {
-    cntl->SetFailed(PROXY_ERR_INVALID_PARAM, "missing bucket or object_key");
+  if (request->bucket().empty() || request->key().empty()) {
+    cntl->SetFailed(PROXY_ERR_INVALID_PARAM, "missing bucket or key");
     return;
   }
-  if (request->chunk_size() == 0) {
+  if (request->object_size() == 0) {
     cntl->SetFailed(PROXY_ERR_INVALID_PARAM,
-                    "chunk_size must be > 0 for RDMA PUT");
+                    "object_size must be > 0 for UCX PUT");
+    return;
+  }
+  if (!HasPath(request->path(), ::us3_turbo::proxy::PATH_UCX)) {
+    cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED,
+                    "UcxPut requires path with PATH_UCX");
+    return;
+  }
+  if (!request->has_ucx_source()) {
+    cntl->SetFailed(PROXY_ERR_MISSING_SOURCE,
+                    "UcxPut requires ucx_source");
     return;
   }
   if (backend_stub_ == nullptr) {
@@ -110,21 +145,19 @@ void ProxyControlPlaneService::RdmaPut(
 
   brpc::Controller bcntl;
   bcntl.set_timeout_ms(backend_timeout_ms_);
-  ::us3_turbo::proxy::RdmaChunkResponse bresp;
-  backend_stub_->RdmaPut(&bcntl, request, &bresp, nullptr);
+  ::us3_turbo::proxy::PutPathResult bresp;
+  backend_stub_->UcxPut(&bcntl, request, &bresp, nullptr);
   if (bcntl.Failed()) {
     cntl->SetFailed(PROXY_ERR_BACKEND_RPC,
-                    "backend RdmaPut failed: %s",
+                    "backend UcxPut failed: %s",
                     bcntl.ErrorText().c_str());
     return;
   }
 
-  response->set_etag(bresp.etag());
-  response->set_crc32c(bresp.crc32c());
-  response->set_bytes_received(bresp.bytes_received());
+  ForwardResult(response, bresp);
 
-  spdlog::info("RdmaPut: forwarded etag={} crc32c={:x} bytes={}",
-               bresp.etag(), bresp.crc32c(), bresp.bytes_received());
+  spdlog::info("UcxPut: forwarded etag={} crc32c={:x} bytes={}",
+               bresp.etag(), bresp.crc32c(), bresp.bytes_written());
 }
 
 }  // namespace us3_turbo::proxy

@@ -60,6 +60,17 @@ class UcxMemoryManager {
 
   [[nodiscard]] bool RegisterBufferUnderLock(void* ptr, std::size_t size);
 
+  // 构造/析构分阶段 init/cleanup：每阶段只负责一个 UCX 组件，构造时
+  // 逐阶段推进，任一阶段失败则按反向顺序回滚已完成的阶段。
+  [[nodiscard]] bool InitContext();
+  [[nodiscard]] bool InitWorker();
+  [[nodiscard]] bool InitListener();
+  void              StartProgressThread();
+
+  void              CleanupListener();
+  void              CleanupWorker();
+  void              CleanupContext();
+
   // listener conn_handler 回调里把新 ep 交给 worker（demo 用法），但本管理器
   // 不持有 ep——backend 主动 dial 建 ep，client 侧的 accept ep 只为完成握手。
   static void ConnCallback(ucp_conn_request_h req, void* arg);

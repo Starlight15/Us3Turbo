@@ -4,58 +4,76 @@ package us3_turbo.proxy;
 
 option cc_generic_services = true;
 
-// Mode B：所有控制面经 proxy。client 只与 proxy 交互；单次 PUT RPC（GdsPut /
-// RdmaPut）自带 bucket/key/chunk_size + 描述符，proxy 内联校验后同步转发给
-// backend，backend 反向 RDMA-READ 完返回 etag/crc/bytes，proxy 直接回 client。
-// 不再有 OpenSession/session/ticket：Mode B 下 client 只与 proxy 一跳，无需跨
-// 跳关联，session 记录在 v1（无 CompleteUpload/multipart）里是无读者的死路径。
+// Mode B：所有控制面经 proxy。client 只与 proxy 交互；统一 PutObject 接口按
+// PutDataPath 选择通路（PATH_GDS / PATH_UCX；PATH_ALL 推迟到后续版本）。
+// 两条链路各对应一个独立 RPC（GdsPut / UcxPut），保持代码与测试隔离：
 //
-// v1 实现 GDS PUT + RDMA PUT（UCX）两条独立链路；gds 与 rdma 两条链路第一版不
-// 做任何共同逻辑抽象，各自独立实现。
-
-message GdsChunkRequest {
-  string request_id       = 1;
-  // 字段 2 (session_id) / 3 (transfer_ticket) 已随 OpenSession 移除，留空隙。
-  string bucket           = 4;
-  string object_key       = 5;
-  uint64 chunk_size       = 6;
-  string rdma_token       = 7;
-}
-
-message GdsChunkResponse {
-  string etag          = 1;
-  uint32 crc32c        = 2;
-  uint64 bytes_received = 3;
-}
-
-// RDMA PUT 链路（UCX，host↔host，无 GPU）：client CPU 内存 → backend CPU 内存，
-// backend 经已建立的 UCX ep 用 ucp_get_nbx 反向拉取。与 Gds 链路独立、不共享逻辑。
+//   client → PutObject(req{path,...}, buffer, resp)
+//          ├─ PATH_GDS → AcquireToken(device) → GdsPut → resp.gds_result
+//          └─ PATH_UCX → AcquireDescriptor(host) → UcxPut → resp.ucx_result
+//   proxy : GdsPut/UcxPut 校验后同步转发 backend，回 PutPathResult
+//   backend: GdsPut → cuObj RDMA-READ token；UcxPut → ucp_get_nbx 反向拉
 //
-// 与 GdsChunkRequest 的本质差异：UCX RMA 是连接式，ucp_get_nbx 必须在已建 ep
-// 上发起，故不能像 Gds 的 cuObj DC token 那样自描述塞进 RPC 一次透传。
-// 改由 client 监听 UCX listener，把 listener 地址 + remote_addr + packed rkey
-// 一并塞进 RdmaPut，backend 收到后主动 dial client 建 ep、unpack rkey、get_nbx 拉。
-message RdmaChunkRequest {
-  string request_id       = 1;
-  // 字段 2 (session_id) / 3 (transfer_ticket) 已随 OpenSession 移除，留空隙。
-  string bucket           = 4;
-  string object_key       = 5;
-  uint64 chunk_size       = 6;
-  // client 侧 host buffer 的虚拟地址（供 backend ucp_get_nbx 作 remote_addr）。
-  uint64 remote_addr      = 7;
-  // ucp_rkey_pack 导出的 packed rkey（供 backend ucp_ep_rkey_unpack）。
-  bytes  rkey             = 8;
-  // client UCX listener 的 "ip:port"（供 backend ucp_ep_create(SOCK_ADDR) dial）。
-  string client_ucx_addr  = 9;
+// gds 与 ucx 两条链路第一版不做任何共同逻辑抽象，各自独立实现。
+// request_id 保留作跨端日志关联。wire 内部协同重编，无外部兼容承诺。
+
+// PUT 通路选择。bitflags 语义但 v1 仅支持单路（PATH_GDS / PATH_UCX）；
+// PATH_NONE=0 作无效默认（client 校验拒绝）；PATH_ALL 推迟（单 buffer 无法
+// 同时喂 device 显存 + host 内存）。
+enum PutDataPath {
+  PATH_NONE = 0;
+  PATH_GDS  = 1;
+  PATH_UCX  = 2;
+  PATH_ALL  = 3;
 }
 
-message RdmaChunkResponse {
-  string etag          = 1;
-  uint32 crc32c        = 2;
-  uint64 bytes_received = 3;
+// GDS 通路数据源：cuObj RDMA token（client 显存地址 + remote key 的自描述串）。
+message GdsDataSource {
+  string rdma_token = 1;
 }
 
+// UCX 通路数据源：host buffer 虚拟地址 + packed rkey + client UCX listener 地址。
+// UCX RMA 连接式，backend 须据 client_ucx_addr 主动 dial 建 ep 后 ucp_get_nbx。
+// packed_rkey 为 ucp_rkey_pack 导出的裸字节，故用 bytes（非 UTF-8 安全）。
+message UcxDataSource {
+  uint64 remote_addr     = 1;
+  bytes  packed_rkey     = 2;
+  string client_ucx_addr = 3;
+}
+
+// client → proxy 统一 PUT 请求。path 必填；对应通路的 source 按需填充
+//（PATH_GDS→gds_source，PATH_UCX→ucx_source）。optional 未设则不序列化。
+message ClientProxyPutRequest {
+  string                     request_id  = 1;
+  string                     bucket      = 2;
+  string                     key         = 3;
+  uint64                     object_size = 4;
+  PutDataPath                path        = 5;
+  optional GdsDataSource     gds_source  = 10;
+  optional UcxDataSource     ucx_source  = 11;
+}
+
+// 单条通路的执行结果。ok=false 时 error_code/error_message 描述失败原因。
+message PutPathResult {
+  bool   ok            = 1;
+  int32  error_code    = 2;
+  string error_message = 3;
+  string etag          = 4;
+  uint32 crc32c        = 5;
+  uint64 bytes_written = 6;
+}
+
+// proxy → client 统一 PUT 响应。各通路结果按 path 独立返回（optional）。
+// object_id 由 proxy/backend 生成（bucket/key 派生），供后续对象寻址。
+message ClientProxyPutResponse {
+  string                       object_id  = 1;
+  optional PutPathResult       gds_result = 10;
+  optional PutPathResult       ucx_result = 11;
+}
+
+// 单一 service，proxy 与 backend 都实现（brpc 按 service descriptor full_name
+// 去重，一进程一实例）。GdsPut / UcxPut 两个独立 RPC，内部代码独立、无共享逻辑。
 service Control {
-  rpc GdsPut(GdsChunkRequest) returns (GdsChunkResponse);
-  rpc RdmaPut(RdmaChunkRequest) returns (RdmaChunkResponse);
+  rpc GdsPut(ClientProxyPutRequest) returns (PutPathResult);
+  rpc UcxPut(ClientProxyPutRequest) returns (PutPathResult);
 }

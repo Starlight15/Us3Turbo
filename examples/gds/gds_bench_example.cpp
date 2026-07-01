@@ -30,6 +30,8 @@
 
 #include "us3_turbo/client/client.h"
 
+#include "client/src/contracts/put_request.h"
+
 namespace {
 
 using clk = std::chrono::steady_clock;
@@ -198,9 +200,12 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
   ConstBufferView buf{.data = dev, .size = a.size};
 
   auto do_put = [&](const std::string& key) -> bool {
-    PutObjectRequest  req;
-    req.set_bucket(a.bucket).set_key(key).set_expected_size(a.size);
-    TransferOutcome out;
+    ClientProxyPutRequest  req;
+    req.bucket = a.bucket;
+    req.key = key;
+    req.object_size = a.size;
+    req.path = PutDataPath::kGds;
+    ClientProxyPutResponse out;
     auto t0 = clk::now();
     bool ok  = client.PutObject(req, buf, out);
     auto t1  = clk::now();

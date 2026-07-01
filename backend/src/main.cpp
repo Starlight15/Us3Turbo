@@ -50,16 +50,16 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  // UCX rdma 链路 sink（与 gds sink 独立）。Start 失败不致命：gds 链路仍可用，
-  // 但 RdmaPut 会拒绝。日志告警，不退出。
+  // UCX 链路 sink（与 gds sink 独立）。Start 失败不致命：gds 链路仍可用，
+  // 但 UcxPut 会拒绝。日志告警，不退出。
   us3_turbo::backend::rdma::UcxSink ucx_sink(FLAGS_backend_compute_crc32c);
   if (!ucx_sink.Start()) {
-    spdlog::warn("backend: UCX sink start failed, RdmaPut will be unavailable");
+    spdlog::warn("backend: UCX sink start failed, UcxPut will be unavailable");
   }
 
-  // gds 与 rdma 两条链路共处一个 BackendDataPlaneService：brpc 一个 proto
+  // gds 与 ucx 两条链路共处一个 BackendDataPlaneService：brpc 一个 proto
   // service 只能注册一个 C++ 实例（按 service descriptor full_name 去重），
-  // 故 RdmaPut 与 GdsPut 由同一对象持有，但内部代码独立、无共享逻辑。
+  // 故 UcxPut 与 GdsPut 由同一对象持有，但内部代码独立、无共享逻辑。
   us3_turbo::backend::BackendDataPlaneService service(sink, ucx_sink);
 
   brpc::Server server;

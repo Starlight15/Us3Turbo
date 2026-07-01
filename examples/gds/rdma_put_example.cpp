@@ -16,6 +16,8 @@
 
 #include "us3_turbo/client/client.h"
 
+#include "client/src/contracts/put_request.h"
+
 namespace {
 
 bool ParseSize(const std::string& s, std::uint64_t& out) {
@@ -74,17 +76,21 @@ int main(int argc, char** argv) {
   Client client(std::move(opts));
   if (!client.Initialize()) { std::cerr << "Initialize failed\n"; return 1; }
 
-  PutObjectRequest req;
-  req.set_bucket("test-bucket").set_key("obj-rdma-1").set_expected_size(bytes);
+  ClientProxyPutRequest req;
+  req.bucket = "test-bucket";
+  req.key = "obj-rdma-1";
+  req.object_size = bytes;
+  req.path = PutDataPath::kUcx;
 
-  TransferOutcome outcome;
-  bool ok = client.PutObjectRdma(req, ConstBufferView{.data = host.data(), .size = bytes}, outcome);
+  ClientProxyPutResponse resp;
+  bool ok = client.PutObject(req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
 
   client.Shutdown();
 
-  if (!ok) { std::cerr << "PutObjectRdma FAILED\n"; return 1; }
-  std::cout << "OK bytes=" << outcome.bytes_transferred
-            << " etag=" << outcome.etag
-            << " crc32c=" << std::hex << outcome.crc32c << std::dec << "\n";
+  if (!ok) { std::cerr << "PutObject(kUcx) FAILED\n"; return 1; }
+  const auto& r = resp.ucx_result.value();
+  std::cout << "OK bytes=" << r.bytes_written
+            << " etag=" << r.etag
+            << " crc32c=" << std::hex << r.crc32c << std::dec << "\n";
   return 0;
 }

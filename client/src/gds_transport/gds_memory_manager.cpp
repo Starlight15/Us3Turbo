@@ -99,16 +99,20 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
                  ptr, size);
     return false;
   }
+
   void* mut_ptr = const_cast<void*>(ptr);
-  bool need_register = false;
+
+  // 单次加锁，在锁保护下完成注册检查（RegisterBufferUnderLock 幂等）。
+  // 消除旧实现的双重检查锁定竞态：原实现解锁→再加锁之间有窗口期，且
+  // 第二次加锁后未复查 registered_，多线程下可能重复注册。
   {
     std::scoped_lock lk(registration_mu_);
-    need_register = registered_.find(mut_ptr) == registered_.end();
+    if (!RegisterBufferUnderLock(mut_ptr, size + offset)) {
+      return false;
+    }
   }
-  if (need_register) {
-    std::scoped_lock lk(registration_mu_);
-    if (!RegisterBufferUnderLock(mut_ptr, size + offset)) return false;
-  }
+  // cuMemObjGetRDMAToken 是外部库调用，可能耗时较长，在锁外执行以提高
+  // 并发性：RegisterBufferUnderLock 已确保 impl_->client 有效且 buffer 已注册。
   char* tok = nullptr;
   const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, CUOBJ_PUT, &tok);
   if (rc != CU_OBJ_SUCCESS || !tok) {

@@ -7,6 +7,8 @@
 
 #include "us3_turbo/client/client.h"
 
+#include "client/src/contracts/put_request.h"
+
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
@@ -33,16 +35,20 @@ int main(int argc, char** argv) {
   if (!client.Initialize()) { std::cerr << "Initialize failed\n"; cudaFree(dev); return 1; }
   if (!client.RegisterDeviceBuffer(dev, bytes)) { std::cerr << "RegisterDeviceBuffer failed\n"; cudaFree(dev); return 1; }
 
-  PutObjectRequest req;
-  req.set_bucket("test-bucket").set_key("obj1").set_expected_size(bytes);
+  ClientProxyPutRequest req;
+  req.bucket = "test-bucket";
+  req.key = "obj1";
+  req.object_size = bytes;
+  req.path = PutDataPath::kGds;
 
-  TransferOutcome outcome;
-  bool put_ok = client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, outcome);
+  ClientProxyPutResponse resp;
+  bool put_ok = client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, resp);
 
   (void)client.UnregisterDeviceBuffer(dev);
   cudaFree(dev);
 
   if (!put_ok) { std::cerr << "PutObject FAILED\n"; return 1; }
-  std::cout << "OK bytes=" << outcome.bytes_transferred << " etag=" << outcome.etag << "\n";
+  const auto& r = resp.gds_result.value();
+  std::cout << "OK bytes=" << r.bytes_written << " etag=" << r.etag << "\n";
   return 0;
 }
