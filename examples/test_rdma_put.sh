@@ -18,7 +18,7 @@ PROXY_HOST="192.168.1.198"
 PROXY_PORT="9100"
 BACKEND_HOST="192.168.1.198"
 BACKEND_PORT="9200"
-RDMA_PORT="18516"   # cuObjServer GDS 端口（rdma 链路不用它，但 backend 启动需要）
+RDMA_PORT="18616"   # cuObjServer GDS 端口（rdma 链路不用它，但 backend 启动需要）
 
 PROXY_EP="${PROXY_HOST}:${PROXY_PORT}"
 BACKEND_EP="${BACKEND_HOST}:${BACKEND_PORT}"

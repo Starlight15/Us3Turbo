@@ -11,7 +11,7 @@
 #include "backend/src/rdma/ucx_sink.h"
 
 DEFINE_int32(backend_brpc_port, 9200, "backend control-plane brpc port");
-DEFINE_int32(backend_rdma_port, 18516,
+DEFINE_int32(backend_rdma_port, 18616,
              "cuObjServer RDMA listener port (matches gateway default)");
 DEFINE_string(bind_host, "192.168.1.198", "Bind host for brpc and cuObjServer");
 DEFINE_string(public_host, "192.168.1.198", "Public host (unused in v1)");

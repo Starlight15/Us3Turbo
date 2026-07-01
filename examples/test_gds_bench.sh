@@ -29,10 +29,14 @@ PROXY_HOST="192.168.1.198"
 PROXY_PORT="9100"
 BACKEND_HOST="192.168.1.198"
 BACKEND_PORT="9200"
-RDMA_PORT="18516"
+RDMA_PORT="18616"
 
 PROXY_EP="${PROXY_HOST}:${PROXY_PORT}"
 BACKEND_EP="${BACKEND_HOST}:${BACKEND_PORT}"
+
+# backend 端 CRC32C 计算（true=扫接收数据算 crc/etag，false=跳过测裸传速率）。
+# 用环境变量覆盖：BACKEND_COMPUTE_CRC32C=false bash examples/test_gds_bench.sh ...
+BACKEND_COMPUTE_CRC32C="${BACKEND_COMPUTE_CRC32C:-true}"
 
 # ============================================================
 #  二进制路径
@@ -84,6 +88,7 @@ echo "[start] backend on ${BACKEND_EP} (RDMA port ${RDMA_PORT})"
   --backend_brpc_port="$BACKEND_PORT" \
   --backend_rdma_port="$RDMA_PORT" \
   --backend_id=backend-0 \
+  --backend_compute_crc32c="$BACKEND_COMPUTE_CRC32C" \
   &> "${LOG_DIR}/backend_bench.log" &
 BACKEND_PID=$!
 echo "        backend pid=$BACKEND_PID, logs: ${LOG_DIR}/backend_bench.log"
