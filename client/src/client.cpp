@@ -8,7 +8,7 @@
 
 #include "client/src/common/request.h"
 #include "client/src/memory_manager/gds_memory_manager.h"
-#include "client/src/common/proxy_rpc.h"
+#include "client/src/rpc/proxy_rpc.h"
 #include "client/src/memory_manager/ucx_memory_manager.h"
 #include "client/src/transport/gds_put_channel.h"
 #include "client/src/transport/put_channel.h"

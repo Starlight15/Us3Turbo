@@ -18,7 +18,7 @@
 
 #include "client/src/common/request.h"
 #include "client/src/common/crc32c.h"
-#include "client/src/common/proxy_rpc.h"
+#include "client/src/rpc/proxy_rpc.h"
 #include "client/src/common/trace.h"
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"

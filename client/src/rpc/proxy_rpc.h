@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-#include "client/src/common/rpc_base.h"
+#include "client/src/rpc/rpc_base.h"
 #include "client/src/common/request.h"
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"

@@ -7,14 +7,15 @@
 # Mode B:MetaRpc + ChunkRpc 合并为单 ProxyRpc(GdsPut / UcxPut
 # 共用一条到 proxy 的 brpc channel)。
 #
-# 目录按职责划分:common/(契约+工具)、memory_manager/(buffer 注册)、
-# transport/(channel)。proto 生成产物(control_plane.pb.*)由根 CMake 生成
-# 在 US3_TURBO_ACCESS_GENERATED_DIR,直接 include 即可。
+# 目录按职责划分:common/(契约+链路无关工具,零 brpc 依赖)、
+# rpc/(brpc 控制面布线)、memory_manager/(buffer 注册)、transport/(channel)。
+# proto 生成产物(control_plane.pb.*)由根 CMake 生成在
+# US3_TURBO_ACCESS_GENERATED_DIR,直接 include 即可。
 
 add_library(us3_turbo_client
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
-  src/common/proxy_rpc.cpp
+  src/rpc/proxy_rpc.cpp
   src/common/crc32c.cpp
   src/memory_manager/gds_memory_manager.cpp
   src/memory_manager/ucx_memory_manager.cpp
