@@ -5,7 +5,7 @@
 
 #include <cstddef>
 
-#include "client/src/gds_transport/gds_memory_manager.h"
+#include "client/src/memory_manager/gds_memory_manager.h"
 #include "client/src/transport/put_channel.h"
 #include "us3_turbo/client/options.h"
 

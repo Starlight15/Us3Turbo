@@ -7,7 +7,7 @@
 #include <string_view>
 
 #include "client/src/common/rpc_base.h"
-#include "client/src/contracts/put_request.h"
+#include "client/src/common/put_request.h"
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"
 

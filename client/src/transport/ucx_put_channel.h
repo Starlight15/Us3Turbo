@@ -1,11 +1,11 @@
 #pragma once
 
-// ucx_put_channel.h — RDMA(UCX)链路的 PutChannel 实现。与 gds_put_channel.* 物理隔离。
+// ucx_put_channel.h — UCX 链路(底层走 RDMA)的 PutChannel 实现。与 gds_put_channel.* 物理隔离。
 // PutOnce:AcquireDescriptor → UcxDataSource → proxy.UcxPut → 可选 CRC(host 直算)/trace。
 
 #include <cstddef>
 
-#include "client/src/rdma_transport/ucx_memory_manager.h"
+#include "client/src/memory_manager/ucx_memory_manager.h"
 #include "client/src/transport/put_channel.h"
 #include "us3_turbo/client/options.h"
 

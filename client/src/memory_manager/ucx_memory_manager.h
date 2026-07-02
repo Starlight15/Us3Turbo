@@ -8,13 +8,13 @@
 
 #include <ucp/api/ucp.h>
 
-#include "client/src/transport/buffer_registry.h"
+#include "client/src/memory_manager/buffer_registry.h"
 #include "us3_turbo/client/types.h"
 
 namespace us3_turbo::client {
 
 /**
- * @brief RDMA(UCX)链路的 client 端内存管理器 + 描述符颁发器。
+ * @brief UCX 链路(底层走 RDMA)的 client 端内存管理器 + 描述符颁发器。
  *
  * 与 GdsMemoryManager 平行、独立。注册表/锁/幂等流程继承自
  * BufferRegistry<ucp_mem_h>;ucp_mem_map/unmap 在 DoRegister/DoUnregister 里。
@@ -23,7 +23,7 @@ namespace us3_turbo::client {
  * 职责:
  * - 建进程唯一的 UCX context + worker + listener(client 监听,backend 主动 dial)
  * - AcquireDescriptor:对 host buffer 做 ucp_mem_map + ucp_rkey_pack,返回
- *   {remote_addr, rkey_bytes, client_ucx_addr} 供 RdmaPut 透传给 backend
+ *   {remote_addr, rkey_bytes, client_ucx_addr} 供 UcxPut 透传给 backend
  *
  * 与 GDS 的关键差异:UCX RMA 是连接式,描述符不能像 cuObj DC token 那样自描述
  * ——必须额外带 client 的 UCX 监听地址,backend 才能 dial 建 ep。
@@ -34,7 +34,7 @@ namespace us3_turbo::client {
  */
 class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
  public:
-  /** @brief 一次 RDMA PUT 的拉取描述符(随 RdmaPut RPC 透传给 backend)。 */
+  /** @brief 一次 UCX PUT 的拉取描述符(随 UcxPut RPC 透传给 backend)。 */
   struct Descriptor {
     std::uint64_t remote_addr{0};      // host buffer 虚拟地址
     std::string   rkey;                // ucp_rkey_pack 导出的 packed rkey
@@ -83,7 +83,7 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
   ucp_listener_h listener_{nullptr};
   std::string    listen_addr_;  // "ip:port",随 Descriptor 透传
 
-  // 后台 progress 线程:主线程在 RdmaPut brpc 调用里阻塞,无人驱动 worker,
+  // 后台 progress 线程:主线程在 UcxPut brpc 调用里阻塞,无人驱动 worker,
   // listener conn_handler 永不触发 → backend dial 超时。此线程持续 progress。
   std::thread       progress_thread_;
   std::atomic<bool> stop_{false};

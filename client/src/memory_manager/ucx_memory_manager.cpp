@@ -1,4 +1,4 @@
-#include "client/src/rdma_transport/ucx_memory_manager.h"
+#include "client/src/memory_manager/ucx_memory_manager.h"
 
 #include <arpa/inet.h>
 #include <netdb.h>

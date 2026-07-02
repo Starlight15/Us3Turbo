@@ -1,10 +1,10 @@
-// rdma_put_example.cpp — RDMA(UCX) PUT 端到端验证。
+// ucx_put_example.cpp — UCX PUT 端到端验证。
 //
-// 与 gds_put_example 对应：用 host 内存（非 device 显存）走 RDMA(UCX) 链路。
+// 与 gds_put_example 对应：用 host 内存（非 device 显存）走 UCX 链路（底层 RDMA）。
 // client → proxy → backend（backend ucp_get_nbx 反向拉 client host 内存）。
 //
 // 用法：
-//   us3_turbo_rdma_put_example --proxy 192.168.1.198:9100 [--size 100M] [--verify-crc32c]
+//   us3_turbo_ucx_put_example --proxy 192.168.1.198:9100 [--size 100M] [--verify-crc32c]
 
 #include <algorithm>
 #include <cstdint>
@@ -16,7 +16,7 @@
 
 #include "us3_turbo/client/client.h"
 
-#include "client/src/contracts/put_request.h"
+#include "client/src/common/put_request.h"
 
 namespace {
 
@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
 
   ClientProxyPutRequest req;
   req.bucket = "test-bucket";
-  req.key = "obj-rdma-1";
+  req.key = "obj-ucx-1";
   req.object_size = bytes;
   req.path = PutDataPath::kUcx;
 

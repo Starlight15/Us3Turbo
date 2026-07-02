@@ -6,10 +6,10 @@
 
 #include <spdlog/spdlog.h>
 
-#include "client/src/contracts/put_request.h"
-#include "client/src/gds_transport/gds_memory_manager.h"
+#include "client/src/common/put_request.h"
+#include "client/src/memory_manager/gds_memory_manager.h"
 #include "client/src/proxy_rpc.h"
-#include "client/src/rdma_transport/ucx_memory_manager.h"
+#include "client/src/memory_manager/ucx_memory_manager.h"
 #include "client/src/transport/gds_put_channel.h"
 #include "client/src/transport/put_channel.h"
 #include "client/src/transport/ucx_put_channel.h"

@@ -1,4 +1,4 @@
-#include "client/src/gds_transport/gds_memory_manager.h"
+#include "client/src/memory_manager/gds_memory_manager.h"
 
 #include <cstddef>
 #include <string>

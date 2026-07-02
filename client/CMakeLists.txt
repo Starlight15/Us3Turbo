@@ -1,22 +1,23 @@
-# client — GDS-only 通路分离实现（Mode B：单 channel 指向 proxy）
+# client — Mode B 双链路(GDS + UCX)PUT 实现:单 channel 指向 proxy。
 #
 # 消除旧 client 的过度抽象(TransferRouter / TransferPath / ClientCore /
-# UploadCoordinator 等)。本期范围:只实现 GDS PUT(跑通 gds_put_example),
-# 不实现分段上传、HeadObject、GetObject、RDMA。
+# UploadCoordinator 等)。本期范围:GDS PUT + UCX PUT(跑通 gds_put_example /
+# ucx_put_example),不实现分段上传、HeadObject、GetObject。
 #
-# Mode B：MetaRpc + ChunkRpc 合并为单 ProxyRpc（GdsPut / RdmaPut
-# 共用一条到 proxy 的 brpc channel）。
+# Mode B:MetaRpc + ChunkRpc 合并为单 ProxyRpc(GdsPut / UcxPut
+# 共用一条到 proxy 的 brpc channel)。
 #
-# proto 生成产物(control_plane.pb.*)由根 CMake 生成在
-# US3_TURBO_ACCESS_GENERATED_DIR,直接 include 即可。
+# 目录按职责划分:common/(契约+工具)、memory_manager/(buffer 注册)、
+# transport/(channel)。proto 生成产物(control_plane.pb.*)由根 CMake 生成
+# 在 US3_TURBO_ACCESS_GENERATED_DIR,直接 include 即可。
 
 add_library(us3_turbo_client
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
   src/proxy_rpc.cpp
-  src/data/crc32c.cpp
-  src/gds_transport/gds_memory_manager.cpp
-  src/rdma_transport/ucx_memory_manager.cpp
+  src/common/crc32c.cpp
+  src/memory_manager/gds_memory_manager.cpp
+  src/memory_manager/ucx_memory_manager.cpp
   src/transport/gds_put_channel.cpp
   src/transport/ucx_put_channel.cpp)
 

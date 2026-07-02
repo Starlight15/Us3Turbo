@@ -4,7 +4,7 @@
 #include <memory>
 #include <string_view>
 
-#include "client/src/transport/buffer_registry.h"
+#include "client/src/memory_manager/buffer_registry.h"
 #include "us3_turbo/client/types.h"
 
 class cuObjClient;  // forward declaration from cuobjclient.h

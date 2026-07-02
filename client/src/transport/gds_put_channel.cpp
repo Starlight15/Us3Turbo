@@ -16,10 +16,10 @@
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
-#include "client/src/contracts/put_request.h"
-#include "client/src/data/crc32c.h"
+#include "client/src/common/put_request.h"
+#include "client/src/common/crc32c.h"
 #include "client/src/proxy_rpc.h"
-#include "client/src/transport/put_trace.h"
+#include "client/src/common/put_trace.h"
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"
 
