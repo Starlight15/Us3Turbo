@@ -44,10 +44,10 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
   /** @brief 获取进程唯一实例,失败返回 false。 */
   [[nodiscard]] static bool Instance(GdsMemoryManager*& out);
 
-  /** 显式注册 device buffer(pin 入 BAR1),幂等。 */
+  /** @brief 显式注册 device buffer(pin 入 BAR1),幂等。 */
   [[nodiscard]] bool RegisterBuffer(void* ptr, std::size_t size);
 
-  /** 显式注销,须在 cudaFree(ptr) 前调用,幂等。 */
+  /** @brief 显式注销,须在 cudaFree(ptr) 前调用,幂等。 */
   [[nodiscard]] bool UnregisterBuffer(void* ptr);
 
   /** @brief 获取 RDMA token(RAII 析构自动释放)。未注册的 ptr 会 lazy register。 */
@@ -61,9 +61,10 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
   GdsMemoryManager();
   ~GdsMemoryManager() override;
 
-  // BufferRegistry<size_t> 钩子:真正 pin 进 BAR1 / 释放。
+  /** @brief BufferRegistry<size_t> 钩子:真正 pin 进 BAR1。 */
   [[nodiscard]] bool DoRegister(void* ptr, std::size_t size,
                                 std::size_t& out) override;
+  /** @brief BufferRegistry<size_t> 钩子:释放 pin(调 cuMemObjPutDescriptor)。 */
   void DoUnregister(void* ptr, std::size_t& handle) override;
 
   struct Impl;

@@ -14,7 +14,7 @@
 add_library(us3_turbo_client
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
-  src/proxy_rpc.cpp
+  src/common/proxy_rpc.cpp
   src/common/crc32c.cpp
   src/memory_manager/gds_memory_manager.cpp
   src/memory_manager/ucx_memory_manager.cpp

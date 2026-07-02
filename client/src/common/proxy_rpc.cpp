@@ -1,4 +1,4 @@
-#include "client/src/proxy_rpc.h"
+#include "client/src/common/proxy_rpc.h"
 
 #include <string>
 #include <utility>

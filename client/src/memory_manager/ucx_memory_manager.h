@@ -64,18 +64,24 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
                                 ucp_mem_h& out) override;
   void DoUnregister(void* ptr, ucp_mem_h& handle) override;
 
-  // 分阶段 init/cleanup:每阶段一个 UCX 组件,任一失败按反向顺序回滚。
+  /** @brief 分阶段 init:每阶段一个 UCX 组件,任一失败按反向顺序回滚。 */
   [[nodiscard]] bool InitContext();
+  /** @brief 创建 worker(UCS_THREAD_MODE_MULTI,跨线程安全)。 */
   [[nodiscard]] bool InitWorker();
+  /** @brief 创建 listener 并 query 取回实际绑定地址。 */
   [[nodiscard]] bool InitListener();
+  /** @brief 启动后台 progress 线程驱动 listener conn_handler。 */
   void              StartProgressThread();
 
+  /** @brief 逆序 cleanup 各阶段组件,幂等(nullptr 跳过)。 */
   void              CleanupListener();
   void              CleanupWorker();
   void              CleanupContext();
 
-  // listener conn_handler 把新 ep 交给 worker,但本管理器不持有 ep——
-  // backend 主动 dial 建 ep,client 侧 accept ep 只为完成握手。
+  /**
+   * @brief listener conn_handler:把新 ep 交给 worker。本管理器不持有 ep——
+   *        backend 主动 dial 建 ep,client 侧 accept ep 只为完成握手。
+   */
   static void ConnCallback(ucp_conn_request_h req, void* arg);
 
   ucp_context_h  context_{nullptr};
