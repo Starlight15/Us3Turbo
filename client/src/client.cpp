@@ -18,9 +18,6 @@ namespace us3_turbo::client {
 
 namespace {
 
-constexpr char kNotInitializedMsg[] =
-    "Client is not initialized. Call Client::Initialize first.";
-
 // retry-once 退避:首次失败后等 100ms 再试一次。
 constexpr auto kRetryBackoff = std::chrono::milliseconds(100);
 
@@ -106,7 +103,8 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
                        ConstBufferView buffer,
                        ClientProxyPutResponse& response) const {
   if (!initialized_) {
-    spdlog::error("PutObject: {} (req={})", kNotInitializedMsg, request.request_id);
+    spdlog::error("PutObject: Client is not initialized. Call Client::Initialize first. "
+                  "(req={})", request.request_id);
     return false;
   }
   if (!ValidatePutPath(request)) {
