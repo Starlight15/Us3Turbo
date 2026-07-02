@@ -31,6 +31,7 @@
 #include "us3_turbo/client/client.h"
 
 #include "client/src/contracts/put_request.h"
+#include "client/src/transport/gds_put_channel.h"
 
 namespace {
 
@@ -190,7 +191,17 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
     cudaFree(dev);
     return;
   }
-  if (!client.RegisterDeviceBuffer(dev, a.size)) {
+
+  // GDS 链路句柄:RegisterDeviceBuffer/UnregisterDeviceBuffer 已从 Client 移到
+  // GdsPutChannel(见 review 阶段4 方案A)。worker 共享的 Client 单例下,
+  // gds_channel() 在 Initialize 成功后非空(各 worker 取同一个指针)。
+  auto* gds = client.gds_channel();
+  if (gds == nullptr) {
+    std::cerr << "[worker " << wid << "] GDS channel unavailable\n";
+    cudaFree(dev);
+    return;
+  }
+  if (!gds->RegisterDeviceBuffer(dev, a.size)) {
     std::cerr << "[worker " << wid << "] RegisterDeviceBuffer failed\n";
     cudaFree(dev);
     return;
@@ -235,7 +246,7 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
   }
   stats.end = clk::now();
 
-  (void)client.UnregisterDeviceBuffer(dev);
+  (void)gds->UnregisterDeviceBuffer(dev);
   cudaFree(dev);
 }
 

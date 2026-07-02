@@ -2,10 +2,9 @@
 
 #include <cstddef>
 #include <memory>
-#include <mutex>
 #include <string_view>
-#include <unordered_map>
 
+#include "client/src/transport/buffer_registry.h"
 #include "us3_turbo/client/types.h"
 
 class cuObjClient;  // forward declaration from cuobjclient.h
@@ -14,8 +13,12 @@ namespace us3_turbo::client {
 
 /**
  * @brief 进程唯一的 GDS 内存管理器 + RDMA token 颁发器。
+ *
+ * 注册表/锁/幂等注册流程继承自 BufferRegistry<size_t>(共享骨架),
+ * 真正 pin 进 BAR1 的 cuObj 逻辑在 DoRegister/DoUnregister 里实现。
+ * GDS 专属的 AcquireToken / Token RAII 留在本类,不进基类。
  */
-class GdsMemoryManager {
+class GdsMemoryManager : public BufferRegistry<std::size_t> {
  public:
   /** @brief RDMA token 的 RAII 持有者。析构调 cuMemObjPutRDMAToken 释放。 */
   class Token {
@@ -62,16 +65,16 @@ class GdsMemoryManager {
 
  private:
   GdsMemoryManager();
-  ~GdsMemoryManager();
+  ~GdsMemoryManager() override;
 
-  [[nodiscard]] bool RegisterBufferUnderLock(void* ptr, std::size_t size);
+  // BufferRegistry<size_t> 钩子:真正 pin 进 BAR1 / 释放。
+  [[nodiscard]] bool DoRegister(void* ptr, std::size_t size,
+                                std::size_t& out) override;
+  void DoUnregister(void* ptr, std::size_t& handle) override;
 
   struct Impl;
   std::unique_ptr<Impl> impl_;
   bool                  connected_{false};
-
-  std::mutex                             registration_mu_;
-  std::unordered_map<void*, std::size_t> registered_;
 };
 
 }  // namespace us3_turbo::client

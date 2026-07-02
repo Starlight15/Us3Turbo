@@ -8,6 +8,7 @@
 #include "us3_turbo/client/client.h"
 
 #include "client/src/contracts/put_request.h"
+#include "client/src/transport/gds_put_channel.h"
 
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
@@ -33,7 +34,9 @@ int main(int argc, char** argv) {
 
   Client client(std::move(opts));
   if (!client.Initialize()) { std::cerr << "Initialize failed\n"; cudaFree(dev); return 1; }
-  if (!client.RegisterDeviceBuffer(dev, bytes)) { std::cerr << "RegisterDeviceBuffer failed\n"; cudaFree(dev); return 1; }
+  auto* gds = client.gds_channel();
+  if (gds == nullptr) { std::cerr << "GDS channel unavailable\n"; cudaFree(dev); return 1; }
+  if (!gds->RegisterDeviceBuffer(dev, bytes)) { std::cerr << "RegisterDeviceBuffer failed\n"; cudaFree(dev); return 1; }
 
   ClientProxyPutRequest req;
   req.bucket = "test-bucket";
@@ -44,7 +47,7 @@ int main(int argc, char** argv) {
   ClientProxyPutResponse resp;
   bool put_ok = client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, resp);
 
-  (void)client.UnregisterDeviceBuffer(dev);
+  (void)gds->UnregisterDeviceBuffer(dev);
   cudaFree(dev);
 
   if (!put_ok) { std::cerr << "PutObject FAILED\n"; return 1; }

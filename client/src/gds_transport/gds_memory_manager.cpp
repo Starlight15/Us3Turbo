@@ -45,11 +45,14 @@ GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
   connected_ = impl_->client && impl_->client->isConnected();
 }
 GdsMemoryManager::~GdsMemoryManager() {
-  if (!registered_.empty()) {
-    spdlog::warn("[GdsMemoryManager] {} buffer(s) not unregistered before shutdown", registered_.size());
+  // 批量释放残留句柄(原实现行为)。基类注册表在锁保护下逐个 DoUnregister。
+  if (RegisteredCount() != 0U) {
+    spdlog::warn("[GdsMemoryManager] {} buffer(s) not unregistered before shutdown",
+                 RegisteredCount());
+    std::lock_guard<std::mutex> lk(mu_);
     for (auto& [ptr, _] : registered_)
       if (impl_->client) impl_->client->cuMemObjPutDescriptor(ptr);
-    registered_.clear();
+    ClearRegistered();
   }
 }
 
@@ -65,14 +68,14 @@ bool GdsMemoryManager::Instance(GdsMemoryManager*& out) {
   return true;
 }
 
+// 公开 wrapper:保留原 null/size 校验日志文本(行为逐字不变)。
 bool GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
   if (!ptr || size == 0U) {
     spdlog::warn("RegisterBuffer: requires non-null ptr and positive size (ptr={} size={})",
                  ptr, size);
     return false;
   }
-  std::scoped_lock lk(registration_mu_);
-  return RegisterBufferUnderLock(ptr, size);
+  return BufferRegistry::RegisterBuffer(ptr, size);
 }
 
 bool GdsMemoryManager::UnregisterBuffer(void* ptr) {
@@ -80,16 +83,7 @@ bool GdsMemoryManager::UnregisterBuffer(void* ptr) {
     spdlog::warn("UnregisterBuffer: requires non-null ptr");
     return false;
   }
-  std::scoped_lock lk(registration_mu_);
-  auto it = registered_.find(ptr);
-  if (it == registered_.end()) return true;
-  const auto rc = impl_->client->cuMemObjPutDescriptor(ptr);
-  registered_.erase(it);
-  if (rc != CU_OBJ_SUCCESS) {
-    spdlog::error("UnregisterBuffer: cuMemObjPutDescriptor failed (ptr={} rc={})", ptr, rc);
-    return false;
-  }
-  return true;
+  return BufferRegistry::UnregisterBuffer(ptr);
 }
 
 bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
@@ -102,17 +96,20 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
 
   void* mut_ptr = const_cast<void*>(ptr);
 
-  // 单次加锁，在锁保护下完成注册检查（RegisterBufferUnderLock 幂等）。
+  // 单次加锁，在锁保护下完成注册检查（基类 RegisterBuffer 幂等）。
   // 消除旧实现的双重检查锁定竞态：原实现解锁→再加锁之间有窗口期，且
   // 第二次加锁后未复查 registered_，多线程下可能重复注册。
   {
-    std::scoped_lock lk(registration_mu_);
-    if (!RegisterBufferUnderLock(mut_ptr, size + offset)) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (registered_.count(mut_ptr)) {
+      // 已注册,无需再 pin。
+    } else if (!DoRegister(mut_ptr, size + offset, registered_[mut_ptr])) {
+      registered_.erase(mut_ptr);  // DoRegister 失败:回滚占位
       return false;
     }
   }
   // cuMemObjGetRDMAToken 是外部库调用，可能耗时较长，在锁外执行以提高
-  // 并发性：RegisterBufferUnderLock 已确保 impl_->client 有效且 buffer 已注册。
+  // 并发性：RegisterBuffer 已确保 impl_->client 有效且 buffer 已注册。
   char* tok = nullptr;
   const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, CUOBJ_PUT, &tok);
   if (rc != CU_OBJ_SUCCESS || !tok) {
@@ -128,16 +125,22 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
   return true;
 }
 
-bool GdsMemoryManager::RegisterBufferUnderLock(void* ptr, std::size_t size) {
-  if (registered_.find(ptr) != registered_.end()) return true;
+bool GdsMemoryManager::DoRegister(void* ptr, std::size_t size, std::size_t& out) {
   const auto rc = impl_->client->cuMemObjGetDescriptor(ptr, size);
   if (rc != CU_OBJ_SUCCESS) {
     spdlog::error("RegisterBuffer: cuMemObjGetDescriptor failed (ptr={} size={} rc={})",
                   ptr, size, rc);
     return false;
   }
-  registered_.emplace(ptr, size);
+  out = size;  // GDS 句柄即 buffer size(沿用原 registered_[ptr]=size 语义)
   return true;
+}
+
+void GdsMemoryManager::DoUnregister(void* ptr, std::size_t& /*handle*/) {
+  const auto rc = impl_->client->cuMemObjPutDescriptor(ptr);
+  if (rc != CU_OBJ_SUCCESS) {
+    spdlog::error("UnregisterBuffer: cuMemObjPutDescriptor failed (ptr={} rc={})", ptr, rc);
+  }
 }
 
 }  // namespace us3_turbo::client

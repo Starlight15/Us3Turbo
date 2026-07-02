@@ -16,7 +16,9 @@ add_library(us3_turbo_client
   src/proxy_rpc.cpp
   src/data/crc32c.cpp
   src/gds_transport/gds_memory_manager.cpp
-  src/rdma_transport/ucx_memory_manager.cpp)
+  src/rdma_transport/ucx_memory_manager.cpp
+  src/transport/gds_put_channel.cpp
+  src/transport/ucx_put_channel.cpp)
 
 add_dependencies(us3_turbo_client
   us3_turbo_control_plane_proto)

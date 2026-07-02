@@ -1,244 +1,26 @@
 #include "us3_turbo/client/client.h"
 
-#include <cassert>
 #include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <random>
-#include <span>
-#include <string>
 #include <string_view>
-#include <thread>
-#include <type_traits>
 #include <utility>
-#include <vector>
 
-#include <cuda_runtime.h>
-
-#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include "client/src/common/retry_policy.h"
 #include "client/src/contracts/put_request.h"
-#include "client/src/data/crc32c.h"
 #include "client/src/gds_transport/gds_memory_manager.h"
 #include "client/src/proxy_rpc.h"
 #include "client/src/rdma_transport/ucx_memory_manager.h"
+#include "client/src/transport/gds_put_channel.h"
+#include "client/src/transport/put_channel.h"
+#include "client/src/transport/ucx_put_channel.h"
 
 namespace us3_turbo::client {
-namespace {
 
-using clk = std::chrono::steady_clock;
+namespace {
 
 constexpr char kNotInitializedMsg[] =
     "Client is not initialized. Call Client::Initialize first.";
-
-// 每次（含每次重试）生成新 request_id，用于跨端日志关联。
-[[nodiscard]] std::string MakeRequestId() {
-  static thread_local std::mt19937_64 rng{
-      static_cast<std::uint64_t>(std::random_device{}()) ^
-      static_cast<std::uint64_t>(
-          std::chrono::steady_clock::now().time_since_epoch().count())};
-  char buf[17];
-  std::snprintf(buf, sizeof(buf), "%016lx", rng());
-  return std::string("req-") + buf;
-}
-
-// ---------------------------------------------------------------------------
-//  CRC32C 端到端校验（可选，options.verify_crc32c 开启）
-//  两个链路各自一份：gds 需先把 device buffer 拷回 host（D2H），rdma 链路
-//  buffer 本就在 host，直接算。日志格式与原内联实现逐字一致，便于解析。
-// ---------------------------------------------------------------------------
-
-// GDS 路径：需要 D2H 拷贝后计算 CRC。
-[[nodiscard]] bool VerifyGdsCrc32c(const std::string& request_id,
-                                   ConstBufferView device_buffer,
-                                   std::uint32_t remote_crc32c,
-                                   const ClientProxyPutRequest& request) {
-  std::vector<std::byte> host(device_buffer.size);
-  if (cudaError_t e = cudaMemcpy(host.data(), device_buffer.data,
-                                 device_buffer.size, cudaMemcpyDeviceToHost);
-      e != cudaSuccess) {
-    spdlog::error("GdsPut (req={}): verify_crc32c D2H copy failed: {}",
-                  request_id, cudaGetErrorString(e));
-    return false;
-  }
-  const std::uint32_t local =
-      Crc32c(std::span<const std::byte>(host.data(), host.size()));
-  const std::uint32_t remote = remote_crc32c;
-  if (local == remote) {
-    spdlog::info("GdsPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
-                 "bucket={}/{} bytes={}",
-                 request_id, local, remote, request.bucket, request.key,
-                 device_buffer.size);
-    return true;
-  }
-  spdlog::error("GdsPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
-                "bucket={}/{} bytes={}",
-                request_id, local, remote, request.bucket, request.key,
-                device_buffer.size);
-  return false;
-}
-
-// UCX 路径：直接对 host buffer 计算 CRC（无需 D2H，ucx 链路的便利）。
-[[nodiscard]] bool VerifyUcxCrc32c(const std::string& request_id,
-                                    ConstBufferView host_buffer,
-                                    std::uint32_t remote_crc32c,
-                                    const ClientProxyPutRequest& request) {
-  const std::uint32_t local = Crc32c(
-      std::span<const std::byte>(static_cast<const std::byte*>(host_buffer.data),
-                                 host_buffer.size));
-  const std::uint32_t remote = remote_crc32c;
-  if (local == remote) {
-    spdlog::info("UcxPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
-                 "bucket={}/{} bytes={}",
-                 request_id, local, remote, request.bucket, request.key,
-                 host_buffer.size);
-    return true;
-  }
-  spdlog::error("UcxPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
-                "bucket={}/{} bytes={}",
-                request_id, local, remote, request.bucket, request.key,
-                host_buffer.size);
-  return false;
-}
-
-// ---------------------------------------------------------------------------
-//  性能追踪（可选，options.latency_trace 开启）
-//  通用：按相邻阶段时间差输出毫秒（3 位小数），总时间 = 首→末时间戳差。
-// ---------------------------------------------------------------------------
-
-struct LatencyStage {
-  std::string_view    name;
-  clk::time_point     timestamp;
-};
-
-// 通用的性能追踪函数：stage1/stage2/... 为相邻阶段耗时，total 为首→末总耗时。
-void TraceLatency(const std::string& request_id,
-                  std::string_view operation_name,
-                  std::span<const LatencyStage> stages,
-                  std::size_t bytes) {
-  const auto ms = [](clk::time_point a, clk::time_point b) {
-    return std::chrono::duration<double, std::milli>(b - a).count();
-  };
-
-  // 拼接各相邻阶段 "name={:.3f}ms "，原内联格式为 "token={:.3f}ms put={:.3f}ms total=..."。
-  std::string parts;
-  for (std::size_t i = 1; i < stages.size(); ++i) {
-    parts += fmt::format("{}={:.3f}ms ", stages[i].name, ms(stages[i - 1].timestamp,
-                                                            stages[i].timestamp));
-  }
-  const double total =
-      stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp) : 0.0;
-
-  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}",
-               operation_name, request_id, parts, total, bytes);
-}
-
-[[nodiscard]] bool GdsPutOnce(const ClientOptions& options,
-                              const ProxyRpc& proxy,
-                              GdsMemoryManager* gds_mgr,
-                              const ClientProxyPutRequest& request,
-                              ConstBufferView buffer,
-                              ClientProxyPutResponse& out) {
-  assert(gds_mgr != nullptr);
-  // 每次（含每次重试）生成新 request_id，用于跨端日志关联。
-  const std::string request_id = MakeRequestId();
-
-  // 1. 性能追踪起点
-  const bool trace = options.latency_trace;
-  auto t0 = trace ? clk::now() : clk::time_point{};
-
-  // 2. 获取 RDMA token（device buffer），构造 GDS 数据源
-  GdsMemoryManager::Token token;
-  if (!gds_mgr->AcquireToken(buffer.data, buffer.size, 0, token)) {
-    return false;
-  }
-  GdsDataSource gds_source{std::string(token.str())};
-  auto t_token = trace ? clk::now() : clk::time_point{};
-
-  // 3. 执行 RPC
-  PutPathResult result;
-  if (!proxy.GdsPut(request_id, request.bucket, request.key, request.object_size,
-                    gds_source, result)) {
-    out.gds_result = result;
-    return false;
-  }
-  auto t_put = trace ? clk::now() : clk::time_point{};
-
-  // 4. 填充输出结果
-  out.gds_result = result;
-
-  // 5. 可选：CRC 校验
-  if (options.verify_crc32c) {
-    if (!VerifyGdsCrc32c(request_id, buffer, result.crc32c, request)) {
-      return false;
-    }
-  }
-
-  // 6. 可选：性能追踪
-  if (trace) {
-    const LatencyStage stages[] = {
-      {"start", t0}, {"token", t_token}, {"put", t_put}
-    };
-    TraceLatency(request_id, "GdsPut", stages, buffer.size);
-  }
-
-  return true;
-}
-
-// UCX 链路的单次尝试：AcquireDescriptor → UcxPut。
-// 与 gds 的 GdsPutOnce 完全独立，不复用。
-[[nodiscard]] bool UcxPutOnce(const ClientOptions& options,
-                               const ProxyRpc& proxy,
-                               UcxMemoryManager* ucx_mgr,
-                               const ClientProxyPutRequest& request,
-                               ConstBufferView buffer,
-                               ClientProxyPutResponse& out) {
-  assert(ucx_mgr != nullptr);
-  const std::string request_id = MakeRequestId();
-
-  // 1. 性能追踪起点
-  const bool trace = options.latency_trace;
-  auto t0 = trace ? clk::now() : clk::time_point{};
-
-  // 2. 获取 RDMA 描述符（host buffer），构造 UCX 数据源
-  UcxMemoryManager::Descriptor desc;
-  if (!ucx_mgr->AcquireDescriptor(buffer.data, buffer.size, desc)) {
-    return false;
-  }
-  UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};
-  auto t_desc = trace ? clk::now() : clk::time_point{};
-
-  // 3. 执行 RPC
-  PutPathResult result;
-  if (!proxy.UcxPut(request_id, request.bucket, request.key, request.object_size,
-                    ucx_source, result)) {
-    out.ucx_result = result;
-    return false;
-  }
-  auto t_put = trace ? clk::now() : clk::time_point{};
-
-  // 4. 填充输出结果
-  out.ucx_result = result;
-
-  // 5. 可选：CRC 校验（host buffer 直接算，无需 D2H）
-  if (options.verify_crc32c) {
-    if (!VerifyUcxCrc32c(request_id, buffer, result.crc32c, request)) {
-      return false;
-    }
-  }
-
-  // 6. 可选：性能追踪
-  if (trace) {
-    const LatencyStage stages[] = {
-      {"start", t0}, {"desc", t_desc}, {"put", t_put}
-    };
-    TraceLatency(request_id, "UcxPut", stages, buffer.size);
-  }
-
-  return true;
-}
 
 }  // namespace
 
@@ -259,17 +41,27 @@ bool Client::Initialize() {
     return false;
   }
 
-  if (!GdsMemoryManager::Instance(gds_mgr_)) {
-    proxy_.reset();
-    return false;
+  // GDS 链路:取进程唯一 GdsMemoryManager,构 GdsPutChannel(channel 持有
+  // manager 引用)。manager 不可用则该 channel 留空 + 告警,gds path 调用
+  // 会在 SelectChannel 返回 nullptr 时失败。
+  GdsMemoryManager* gds_mgr = nullptr;
+  if (GdsMemoryManager::Instance(gds_mgr)) {
+    gds_channel_ = std::make_unique<GdsPutChannel>(options_, *proxy_, gds_mgr);
+  } else {
+    spdlog::warn("Client::Initialize: GDS manager unavailable, "
+                 "path=kGds will fail");
+    gds_channel_.reset();
   }
 
-  // UCX 链路 manager。Start 失败不致命：gds 链路仍可用，path=kUcx 的
-  // PutObject 会返回 false。仅告警。
-  if (!UcxMemoryManager::Instance(ucx_mgr_)) {
+  // UCX 链路:同构。Start 失败不致命:gds 链路仍可用,path=kUcx 的
+  // PutObject 会在 SelectChannel 返回 nullptr 时失败。仅告警。
+  UcxMemoryManager* ucx_mgr = nullptr;
+  if (UcxMemoryManager::Instance(ucx_mgr)) {
+    ucx_channel_ = std::make_unique<UcxPutChannel>(options_, *proxy_, ucx_mgr);
+  } else {
     spdlog::warn("Client::Initialize: UCX manager unavailable, "
                  "path=kUcx will fail");
-    ucx_mgr_ = nullptr;
+    ucx_channel_.reset();
   }
 
   initialized_ = true;
@@ -277,17 +69,17 @@ bool Client::Initialize() {
 }
 
 void Client::Shutdown() {
+  ucx_channel_.reset();
+  gds_channel_.reset();
   proxy_.reset();
-  gds_mgr_ = nullptr;
-  ucx_mgr_ = nullptr;
   initialized_ = false;
 }
 
 bool Client::initialized() const { return initialized_; }
 
 // 公共重试模板：deadline 截止则放弃并记日志，否则交给 ExecuteWithRetry
-// 按指数退避重试。模板只在 client.cpp 实例化（PutObject 两条 path 分支），
-// 定义置于此唯一编译单元，不违反 ODR。
+// 按指数退避重试。模板只在 client.cpp 实例化（PutObject 分支），
+// 定义置于唯一编译单元，不违反 ODR。
 template <typename PutFunc>
 bool Client::ExecutePutWithRetry(const ClientProxyPutRequest& request,
                                  std::string_view method_name,
@@ -305,7 +97,7 @@ bool Client::ExecutePutWithRetry(const ClientProxyPutRequest& request,
 }
 
 // path 校验：kNone 拒绝（未指定通路），kAll 拒绝（推迟，单 buffer 无法双路）。
-// source 不在此检查（由 GdsPutOnce/UcxPutOnce 内部按 path 填充）。
+// source 不在此检查（由 channel 内部按 path 填充）。
 bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
   if (req.path == PutDataPath::kNone) {
     spdlog::error("PutObject: path not specified (req={})", req.request_id);
@@ -317,6 +109,15 @@ bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
     return false;
   }
   return true;
+}
+
+// 模式路由的唯一落点(见头注释)。
+PutChannel* Client::SelectChannel(PutDataPath path) const noexcept {
+  switch (path) {
+    case PutDataPath::kGds: return gds_channel_.get();
+    case PutDataPath::kUcx: return ucx_channel_.get();
+    default:            return nullptr;  // kNone / kAll(已在校验阶段拒绝)
+  }
 }
 
 bool Client::PutObject(const ClientProxyPutRequest& request,
@@ -339,116 +140,26 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
     return false;
   }
 
-  // 按通路分支：kGds 单路、kUcx 单路（kAll 已在 ValidatePutPath 拒绝）。
-  // request_id 由 GdsPutOnce/UcxPutOnce 内部生成，保证每次重试独立。
-  bool gds_ok = true;
-  bool ucx_ok = true;
-
-  if (HasPath(request.path, PutDataPath::kGds)) {
-    if (gds_mgr_ == nullptr) {
-      spdlog::error("PutObject: GDS manager not initialized (req={})",
-                    request.request_id);
-      gds_ok = false;
-    } else {
-      gds_ok = ExecutePutWithRetry(request, "PutObject", [&]() -> bool {
-        return GdsPutOnce(options_, *proxy_, gds_mgr_, request, buffer, response);
-      });
-      if (!gds_ok) {
-        spdlog::warn("PutObject: GDS path failed (req={})",
-                     request.request_id);
-      }
-    }
+  PutChannel* ch = SelectChannel(request.path);
+  if (ch == nullptr) {
+    // 与原"manager not initialized"日志语义对齐:链路不可用。
+    spdlog::error("PutObject: {} channel not initialized (req={})",
+                  HasPath(request.path, PutDataPath::kGds) ? "GDS" : "UCX",
+                  request.request_id);
+    return false;
   }
 
-  if (HasPath(request.path, PutDataPath::kUcx)) {
-    if (ucx_mgr_ == nullptr) {
-      spdlog::error("PutObject: UCX manager not initialized (req={})",
-                    request.request_id);
-      ucx_ok = false;
-    } else {
-      ucx_ok = ExecutePutWithRetry(request, "PutObject", [&]() -> bool {
-        return UcxPutOnce(options_, *proxy_, ucx_mgr_, request, buffer, response);
-      });
-      if (!ucx_ok) {
-        spdlog::warn("PutObject: UCX path failed (req={})",
-                     request.request_id);
-      }
-    }
-  }
-
-  // kAll 模式（当前不可达）：任意一条成功即可；单路模式下即该路结果。
-  return gds_ok || ucx_ok;
+  return ExecutePutWithRetry(request, "PutObject", [&]() -> bool {
+    PutPathResult r;
+    const bool ok = ch->PutOnce(request, buffer, r);
+    if (HasPath(request.path, PutDataPath::kGds)) response.gds_result = r;
+    else                                        response.ucx_result = r;
+    return ok;
+  });
 }
 
-// UCX 链路的单次尝试：AcquireDescriptor → UcxPut。
-// 与 gds 的 GdsPutOnce 完全独立，不复用。
-[[nodiscard]] bool UcxPutOnce(const ClientOptions& options,
-                               const ProxyRpc& proxy,
-                               UcxMemoryManager* ucx_mgr,
-                               const ClientProxyPutRequest& request,
-                               ConstBufferView buffer,
-                               ClientProxyPutResponse& out) {
-  assert(ucx_mgr != nullptr);
-  const std::string request_id = MakeRequestId();
-
-  // 1. 性能追踪起点
-  const bool trace = options.latency_trace;
-  auto t0 = trace ? clk::now() : clk::time_point{};
-
-  // 2. 获取 RDMA 描述符（host buffer），构造 UCX 数据源
-  UcxMemoryManager::Descriptor desc;
-  if (!ucx_mgr->AcquireDescriptor(buffer.data, buffer.size, desc)) {
-    return false;
-  }
-  UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};
-  auto t_desc = trace ? clk::now() : clk::time_point{};
-
-  // 3. 执行 RPC
-  PutPathResult result;
-  if (!proxy.UcxPut(request_id, request.bucket, request.key, request.object_size,
-                    ucx_source, result)) {
-    out.ucx_result = result;
-    return false;
-  }
-  auto t_put = trace ? clk::now() : clk::time_point{};
-
-  // 4. 填充输出结果
-  out.ucx_result = result;
-
-  // 5. 可选：CRC 校验（host buffer 直接算，无需 D2H）
-  if (options.verify_crc32c) {
-    if (!VerifyUcxCrc32c(request_id, buffer, result.crc32c, request)) {
-      return false;
-    }
-  }
-
-  // 6. 可选：性能追踪
-  if (trace) {
-    const LatencyStage stages[] = {
-      {"start", t0}, {"desc", t_desc}, {"put", t_put}
-    };
-    TraceLatency(request_id, "UcxPut", stages, buffer.size);
-  }
-
-  return true;
-}
-
-bool Client::RegisterDeviceBuffer(void* ptr, std::size_t size) {
-  if (!initialized_) {
-    spdlog::error("RegisterDeviceBuffer: {}", kNotInitializedMsg);
-    return false;
-  }
-  assert(gds_mgr_ != nullptr);
-  return gds_mgr_->RegisterBuffer(ptr, size);
-}
-
-bool Client::UnregisterDeviceBuffer(void* ptr) {
-  if (!initialized_) {
-    spdlog::error("UnregisterDeviceBuffer: {}", kNotInitializedMsg);
-    return false;
-  }
-  assert(gds_mgr_ != nullptr);
-  return gds_mgr_->UnregisterBuffer(ptr);
+GdsPutChannel* Client::gds_channel() const noexcept {
+  return gds_channel_.get();
 }
 
 }  // namespace us3_turbo::client

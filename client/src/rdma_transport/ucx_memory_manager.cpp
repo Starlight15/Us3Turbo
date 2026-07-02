@@ -219,7 +219,7 @@ UcxMemoryManager::~UcxMemoryManager() {
     for (auto& [ptr, memh] : registered_) {
       if (memh != nullptr) ucp_mem_unmap(context_, memh);
     }
-    registered_.clear();
+    ClearRegistered();
   }
   CleanupListener();
   CleanupWorker();
@@ -238,8 +238,7 @@ bool UcxMemoryManager::Instance(UcxMemoryManager*& out) {
   return true;
 }
 
-bool UcxMemoryManager::RegisterBufferUnderLock(void* ptr, std::size_t size) {
-  if (registered_.find(ptr) != registered_.end()) return true;
+bool UcxMemoryManager::DoRegister(void* ptr, std::size_t size, ucp_mem_h& out) {
   ucp_mem_map_params_t mparams{};
   mparams.field_mask =
       UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH;
@@ -252,8 +251,15 @@ bool UcxMemoryManager::RegisterBufferUnderLock(void* ptr, std::size_t size) {
                   ptr, size, ucs_status_string(st));
     return false;
   }
-  registered_.emplace(ptr, memh);
+  out = memh;
   return true;
+}
+
+void UcxMemoryManager::DoUnregister(void* /*ptr*/, ucp_mem_h& handle) {
+  if (handle != nullptr) {
+    ucp_mem_unmap(context_, handle);
+    handle = nullptr;
+  }
 }
 
 bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
@@ -265,10 +271,14 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   void* mut_ptr = const_cast<void*>(ptr);
 
   std::scoped_lock lk(mu_);
-  if (registered_.find(mut_ptr) == registered_.end()) {
-    if (!RegisterBufferUnderLock(mut_ptr, size)) return false;
+  // 幂等注册:已注册直接复用,未注册则 DoRegister。
+  ucp_mem_h* p_memh = FindLocked(mut_ptr);
+  if (p_memh == nullptr) {
+    if (!BufferRegistry::RegisterBuffer(mut_ptr, size)) return false;
+    p_memh = FindLocked(mut_ptr);
+    if (p_memh == nullptr) return false;  // 不应发生
   }
-  ucp_mem_h memh = registered_[mut_ptr];
+  ucp_mem_h memh = *p_memh;
   void* rkey_buf = nullptr;
   size_t rkey_size = 0;
   ucs_status_t st = ucp_rkey_pack(context_, memh, &rkey_buf, &rkey_size);
