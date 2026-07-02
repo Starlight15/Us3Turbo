@@ -14,8 +14,6 @@ class ProxyRpc;
 class GdsPutChannel;
 class UcxPutChannel;
 class PutChannel;
-struct ClientProxyPutRequest;
-struct ClientProxyPutResponse;
 
 /**
  * @brief 对象存储 client(Mode B 薄路由层)。
