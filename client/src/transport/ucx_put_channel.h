@@ -28,7 +28,7 @@ class UcxPutChannel final : public PutChannel {
                              PutPathResult& result) const override;
 
  private:
-  const ClientOptions&  options_;
+  const ClientOptions&   options_;
   const ProxyRpc&        proxy_;
   UcxMemoryManager*      ucx_mgr_;
 };

@@ -1,8 +1,5 @@
 #pragma once
 
-// buffer_registry.h — 内存管理器共享的注册表骨架(模板基类)。
-// 注册表 + 锁 + 幂等注册/注销;pin/map 由派生类实现。干净共享头,GDS/UCX 互不依赖。
-
 #include <cstddef>
 #include <mutex>
 #include <unordered_map>

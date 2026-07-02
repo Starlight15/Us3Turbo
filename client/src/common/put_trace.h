@@ -22,7 +22,7 @@ namespace detail {
 
 using clk = std::chrono::steady_clock;
 
-// 每次(含每次重试)生成新 request_id,用于跨端日志关联。
+/** @brief  每次(含每次重试)生成新 request_id,用于跨端日志关联。*/
 [[nodiscard]] inline std::string MakeRequestId() {
   static thread_local std::mt19937_64 rng{
       static_cast<std::uint64_t>(std::random_device{}()) ^
@@ -33,13 +33,13 @@ using clk = std::chrono::steady_clock;
   return std::string("req-") + buf;
 }
 
-// 性能追踪(options.latency_trace 开启):相邻阶段耗时 + 首→末总耗时。
+/** @brief 性能追踪(options.latency_trace 开启):相邻阶段耗时 + 首→末总耗时。*/
 struct LatencyStage {
   std::string_view    name;
   clk::time_point     timestamp;
 };
 
-// stage1/stage2/... 为相邻阶段耗时,total 为首→末总耗时。
+/** @brief stage1/stage2/... 为相邻阶段耗时,total 为首→末总耗时。*/
 inline void TraceLatency(const std::string& request_id,
                           std::string_view operation_name,
                           std::span<const LatencyStage> stages,
