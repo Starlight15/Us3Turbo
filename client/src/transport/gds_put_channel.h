@@ -1,7 +1,6 @@
 #pragma once
 
-// gds_put_channel.h — GDS(CUObj RDMA)链路的 PutChannel 实现,与 ucx_put_channel.* 物理隔离。
-// PutOnce:AcquireToken → GdsDataSource → proxy.GdsPut → 可选 CRC(D2H)/trace。
+// gds_put_channel.h — GDS(CUObj RDMA)链路的 PutChannel 实现。
 
 #include <cstddef>
 
@@ -13,11 +12,7 @@ namespace us3_turbo::client {
 
 class ProxyRpc;
 
-/**
- * @brief GDS 链路的 PutChannel。device 显存走 cuObj RDMA token + backend
- *        反向 RDMA-READ。构造持有的引用须由 Client 保活到本对象销毁。
- *        buffer 注册在 AcquireToken 内懒注册,对外无注册 API。
- */
+/** @brief GDS 链路的 PutChannel:device 显存走 cuObj RDMA token + backend 反向 RDMA-READ。 */
 class GdsPutChannel final : public PutChannel {
  public:
   GdsPutChannel(const ClientOptions& options, const ProxyRpc& proxy,

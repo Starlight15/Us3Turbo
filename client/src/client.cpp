@@ -18,7 +18,7 @@ namespace us3_turbo::client {
 
 namespace {
 
-// retry-once 退避:首次失败后等 100ms 再试一次。
+// retry-once 退避。
 constexpr auto kRetryBackoff = std::chrono::milliseconds(100);
 
 }  // namespace
@@ -29,8 +29,7 @@ Client::~Client() = default;
 bool Client::Initialize() {
   if (initialized_) return true;
 
-  // Mode B:单 channel 指向 proxy,承载 GdsPut / UcxPut。brpc::Channel 线程安全,
-  // PutObject 重试与 bench 多 worker 共享同一 Client 时可并发调用。
+  // 单 brpc channel 指向 proxy,线程安全,可被多 worker 并发调用。
   proxy_ = std::make_unique<ProxyRpc>(options_.endpoint, options_.default_timeout);
   if (!proxy_->ok()) {
     spdlog::error("Initialize: proxy channel({}) init failed: {}",
@@ -39,8 +38,7 @@ bool Client::Initialize() {
     return false;
   }
 
-  // GDS 链路:manager 不可用则 channel 留空 + 告警,path=kGds 会在
-  // SelectChannel 返回 nullptr 时失败。
+  // manager 不可用则 channel 留空,该 path 落到 SelectChannel 返回 nullptr。
   GdsMemoryManager* gds_mgr = nullptr;
   if (GdsMemoryManager::Instance(gds_mgr)) {
     gds_channel_ = std::make_unique<GdsPutChannel>(options_, *proxy_, gds_mgr);
@@ -50,7 +48,7 @@ bool Client::Initialize() {
     gds_channel_.reset();
   }
 
-  // UCX 链路:同构。Start 失败不致命,gds 链路仍可用。
+  // UCX 同构,Start 失败不致命。
   UcxMemoryManager* ucx_mgr = nullptr;
   if (UcxMemoryManager::Instance(ucx_mgr)) {
     ucx_channel_ = std::make_unique<UcxPutChannel>(options_, *proxy_, ucx_mgr);
@@ -73,7 +71,7 @@ void Client::Shutdown() {
 
 bool Client::initialized() const { return initialized_; }
 
-// path 校验:kNone 拒绝(未指定通路),kAll 拒绝(单 buffer 无法双路)。
+// path 校验:kNone / kAll 拒绝(单 buffer 无法双路)。
 bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
   if (req.path == PutDataPath::kNone) {
     spdlog::error("PutObject: path not specified (req={})", req.request_id);
@@ -86,7 +84,7 @@ bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
   return true;
 }
 
-// 模式路由的唯一落点(见头注释)。
+// 路由落点。
 PutChannel* Client::SelectChannel(PutDataPath path) const noexcept {
   switch (path) {
     case PutDataPath::kGds: return gds_channel_.get();
@@ -107,7 +105,7 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
     return false;
   }
 
-  // 大小上限校验(沿用原 put_single_max_bytes)。
+  // 大小上限校验。
   const auto max_put = options_.put_single_max_bytes;
   if (max_put != 0 && buffer.size > max_put) {
     spdlog::warn("PutObject: bucket={}/{} body size {} exceeds put_single_max_bytes {}; "
@@ -126,7 +124,7 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
 
   PutPathResult result;
 
-  // retry-once:首次失败则等 100ms 再试一次,共最多两次,接受最终结果。
+  // retry-once:首次失败等 100ms 再试一次,接受最终结果。
   if (!ch->PutOnce(request, buffer, result)) {
     std::this_thread::sleep_for(kRetryBackoff);
     ch->PutOnce(request, buffer, result);

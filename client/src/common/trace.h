@@ -1,7 +1,6 @@
 #pragma once
 
 // trace.h — 链路无关通用工具(MakeRequestId / TraceLatency / LatencyStage)。
-// 干净共享头,不含 cuObj/ucp 依赖。
 
 #include <chrono>
 #include <cstddef>
@@ -22,7 +21,7 @@ namespace detail {
 
 using clk = std::chrono::steady_clock;
 
-/** @brief  每次(含每次重试)生成新 request_id,用于跨端日志关联。*/
+/** @brief 生成新 request_id,用于跨端日志关联(每次重试都新生成)。*/
 [[nodiscard]] inline std::string MakeRequestId() {
   static thread_local std::mt19937_64 rng{
       static_cast<std::uint64_t>(std::random_device{}()) ^
@@ -33,13 +32,13 @@ using clk = std::chrono::steady_clock;
   return std::string("req-") + buf;
 }
 
-/** @brief 性能追踪(options.latency_trace 开启):相邻阶段耗时 + 首→末总耗时。*/
+/** @brief 性能追踪阶段名 + 时间戳。*/
 struct LatencyStage {
   std::string_view    name;
   clk::time_point     timestamp;
 };
 
-/** @brief stage1/stage2/... 为相邻阶段耗时,total 为首→末总耗时。*/
+/** @brief 打印相邻阶段耗时 + 首→末总耗时(latency_trace 开启时调用)。*/
 inline void TraceLatency(const std::string& request_id,
                           std::string_view operation_name,
                           std::span<const LatencyStage> stages,

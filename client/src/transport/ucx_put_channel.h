@@ -1,7 +1,6 @@
 #pragma once
 
-// ucx_put_channel.h — UCX 链路(底层走 RDMA)的 PutChannel 实现。与 gds_put_channel.* 物理隔离。
-// PutOnce:AcquireDescriptor → UcxDataSource → proxy.UcxPut → 可选 CRC(host 直算)/trace。
+// ucx_put_channel.h — UCX 链路(底层走 RDMA)的 PutChannel 实现。
 
 #include <cstddef>
 
@@ -13,10 +12,7 @@ namespace us3_turbo::client {
 
 class ProxyRpc;
 
-/**
- * @brief UCX 链路的 PutChannel。host 内存走 ucp_mem_map + packed rkey,
- *        backend ucp_get_nbx 反向拉取。构造持有的引用须由 Client 保活。
- */
+/** @brief UCX 链路的 PutChannel:host 内存走 ucp_mem_map + packed rkey,backend ucp_get_nbx 反向拉取。 */
 class UcxPutChannel final : public PutChannel {
  public:
   UcxPutChannel(const ClientOptions& options, const ProxyRpc& proxy,

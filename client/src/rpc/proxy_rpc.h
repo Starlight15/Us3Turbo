@@ -18,12 +18,7 @@
 namespace us3_turbo::client {
 
 /**
- * @brief proxy 控制面 RPC client(Mode B)。
- *
- * client 只与 proxy 交互:GdsPut / UcxPut 走同一条 brpc channel(指向
- * options.endpoint=proxy),单次 RPC 自带描述符。protobuf 响应只在 .cpp 内部
- * 出现,对外只回填 PutPathResult。单 channel 足够:brpc::Channel 线程安全,
- * 可被多线程并发调用。
+ * @brief proxy 控制面 RPC client:GdsPut / UcxPut 共用一条 brpc channel。
  */
 class ProxyRpc {
  public:
@@ -64,11 +59,7 @@ class ProxyRpc {
   /** @brief 初始化失败时的错误描述(ok() 为 true 时为空)。 */
   [[nodiscard]] const std::string& init_error() const { return init_error_; }
 
-  /**
-   * @brief GDS 通路的 GdsPut:cuObj RDMA token 随 RPC 透传给 proxy → backend
-   *        反向 RDMA-READ。与 UcxPut 独立。
-   * @return true RPC 层成功(result.ok 反映 backend 执行结果)。
-   */
+  /** @brief GDS 通路:cuObj RDMA token 随 RPC 透传,backend 反向 RDMA-READ。 */
   [[nodiscard]] bool GdsPut(std::string_view request_id,
                             const std::string& bucket,
                             const std::string& key,
@@ -76,10 +67,7 @@ class ProxyRpc {
                             const GdsDataSource& gds_source,
                             PutPathResult& result) const;
 
-  /**
-   * @brief UCX 通路的 UcxPut:UCX 描述符(remote_addr / packed rkey /
-   *        client_ucx_addr)随 RPC 透传给 proxy → backend ucp_get_nbx 拉取。
-   */
+  /** @brief UCX 通路:描述符随 RPC 透传,backend ucp_get_nbx 反向拉取。 */
   [[nodiscard]] bool UcxPut(std::string_view request_id,
                             const std::string& bucket,
                             const std::string& key,
@@ -94,7 +82,7 @@ class ProxyRpc {
 
   [[nodiscard]] us3_turbo::proxy::Control_Stub* stub() const { return stub_.get(); }
 
-  // 构造时传入的默认 RPC 超时(用 options.default_timeout,per-request 已移除)。
+  // 默认 RPC 超时(用 options.default_timeout)。
   std::chrono::milliseconds                         default_timeout_{};
   std::unique_ptr<brpc::Channel>                    channel_;
   std::unique_ptr<us3_turbo::proxy::Control_Stub>   stub_;

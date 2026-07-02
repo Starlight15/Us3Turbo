@@ -6,10 +6,7 @@
 
 namespace us3_turbo::client {
 
-/**
- * @brief PUT 通路选择(bitflags 语义,v1 仅支持单路)。与 proto PutDataPath 对应。
- * kNone=0 作无效默认(client 校验拒绝);kAll 推迟(单 buffer 无法双路)。
- */
+/** @brief PUT 通路选择(bitflags)。kNone=0 作无效默认,kAll 暂不支持(单 buffer 无法双路)。 */
 enum class PutDataPath : std::uint8_t {
   kNone = 0,
   kGds  = 1 << 0,
@@ -38,10 +35,7 @@ struct UcxDataSource {
   std::string   client_ucx_addr;
 };
 
-/**
- * @brief client → proxy 统一 PUT 请求。
- * path 必填;对应通路的 source 由 PutObject 内部按 path 获取描述符后填充。
- */
+/** @brief client → proxy 统一 PUT 请求;对应通路 source 由 PutObject 内部按 path 填充。 */
 struct ClientProxyPutRequest {
   std::string                   request_id;
   std::string                   bucket;

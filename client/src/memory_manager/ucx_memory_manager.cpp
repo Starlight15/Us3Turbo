@@ -18,14 +18,12 @@ namespace us3_turbo::client {
 
 namespace {
 
-// 默认 client UCX listener 绑定地址。IP 必须是 mlx5 上可达的;
-// 端口 0 由系统分配,ucp_listener_query 取回实际端口。
+// client UCX listener 绑定地址,端口 0 由系统分配并 query 取回。
 constexpr char kDefaultBindIp[] = "192.168.1.198";
 
 }  // namespace
 
-// listener conn_handler:接受 backend 连接(ucp_ep_create(CONN_REQUEST)),否则连接挂起。
-// client 侧不持有 ep,依赖进程退出回收。TODO(v2): 维护 ep 池,按完成回调 close。
+// 接受 backend 连接(否则挂起)。client 不持有 ep,依赖进程退出回收。
 void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   auto* self = static_cast<UcxMemoryManager*>(arg);
   if (self == nullptr || self->worker_ == nullptr) {
@@ -48,7 +46,7 @@ void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   }
 }
 
-// ---- 分阶段 init:构造函数逐阶段调用,失败按反向顺序 cleanup。 ----
+// ---- 分阶段 init:失败按反向顺序 cleanup。 ----
 
 bool UcxMemoryManager::InitContext() {
   ucp_config_t* config = nullptr;
@@ -76,8 +74,7 @@ bool UcxMemoryManager::InitContext() {
 bool UcxMemoryManager::InitWorker() {
   assert(context_ != nullptr);  // 前置条件:InitContext 成功
 
-  // UCS_THREAD_MODE_MULTI:client 单例被多 worker 线程共享,且 listener
-  // conn_handler 在 UCX 内部线程触发。MULTI 保证跨线程访问 worker 安全。
+  // MULTI:单例被多线程共享 + listener conn_handler 在 UCX 内部线程触发。
   ucp_worker_params_t wparams{};
   wparams.field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
   wparams.thread_mode = UCS_THREAD_MODE_MULTI;
@@ -121,7 +118,7 @@ bool UcxMemoryManager::InitListener() {
     return false;
   }
 
-  // 查询实际绑定地址，随 Descriptor 透传给 backend。
+  // 查询实际绑定地址,随 Descriptor 透传给 backend。
   ucp_listener_attr_t lattr{};
   lattr.field_mask = UCP_LISTENER_ATTR_FIELD_SOCKADDR;
   if (ucp_listener_query(listener_, &lattr) != UCS_OK) {
@@ -145,8 +142,7 @@ bool UcxMemoryManager::InitListener() {
 void UcxMemoryManager::StartProgressThread() {
   assert(worker_ != nullptr);  // 前置条件
 
-  // 后台 progress 线程驱动 listener conn_handler(见头注释)。不请求
-  // UCP_FEATURE_WAKEUP,用 spin + idle sleep:无事件时短暂 sleep 让出 CPU。
+  // 不请求 WAKEUP,用 spin + idle sleep 让出 CPU。
   progress_thread_ = std::thread([this]() {
     constexpr auto kIdleSleep = std::chrono::microseconds(50);
     while (!stop_.load(std::memory_order_acquire)) {
@@ -178,7 +174,7 @@ void UcxMemoryManager::CleanupListener() {
   }
 }
 
-// ---- 构造/析构:逐阶段 init,失败按反向顺序回滚。 ----
+// ---- 构造/析构 ----
 
 UcxMemoryManager::UcxMemoryManager() {
   if (!InitContext()) {

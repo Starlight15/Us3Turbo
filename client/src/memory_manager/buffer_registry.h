@@ -8,10 +8,8 @@
 namespace us3_turbo::client {
 
 /**
- * @brief 内存管理器共享的注册表骨架(模板基类)。
- *
- * 提供注册表 + 锁 + 幂等注册/注销;具体的 pin/map 由派生类在 DoRegister /
- * DoUnregister 里实现。干净共享头,GDS/UCX 互不依赖。
+ * @brief 内存管理器共享的注册表骨架(模板基类):注册表 + 锁 + 幂等注册/注销,
+ *        pin/map 由派生类在 DoRegister/DoUnregister 实现。
  */
 template <typename Handle>
 class BufferRegistry {

@@ -12,10 +12,7 @@ class cuObjClient;  // forward declaration from cuobjclient.h
 namespace us3_turbo::client {
 
 /**
- * @brief 进程唯一的 GDS 内存管理器 + RDMA token 颁发器。
- *
- * 注册表/锁/幂等流程继承自 BufferRegistry<size_t>;真正 pin 进 BAR1 的 cuObj
- * 逻辑在 DoRegister/DoUnregister 里。AcquireToken / Token RAII 留在本类。
+ * @brief 进程唯一的 GDS 内存管理器:注册 device buffer 并颁发 RDMA token。
  */
 class GdsMemoryManager : public BufferRegistry<std::size_t> {
  public:

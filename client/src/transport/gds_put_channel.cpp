@@ -1,5 +1,4 @@
 // gds_put_channel.cpp — GDS 链路的 PutChannel 实现。
-// 搬运自原 client.cpp 的 GdsPutOnce + VerifyGdsCrc32c,逻辑/日志/CRC/trace 不变。
 
 #include "client/src/transport/gds_put_channel.h"
 

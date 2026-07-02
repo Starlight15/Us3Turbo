@@ -13,8 +13,7 @@ namespace us3_turbo::client {
 
 namespace {
 
-// 把 controller 失败填进 PutPathResult 并记日志,返回 false。
-// is_timeout 分支区分超时与数据面错误。
+// 把 controller 失败填进 PutPathResult 并记日志,区分超时与数据面错误。
 bool FailResult(PutPathResult& result, const brpc::Controller& cntl,
                 std::string_view request_id, std::string_view op) {
   const bool is_timeout =

@@ -45,7 +45,7 @@ GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
   connected_ = impl_->client && impl_->client->isConnected();
 }
 GdsMemoryManager::~GdsMemoryManager() {
-  // 懒注册常驻:注册表作进程级缓存,残留项是预期行为(非"忘了注销")。
+  // 懒注册常驻:注册表作进程级缓存,残留项是预期行为。
   if (RegisteredCount() != 0U) {
     spdlog::debug("[GdsMemoryManager] {} buffer(s) in cache at shutdown (懒注册常驻)",
                   RegisteredCount());
@@ -68,7 +68,7 @@ bool GdsMemoryManager::Instance(GdsMemoryManager*& out) {
   return true;
 }
 
-// 公开 wrapper:保留原 null/size 校验日志文本(行为逐字不变)。
+// null/size 校验 wrapper。
 bool GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
   if (!ptr || size == 0U) {
     spdlog::warn("RegisterBuffer: requires non-null ptr and positive size (ptr={} size={})",
@@ -96,8 +96,7 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
 
   void* mut_ptr = const_cast<void*>(ptr);
 
-  // 单次加锁完成注册检查(基类 RegisterBuffer 幂等),消除旧实现的双重检查
-  // 锁定竞态:原实现解锁→再加锁之间有窗口,且第二次加锁后未复查 registered_。
+  // 单次加锁完成幂等注册检查,DoRegister 失败则回滚占位。
   {
     std::lock_guard<std::mutex> lk(mu_);
     if (registered_.count(mut_ptr)) {
@@ -129,7 +128,7 @@ bool GdsMemoryManager::DoRegister(void* ptr, std::size_t size, std::size_t& out)
                   ptr, size, rc);
     return false;
   }
-  out = size;  // GDS 句柄即 buffer size(沿用原 registered_[ptr]=size 语义)
+  out = size;  // GDS 句柄即 buffer size
   return true;
 }
 

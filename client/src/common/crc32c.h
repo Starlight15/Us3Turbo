@@ -8,11 +8,8 @@
 namespace us3_turbo::client {
 
 /**
- * @brief CRC-32C (Castagnoli) 软件实现,与 backend 端 Crc32c 一致
- *        (reflected 多项式 0x82F63B78 / init 0xFFFFFFFF / finalize ^0xFFFFFFFF)。
- *
- * 用于 PUT 端到端校验:client 算 CRC32C 与 backend 在 PutPathResult.crc32c
- * 回传的值比对。两端各自维护一份,不共用,避免牵动 wire 行为;改动须两端同步。
+ * @brief CRC-32C(Castagnoli)软件实现,与 backend 端 Crc32c 一致。
+ * 用于 PUT 端到端校验:client 算 CRC32C 与 backend 回传的 PutPathResult.crc32c 比对。
  */
 [[nodiscard]] std::uint32_t Crc32c(std::span<const std::byte> data) noexcept;
 [[nodiscard]] std::uint32_t Crc32c(std::string_view data) noexcept;
