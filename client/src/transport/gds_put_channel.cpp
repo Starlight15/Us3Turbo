@@ -115,14 +115,4 @@ bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& request,
   return true;
 }
 
-bool GdsPutChannel::RegisterDeviceBuffer(void* ptr, std::size_t size) {
-  assert(gds_mgr_ != nullptr);
-  return gds_mgr_->RegisterBuffer(ptr, size);
-}
-
-bool GdsPutChannel::UnregisterDeviceBuffer(void* ptr) {
-  assert(gds_mgr_ != nullptr);
-  return gds_mgr_->UnregisterBuffer(ptr);
-}
-
 }  // namespace us3_turbo::client

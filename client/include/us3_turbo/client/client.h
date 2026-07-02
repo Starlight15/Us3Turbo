@@ -22,8 +22,10 @@ struct ClientProxyPutResponse;
  *
  * 调用方只设 @ref ClientProxyPutRequest.path(kGds / kUcx,未来 kAll),
  * Client 按 path 选一条 PutChannel,链路细节(GDS device token / UCX host
- * 描述符)藏在各自 channel 实现里。Client 只保留公共逻辑:校验、deadline
- * 截断、重试。GDS 专属的 device buffer 注册/注销已移到 GdsPutChannel。
+ * 描述符)藏在各自 channel 实现里。Client 只保留公共逻辑:校验 +
+ * retry-once(失败后等 100ms 再试一次,共最多两次)。两条链路的 buffer
+ * 注册/注销全部在各 channel 内部懒注册,对外不暴露任何注册 API——
+ * GDS 与 UCX 调用方写法完全对称。
  */
 class Client {
  public:
@@ -48,22 +50,17 @@ class Client {
    * path=kGds → gds_channel_,结果回 response.gds_result。
    * path=kUcx → ucx_channel_,结果回 response.ucx_result。
    * path=kNone / kAll → 拒绝（kAll 推迟：单 buffer 无法同时喂 device+host）。
-   * 描述符由各 channel 内部按 path 从 buffer 获取，调用方不预填 source。
+   * 描述符由各 channel 内部按 path 从 buffer 获取（含首次懒注册），调用方
+   * 不预填 source、不显式注册。
+   *
+   * retry-once：首次失败则等 100ms 再试一次，共最多两次调用；第二次结果
+   * 无论成败都接受。@return 最终一次尝试的 result.ok。
    *
    * @return true 选中通路成功，false 失败或被拒绝。
    */
   [[nodiscard]] bool PutObject(const ClientProxyPutRequest& request,
                                ConstBufferView buffer,
                                ClientProxyPutResponse& response) const;
-
-  /**
-   * @brief 取 GDS 链路句柄(用于 device buffer 注册/注销)。
-   *
-   * GDS 专属的 RegisterDeviceBuffer/UnregisterDeviceBuffer 已从 Client 移到
-   * GdsPutChannel(见 review 阶段4 方案A);调用方通过本句柄操作。
-   * 未初始化或 GDS 链路不可用时返回 nullptr。
-   */
-  [[nodiscard]] GdsPutChannel* gds_channel() const noexcept;
 
  private:
   ClientOptions              options_;
@@ -81,14 +78,6 @@ class Client {
   // 模式路由的唯一落点:kGds→gds_channel_.get()、kUcx→ucx_channel_.get()、
   // 其余返回 nullptr。kAll 未来只在这一处扩展为"依次驱动两条链路"。
   [[nodiscard]] PutChannel* SelectChannel(PutDataPath path) const noexcept;
-
-  // 公共重试模板：deadline 截止则放弃，否则交给 ExecuteWithRetry 重试。
-  // method_name 用于 deadline 超时日志。模板只在 client.cpp 实例化
-  //（PutObject 分支），定义置于 .cpp（唯一编译单元，不违反 ODR）。
-  template <typename PutFunc>
-  [[nodiscard]] bool ExecutePutWithRetry(const ClientProxyPutRequest& request,
-                                         std::string_view method_name,
-                                         PutFunc&& put_operation) const;
 };
 
 }  // namespace us3_turbo::client

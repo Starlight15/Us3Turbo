@@ -45,10 +45,11 @@ GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
   connected_ = impl_->client && impl_->client->isConnected();
 }
 GdsMemoryManager::~GdsMemoryManager() {
-  // 批量释放残留句柄(原实现行为)。基类注册表在锁保护下逐个 DoUnregister。
+  // 懒注册常驻:注册表作进程级缓存,buffer 被复用时只注册一次,直到
+  // manager 析构统一释放。残留项是预期行为,不再是"忘了注销"的告警。
   if (RegisteredCount() != 0U) {
-    spdlog::warn("[GdsMemoryManager] {} buffer(s) not unregistered before shutdown",
-                 RegisteredCount());
+    spdlog::debug("[GdsMemoryManager] {} buffer(s) in cache at shutdown (懒注册常驻)",
+                  RegisteredCount());
     std::lock_guard<std::mutex> lk(mu_);
     for (auto& [ptr, _] : registered_)
       if (impl_->client) impl_->client->cuMemObjPutDescriptor(ptr);

@@ -23,6 +23,9 @@ class ProxyRpc;
 /**
  * @brief GDS 链路的 PutChannel。device 显存走 cuObj RDMA token + backend
  *        反向 RDMA-READ。构造持有的引用必须由 Client 保活到本对象销毁。
+ *
+ * buffer 注册/注销在 AcquireToken 内部懒注册(未注册的 ptr 自动 DoRegister,
+ * 注册表作进程级缓存复用),对外不暴露任何注册 API——与 UcxPutChannel 对称。
  */
 class GdsPutChannel final : public PutChannel {
  public:
@@ -33,11 +36,6 @@ class GdsPutChannel final : public PutChannel {
   [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& request,
                              ConstBufferView buffer,
                              PutPathResult& result) const override;
-
-  // GDS 专属:显式注册/注销 device buffer(pin 入 BAR1)。原 Client 公开 API
-  // 归属到本链路(见 review 阶段4 方案A),通用 Client 不再暴露 GDS 痕迹。
-  [[nodiscard]] bool RegisterDeviceBuffer(void* ptr, std::size_t size);
-  [[nodiscard]] bool UnregisterDeviceBuffer(void* ptr);
 
  private:
   const ClientOptions&  options_;

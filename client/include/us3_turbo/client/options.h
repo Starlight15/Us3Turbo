@@ -19,8 +19,6 @@ struct ClientOptions {
   std::string endpoint;
   /** Default per-channel timeout（用于 RpcBase channel Init + ApplyTimeout）。 */
   std::chrono::milliseconds default_timeout{std::chrono::milliseconds(30000)};
-  /** 端到端单笔 PUT 超时（ExecutePutWithRetry 的 deadline）。 */
-  std::chrono::milliseconds request_timeout{std::chrono::minutes(5)};
 
   /**
    * 单次 PUT 的上限（client 入口拒）。与 gateway 端 cuObjServer 的

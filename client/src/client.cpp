@@ -1,12 +1,11 @@
 #include "us3_turbo/client/client.h"
 
 #include <chrono>
-#include <string_view>
+#include <thread>
 #include <utility>
 
 #include <spdlog/spdlog.h>
 
-#include "client/src/common/retry_policy.h"
 #include "client/src/contracts/put_request.h"
 #include "client/src/gds_transport/gds_memory_manager.h"
 #include "client/src/proxy_rpc.h"
@@ -21,6 +20,9 @@ namespace {
 
 constexpr char kNotInitializedMsg[] =
     "Client is not initialized. Call Client::Initialize first.";
+
+// retry-once 退避:首次失败后等 100ms 再试一次。
+constexpr auto kRetryBackoff = std::chrono::milliseconds(100);
 
 }  // namespace
 
@@ -77,25 +79,6 @@ void Client::Shutdown() {
 
 bool Client::initialized() const { return initialized_; }
 
-// 公共重试模板：deadline 截止则放弃并记日志，否则交给 ExecuteWithRetry
-// 按指数退避重试。模板只在 client.cpp 实例化（PutObject 分支），
-// 定义置于唯一编译单元，不违反 ODR。
-template <typename PutFunc>
-bool Client::ExecutePutWithRetry(const ClientProxyPutRequest& request,
-                                 std::string_view method_name,
-                                 PutFunc&& put_operation) const {
-  const auto deadline = std::chrono::steady_clock::now() + options_.request_timeout;
-
-  return ExecuteWithRetry(RetryPolicy{}, [&]() -> bool {
-    if (std::chrono::steady_clock::now() >= deadline) {
-      spdlog::warn("{}: bucket={}/{} retry deadline exceeded",
-                   method_name, request.bucket, request.key);
-      return false;
-    }
-    return put_operation();
-  });
-}
-
 // path 校验：kNone 拒绝（未指定通路），kAll 拒绝（推迟，单 buffer 无法双路）。
 // source 不在此检查（由 channel 内部按 path 填充）。
 bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
@@ -103,8 +86,7 @@ bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
     spdlog::error("PutObject: path not specified (req={})", req.request_id);
     return false;
   }
-  if (HasPath(req.path, PutDataPath::kAll) &&
-      req.path == PutDataPath::kAll) {
+  if (req.path == PutDataPath::kAll) {
     spdlog::error("PutObject: kAll not supported yet (req={})", req.request_id);
     return false;
   }
@@ -144,22 +126,25 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
   if (ch == nullptr) {
     // 与原"manager not initialized"日志语义对齐:链路不可用。
     spdlog::error("PutObject: {} channel not initialized (req={})",
-                  HasPath(request.path, PutDataPath::kGds) ? "GDS" : "UCX",
+                  request.path == PutDataPath::kGds ? "GDS" : "UCX",
                   request.request_id);
     return false;
   }
 
-  return ExecutePutWithRetry(request, "PutObject", [&]() -> bool {
-    PutPathResult r;
-    const bool ok = ch->PutOnce(request, buffer, r);
-    if (HasPath(request.path, PutDataPath::kGds)) response.gds_result = r;
-    else                                        response.ucx_result = r;
-    return ok;
-  });
-}
+  PutPathResult result;
 
-GdsPutChannel* Client::gds_channel() const noexcept {
-  return gds_channel_.get();
+  // retry-once:第一次尝试;失败则等 100ms 再试一次,共最多两次调用。
+  // 第二次结果无论成败都接受(返回最终一次的 result.ok)。
+  if (!ch->PutOnce(request, buffer, result)) {
+    std::this_thread::sleep_for(kRetryBackoff);
+    ch->PutOnce(request, buffer, result);
+  }
+
+  // 回填结果:按 path 写到对应字段。
+  if (request.path == PutDataPath::kGds) response.gds_result = result;
+  else                                   response.ucx_result = result;
+
+  return result.ok;
 }
 
 }  // namespace us3_turbo::client

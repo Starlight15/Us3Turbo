@@ -9,7 +9,8 @@
 //
 // 模型:进程内共享一个 Client(PutObject 为 const,brpc channel 与
 // GdsMemoryManager 单例均线程安全);每个 worker 线程拥有独立的 device
-// buffer(各自 Register/Unregister),从共享原子计数器领取对象序号并发上传。
+// buffer,从共享原子计数器领取对象序号并发上传。buffer 注册由各 worker
+// 首次 PutObject 时在 GdsPutChannel 内部懒注册,无需显式 Register。
 
 #include <cuda_runtime.h>
 
@@ -31,7 +32,6 @@
 #include "us3_turbo/client/client.h"
 
 #include "client/src/contracts/put_request.h"
-#include "client/src/transport/gds_put_channel.h"
 
 namespace {
 
@@ -191,21 +191,6 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
     cudaFree(dev);
     return;
   }
-
-  // GDS 链路句柄:RegisterDeviceBuffer/UnregisterDeviceBuffer 已从 Client 移到
-  // GdsPutChannel(见 review 阶段4 方案A)。worker 共享的 Client 单例下,
-  // gds_channel() 在 Initialize 成功后非空(各 worker 取同一个指针)。
-  auto* gds = client.gds_channel();
-  if (gds == nullptr) {
-    std::cerr << "[worker " << wid << "] GDS channel unavailable\n";
-    cudaFree(dev);
-    return;
-  }
-  if (!gds->RegisterDeviceBuffer(dev, a.size)) {
-    std::cerr << "[worker " << wid << "] RegisterDeviceBuffer failed\n";
-    cudaFree(dev);
-    return;
-  }
   stats.ready = true;
 
   ConstBufferView buf{.data = dev, .size = a.size};
@@ -246,7 +231,6 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
   }
   stats.end = clk::now();
 
-  (void)gds->UnregisterDeviceBuffer(dev);
   cudaFree(dev);
 }
 
