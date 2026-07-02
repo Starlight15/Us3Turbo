@@ -5,7 +5,7 @@
 #   build/examples/us3_turbo_gds_bench_example  — GDS 可指定大小/数量/并发的基准
 #   build/examples/us3_turbo_ucx_put_example    — UCX 单次 PUT 端到端
 
-# 公共 include：仓库根(client/src/common/put_request.h 等以仓库根为基的路径)
+# 公共 include：仓库根(client/src/common/request.h 等以仓库根为基的路径)
 # + generated（control_plane.pb.h）。与 client 库的 PRIVATE include 一致。
 set(EXAMPLES_PRIVATE_INCLUDES
   ${PROJECT_SOURCE_DIR}

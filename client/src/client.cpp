@@ -6,7 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "client/src/common/put_request.h"
+#include "client/src/common/request.h"
 #include "client/src/memory_manager/gds_memory_manager.h"
 #include "client/src/common/proxy_rpc.h"
 #include "client/src/memory_manager/ucx_memory_manager.h"

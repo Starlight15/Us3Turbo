@@ -2,7 +2,7 @@
 
 // put_channel.h — 链路抽象(路由落点)。干净共享头,不含 cuObj/ucp 痕迹。
 
-#include "client/src/common/put_request.h"
+#include "client/src/common/request.h"
 #include "us3_turbo/client/types.h"
 
 namespace us3_turbo::client {

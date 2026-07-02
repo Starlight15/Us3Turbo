@@ -1,6 +1,6 @@
 #pragma once
 
-// put_trace.h — 链路无关通用工具(MakeRequestId / TraceLatency / LatencyStage)。
+// trace.h — 链路无关通用工具(MakeRequestId / TraceLatency / LatencyStage)。
 // 干净共享头,不含 cuObj/ucp 依赖。
 
 #include <chrono>
