@@ -8,19 +8,18 @@
 namespace us3_turbo::client {
 
 /**
- * @brief Data flow type. The GDS-only client always uses GPUDirect; the enum
- *        is kept as a single value so the wire string ("gds-cuobject") stays
- *        a typed constant rather than a bare literal (proxy validates it).
+ * @brief 数据流类型。保留为单值,使线协议串("gds-cuobject")成为类型常量
+ *        而非裸字面量(proxy 会校验)。
  */
 enum class DataFlow {
   GPUDirect,
 };
 
 /**
- * @brief Read-only data buffer supplied to upload operations.
+ * @brief 上传用的只读数据缓冲区。
  *
- * GDS PUT 链路要求 device buffer;data 指向 cudaMalloc 的显存,调用返回前
- * 必须保持有效。UCX PUT 链路则要求 host 内存。
+ * GDS 链路要求 device buffer(data 指向 cudaMalloc 显存,返回前须有效);
+ * UCX 链路要求 host 内存。
  */
 struct ConstBufferView {
   const void* data{nullptr};
@@ -28,7 +27,7 @@ struct ConstBufferView {
 };
 
 
-/** @brief Returns a stable string identifier for the data flow. */
+/** @brief 返回数据流的稳定字符串标识。 */
 [[nodiscard]] inline std::string_view ToString(DataFlow flow) {
   switch (flow) {
     case DataFlow::GPUDirect:

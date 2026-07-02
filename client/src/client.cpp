@@ -29,9 +29,8 @@ Client::~Client() = default;
 bool Client::Initialize() {
   if (initialized_) return true;
 
-  // Mode B：单 channel 指向 proxy，承载 GdsPut / UcxPut。
-  // brpc::Channel 线程安全、内部带连接复用，PutObject 重试与 bench 多 worker
-  // 共享同一个 Client 时可并发调用。
+  // Mode B:单 channel 指向 proxy,承载 GdsPut / UcxPut。brpc::Channel 线程安全,
+  // PutObject 重试与 bench 多 worker 共享同一 Client 时可并发调用。
   proxy_ = std::make_unique<ProxyRpc>(options_.endpoint, options_.default_timeout);
   if (!proxy_->ok()) {
     spdlog::error("Initialize: proxy channel({}) init failed: {}",
@@ -40,9 +39,8 @@ bool Client::Initialize() {
     return false;
   }
 
-  // GDS 链路:取进程唯一 GdsMemoryManager,构 GdsPutChannel(channel 持有
-  // manager 引用)。manager 不可用则该 channel 留空 + 告警,gds path 调用
-  // 会在 SelectChannel 返回 nullptr 时失败。
+  // GDS 链路:manager 不可用则 channel 留空 + 告警,path=kGds 会在
+  // SelectChannel 返回 nullptr 时失败。
   GdsMemoryManager* gds_mgr = nullptr;
   if (GdsMemoryManager::Instance(gds_mgr)) {
     gds_channel_ = std::make_unique<GdsPutChannel>(options_, *proxy_, gds_mgr);
@@ -52,8 +50,7 @@ bool Client::Initialize() {
     gds_channel_.reset();
   }
 
-  // UCX 链路:同构。Start 失败不致命:gds 链路仍可用,path=kUcx 的
-  // PutObject 会在 SelectChannel 返回 nullptr 时失败。仅告警。
+  // UCX 链路:同构。Start 失败不致命,gds 链路仍可用。
   UcxMemoryManager* ucx_mgr = nullptr;
   if (UcxMemoryManager::Instance(ucx_mgr)) {
     ucx_channel_ = std::make_unique<UcxPutChannel>(options_, *proxy_, ucx_mgr);
@@ -76,8 +73,7 @@ void Client::Shutdown() {
 
 bool Client::initialized() const { return initialized_; }
 
-// path 校验：kNone 拒绝（未指定通路），kAll 拒绝（推迟，单 buffer 无法双路）。
-// source 不在此检查（由 channel 内部按 path 填充）。
+// path 校验:kNone 拒绝(未指定通路),kAll 拒绝(单 buffer 无法双路)。
 bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
   if (req.path == PutDataPath::kNone) {
     spdlog::error("PutObject: path not specified (req={})", req.request_id);
@@ -111,7 +107,7 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
     return false;
   }
 
-  // 大小上限校验（沿用原 put_single_max_bytes）。
+  // 大小上限校验(沿用原 put_single_max_bytes)。
   const auto max_put = options_.put_single_max_bytes;
   if (max_put != 0 && buffer.size > max_put) {
     spdlog::warn("PutObject: bucket={}/{} body size {} exceeds put_single_max_bytes {}; "
@@ -122,7 +118,6 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
 
   PutChannel* ch = SelectChannel(request.path);
   if (ch == nullptr) {
-    // 与原"manager not initialized"日志语义对齐:链路不可用。
     spdlog::error("PutObject: {} channel not initialized (req={})",
                   request.path == PutDataPath::kGds ? "GDS" : "UCX",
                   request.request_id);
@@ -131,14 +126,13 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
 
   PutPathResult result;
 
-  // retry-once:第一次尝试;失败则等 100ms 再试一次,共最多两次调用。
-  // 第二次结果无论成败都接受(返回最终一次的 result.ok)。
+  // retry-once:首次失败则等 100ms 再试一次,共最多两次,接受最终结果。
   if (!ch->PutOnce(request, buffer, result)) {
     std::this_thread::sleep_for(kRetryBackoff);
     ch->PutOnce(request, buffer, result);
   }
 
-  // 回填结果:按 path 写到对应字段。
+  // 按 path 回填结果到对应字段。
   if (request.path == PutDataPath::kGds) response.gds_result = result;
   else                                   response.ucx_result = result;
 

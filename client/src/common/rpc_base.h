@@ -14,10 +14,9 @@
 namespace us3_turbo::client {
 
 /**
- * @brief MetaRpc / ChunkRpc 的公共基类：持有 brpc::Channel + Control_Stub。
- *
- * 控制面(MetaRpc,→ proxy)与数据面(ChunkRpc,→ backend)共用同一条
- * baidu_std 通路结构，差异只在 @p role 名（用于 init_error 文案）。
+ * @brief MetaRpc / ChunkRpc 的公共基类:持有 brpc::Channel + Control_Stub。
+ * 控制面(→ proxy)与数据面(→ backend)共用同一 baidu_std 通路结构,
+ * 差异只在 @p role 名(用于 init_error 文案)。
  */
 class RpcBase {
  public:
@@ -65,8 +64,7 @@ class RpcBase {
 
   [[nodiscard]] us3_turbo::proxy::Control_Stub* stub() const { return stub_.get(); }
 
-  // 构造时传入的默认 RPC 超时（统一用 options.default_timeout；per-request
-  // 超时已移除）。ApplyTimeout 据此设 controller 超时。
+  // 构造时传入的默认 RPC 超时(用 options.default_timeout,per-request 已移除)。
   std::chrono::milliseconds default_timeout_{};
 
  private:

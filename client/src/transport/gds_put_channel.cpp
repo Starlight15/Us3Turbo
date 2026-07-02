@@ -1,9 +1,5 @@
 // gds_put_channel.cpp — GDS 链路的 PutChannel 实现。
-//
-// 逐字搬运自原 client.cpp 的 GdsPutOnce + VerifyGdsCrc32c,逻辑不变
-// (日志文本 / CRC 行为 / trace 格式全部与重构前一致)。迁入 channel 类后,
-// MakeRequestId / TraceLatency / LatencyStage 取自共享 put_trace.h
-// (见 review/client_refactor_prompt.md 阶段1.3)。
+// 搬运自原 client.cpp 的 GdsPutOnce + VerifyGdsCrc32c,逻辑/日志/CRC/trace 不变。
 
 #include "client/src/transport/gds_put_channel.h"
 
@@ -36,10 +32,7 @@ using detail::MakeRequestId;
 using detail::LatencyStage;
 using detail::TraceLatency;
 
-// ---------------------------------------------------------------------------
-//  CRC32C 端到端校验（可选，options.verify_crc32c 开启）
-//  GDS 路径：需要 D2H 拷贝后计算 CRC。原 client.cpp 私有实现,逐字搬运。
-// ---------------------------------------------------------------------------
+// CRC32C 校验(options.verify_crc32c):GDS 需 D2H 拷贝后计算。
 [[nodiscard]] bool VerifyGdsCrc32c(const std::string& request_id,
                                    ConstBufferView device_buffer,
                                    std::uint32_t remote_crc32c,
@@ -75,36 +68,30 @@ bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& request,
                              ConstBufferView buffer,
                              PutPathResult& result) const {
   assert(gds_mgr_ != nullptr);
-  // 每次（含每次重试）生成新 request_id，用于跨端日志关联。
-  const std::string request_id = MakeRequestId();
+  const std::string request_id = MakeRequestId();  // 每次新生成,跨端日志关联
 
-  // 1. 性能追踪起点
   const bool trace = options_.latency_trace;
   auto t0 = trace ? clk::now() : clk::time_point{};
 
-  // 2. 获取 RDMA token（device buffer），构造 GDS 数据源
   GdsMemoryManager::Token token;
-  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token)) {
+  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token)) {  // 懒注册
     return false;
   }
   GdsDataSource gds_source{std::string(token.str())};
   auto t_token = trace ? clk::now() : clk::time_point{};
 
-  // 3. 执行 RPC
   if (!proxy_.GdsPut(request_id, request.bucket, request.key, request.object_size,
                      gds_source, result)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};
 
-  // 4. 可选：CRC 校验
   if (options_.verify_crc32c) {
     if (!VerifyGdsCrc32c(request_id, buffer, result.crc32c, request)) {
       return false;
     }
   }
 
-  // 5. 可选：性能追踪
   if (trace) {
     const LatencyStage stages[] = {
       {"start", t0}, {"token", t_token}, {"put", t_put}

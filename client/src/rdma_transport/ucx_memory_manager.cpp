@@ -18,18 +18,14 @@ namespace us3_turbo::client {
 
 namespace {
 
-// 默认 client UCX listener 绑定地址。可通过 UCX_TLS/IB 等 env 覆盖，
-// 但 IP 必须是 mlx5 上可达的。默认用 192.168.1.198 + 0（系统分配端口，
-// 由 ucp_listener_query 取回实际端口）。
+// 默认 client UCX listener 绑定地址。IP 必须是 mlx5 上可达的;
+// 端口 0 由系统分配,ucp_listener_query 取回实际端口。
 constexpr char kDefaultBindIp[] = "192.168.1.198";
 
 }  // namespace
 
-// listener conn_handler：client 收到 backend 的连接请求。第一版只是
-// 接受连接（不主动在 client 侧建 ep——backend 会用这个连接完成握手后
-// 发起 get_nbx）。我们调用 ucp_ep_create(CONN_REQUEST) 让 UCX 接受它，
-// 否则连接挂起。ep 在 client 侧第一版不持有/管理：依赖进程退出回收。
-// TODO(v2): 维护 ep 池，按完成回调 close。
+// listener conn_handler:接受 backend 连接(ucp_ep_create(CONN_REQUEST)),否则连接挂起。
+// client 侧不持有 ep,依赖进程退出回收。TODO(v2): 维护 ep 池,按完成回调 close。
 void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   auto* self = static_cast<UcxMemoryManager*>(arg);
   if (self == nullptr || self->worker_ == nullptr) {
@@ -52,9 +48,7 @@ void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   }
 }
 
-// ===========================================================================
-//  分阶段 init：构造函数逐阶段调用，失败时由调用方按反向顺序 cleanup。
-// ===========================================================================
+// ---- 分阶段 init:构造函数逐阶段调用,失败按反向顺序 cleanup。 ----
 
 bool UcxMemoryManager::InitContext() {
   ucp_config_t* config = nullptr;
@@ -80,11 +74,10 @@ bool UcxMemoryManager::InitContext() {
 }
 
 bool UcxMemoryManager::InitWorker() {
-  assert(context_ != nullptr);  // 前置条件：InitContext 成功
+  assert(context_ != nullptr);  // 前置条件:InitContext 成功
 
-  // UCS_THREAD_MODE_MULTI：client 单例被 bench 多 worker 线程共享，且
-  // listener conn_handler 在 UCX 内部线程触发、与 AcquireDescriptor 调用
-  // 线程不同。MULTI 保证跨线程访问 worker 安全。
+  // UCS_THREAD_MODE_MULTI:client 单例被多 worker 线程共享,且 listener
+  // conn_handler 在 UCX 内部线程触发。MULTI 保证跨线程访问 worker 安全。
   ucp_worker_params_t wparams{};
   wparams.field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
   wparams.thread_mode = UCS_THREAD_MODE_MULTI;
@@ -101,9 +94,9 @@ bool UcxMemoryManager::InitWorker() {
 }
 
 bool UcxMemoryManager::InitListener() {
-  assert(worker_ != nullptr);  // 前置条件：InitWorker 成功
+  assert(worker_ != nullptr);  // 前置条件:InitWorker 成功
 
-  // listener 绑定 kDefaultBindIp，端口 0 让系统分配，再 query 取回。
+  // 端口 0 让系统分配,再 query 取回实际绑定地址(随 Descriptor 透传)。
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = 0;  // 系统分配
@@ -152,10 +145,8 @@ bool UcxMemoryManager::InitListener() {
 void UcxMemoryManager::StartProgressThread() {
   assert(worker_ != nullptr);  // 前置条件
 
-  // 起后台 progress 线程驱动 listener 的 conn_handler（见头注释）。
-  // 不请求 UCP_FEATURE_WAKEUP（避免 eventfd/signal 路径），用 spin + idle
-  // sleep：progress 返回 0（无事件）时短暂 sleep 让出 CPU，有事件时立即
-  // 再 progress。停止时 stop_ 标志在下个迭代生效，无需 signal。
+  // 后台 progress 线程驱动 listener conn_handler(见头注释)。不请求
+  // UCP_FEATURE_WAKEUP,用 spin + idle sleep:无事件时短暂 sleep 让出 CPU。
   progress_thread_ = std::thread([this]() {
     constexpr auto kIdleSleep = std::chrono::microseconds(50);
     while (!stop_.load(std::memory_order_acquire)) {
@@ -187,9 +178,7 @@ void UcxMemoryManager::CleanupListener() {
   }
 }
 
-// ===========================================================================
-//  构造/析构：逐阶段 init，失败按反向顺序回滚。
-// ===========================================================================
+// ---- 构造/析构:逐阶段 init,失败按反向顺序回滚。 ----
 
 UcxMemoryManager::UcxMemoryManager() {
   if (!InitContext()) {

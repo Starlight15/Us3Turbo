@@ -14,13 +14,12 @@ namespace us3_turbo::client {
 /**
  * @brief 进程唯一的 GDS 内存管理器 + RDMA token 颁发器。
  *
- * 注册表/锁/幂等注册流程继承自 BufferRegistry<size_t>(共享骨架),
- * 真正 pin 进 BAR1 的 cuObj 逻辑在 DoRegister/DoUnregister 里实现。
- * GDS 专属的 AcquireToken / Token RAII 留在本类,不进基类。
+ * 注册表/锁/幂等流程继承自 BufferRegistry<size_t>;真正 pin 进 BAR1 的 cuObj
+ * 逻辑在 DoRegister/DoUnregister 里。AcquireToken / Token RAII 留在本类。
  */
 class GdsMemoryManager : public BufferRegistry<std::size_t> {
  public:
-  /** @brief RDMA token 的 RAII 持有者。析构调 cuMemObjPutRDMAToken 释放。 */
+  /** @brief RDMA token 的 RAII 持有者,析构调 cuMemObjPutRDMAToken 释放。 */
   class Token {
    public:
     Token() = default;
@@ -42,21 +41,16 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
     char*        tok_{nullptr};
   };
 
-  /**
-   * @brief 获取进程唯一实例。失败返回 false。
-   */
+  /** @brief 获取进程唯一实例,失败返回 false。 */
   [[nodiscard]] static bool Instance(GdsMemoryManager*& out);
 
-  /** 显式注册 device buffer（pin 入 BAR1），幂等。 */
+  /** 显式注册 device buffer(pin 入 BAR1),幂等。 */
   [[nodiscard]] bool RegisterBuffer(void* ptr, std::size_t size);
 
-  /** 显式注销，必须在 cudaFree(ptr) 前调用，幂等。 */
+  /** 显式注销,须在 cudaFree(ptr) 前调用,幂等。 */
   [[nodiscard]] bool UnregisterBuffer(void* ptr);
 
-  /**
-   * @brief 获取 RDMA token（RAII 析构自动释放）。
-   * 未注册的 ptr 会 lazy register。
-   */
+  /** @brief 获取 RDMA token(RAII 析构自动释放)。未注册的 ptr 会 lazy register。 */
   [[nodiscard]] bool AcquireToken(const void* ptr, std::size_t size,
                                        std::size_t offset, Token& out);
 

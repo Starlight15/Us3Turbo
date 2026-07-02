@@ -1,14 +1,7 @@
 #pragma once
 
-// gds_put_channel.h — GDS(CUObj RDMA)链路的 PutChannel 实现。
-//
-// 与 ucx_put_channel.* 物理隔离(互不 include),可单独回归——GDS 机器稀缺
-// 时 GDS 链路不能被 UCX 依赖拖累(见 review/client_refactor_prompt.md 硬约束)。
-//
-// 持有 ClientOptions / ProxyRpc / GdsMemoryManager 的引用/指针(均由 Client
-// 在 Initialize 时传入并保活),PutOnce 搬运原 client.cpp 的 GdsPutOnce 逻辑:
-// AcquireToken(device) → 构 GdsDataSource → proxy.GdsPut → 回填 result →
-// 可选 VerifyGdsCrc32c(含 D2H 拷贝)→ 可选 GDS trace。
+// gds_put_channel.h — GDS(CUObj RDMA)链路的 PutChannel 实现,与 ucx_put_channel.* 物理隔离。
+// PutOnce:AcquireToken → GdsDataSource → proxy.GdsPut → 可选 CRC(D2H)/trace。
 
 #include <cstddef>
 
@@ -22,10 +15,8 @@ class ProxyRpc;
 
 /**
  * @brief GDS 链路的 PutChannel。device 显存走 cuObj RDMA token + backend
- *        反向 RDMA-READ。构造持有的引用必须由 Client 保活到本对象销毁。
- *
- * buffer 注册/注销在 AcquireToken 内部懒注册(未注册的 ptr 自动 DoRegister,
- * 注册表作进程级缓存复用),对外不暴露任何注册 API——与 UcxPutChannel 对称。
+ *        反向 RDMA-READ。构造持有的引用须由 Client 保活到本对象销毁。
+ *        buffer 注册在 AcquireToken 内懒注册,对外无注册 API。
  */
 class GdsPutChannel final : public PutChannel {
  public:

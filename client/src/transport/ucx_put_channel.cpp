@@ -1,10 +1,5 @@
 // ucx_put_channel.cpp — UCX 链路的 PutChannel 实现。
-//
-// 逐字搬运自原 client.cpp 的 UcxPutOnce + VerifyUcxCrc32c,逻辑不变
-// (日志文本 / CRC 行为 / trace 格式全部与重构前一致)。
-// **去重**:原 client.cpp 的 UcxPutOnce 被定义了两次(L192 与 L385),
-// 本次重构只保留迁入本文件的一份(见 review/client_refactor_prompt.md
-// 阶段1.4)。
+// 搬运自原 client.cpp 的 UcxPutOnce + VerifyUcxCrc32c,逻辑/日志/CRC/trace 不变。
 
 #include "client/src/transport/ucx_put_channel.h"
 
@@ -34,11 +29,7 @@ using detail::MakeRequestId;
 using detail::LatencyStage;
 using detail::TraceLatency;
 
-// ---------------------------------------------------------------------------
-//  CRC32C 端到端校验（可选，options.verify_crc32c 开启）
-//  UCX 路径：直接对 host buffer 计算 CRC（无需 D2H，ucx 链路的便利）。
-//  原 client.cpp 私有实现,逐字搬运。
-// ---------------------------------------------------------------------------
+// CRC32C 校验(options.verify_crc32c):UCX 对 host buffer 直算,无需 D2H。
 [[nodiscard]] bool VerifyUcxCrc32c(const std::string& request_id,
                                     ConstBufferView host_buffer,
                                     std::uint32_t remote_crc32c,
@@ -63,41 +54,35 @@ using detail::TraceLatency;
 
 }  // namespace
 
-// UCX 链路的单次尝试：AcquireDescriptor → UcxPut。
-// 与 gds 的 GdsPutChannel::PutOnce 完全独立，不复用。
+// UCX 链路单次尝试:AcquireDescriptor → UcxPut。与 GdsPutChannel 独立,不复用。
 bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request,
                              ConstBufferView buffer,
                              PutPathResult& result) const {
   assert(ucx_mgr_ != nullptr);
-  const std::string request_id = MakeRequestId();
+  const std::string request_id = MakeRequestId();  // 每次新生成,跨端日志关联
 
-  // 1. 性能追踪起点
   const bool trace = options_.latency_trace;
   auto t0 = trace ? clk::now() : clk::time_point{};
 
-  // 2. 获取 RDMA 描述符（host buffer），构造 UCX 数据源
   UcxMemoryManager::Descriptor desc;
-  if (!ucx_mgr_->AcquireDescriptor(buffer.data, buffer.size, desc)) {
+  if (!ucx_mgr_->AcquireDescriptor(buffer.data, buffer.size, desc)) {  // 懒注册
     return false;
   }
   UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};
   auto t_desc = trace ? clk::now() : clk::time_point{};
 
-  // 3. 执行 RPC
   if (!proxy_.UcxPut(request_id, request.bucket, request.key, request.object_size,
                      ucx_source, result)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};
 
-  // 4. 可选：CRC 校验（host buffer 直接算，无需 D2H）
   if (options_.verify_crc32c) {
     if (!VerifyUcxCrc32c(request_id, buffer, result.crc32c, request)) {
       return false;
     }
   }
 
-  // 5. 可选：性能追踪
   if (trace) {
     const LatencyStage stages[] = {
       {"start", t0}, {"desc", t_desc}, {"put", t_put}

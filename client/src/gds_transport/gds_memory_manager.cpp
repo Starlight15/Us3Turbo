@@ -45,8 +45,7 @@ GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
   connected_ = impl_->client && impl_->client->isConnected();
 }
 GdsMemoryManager::~GdsMemoryManager() {
-  // 懒注册常驻:注册表作进程级缓存,buffer 被复用时只注册一次,直到
-  // manager 析构统一释放。残留项是预期行为,不再是"忘了注销"的告警。
+  // 懒注册常驻:注册表作进程级缓存,残留项是预期行为(非"忘了注销")。
   if (RegisteredCount() != 0U) {
     spdlog::debug("[GdsMemoryManager] {} buffer(s) in cache at shutdown (懒注册常驻)",
                   RegisteredCount());
@@ -97,9 +96,8 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
 
   void* mut_ptr = const_cast<void*>(ptr);
 
-  // 单次加锁，在锁保护下完成注册检查（基类 RegisterBuffer 幂等）。
-  // 消除旧实现的双重检查锁定竞态：原实现解锁→再加锁之间有窗口期，且
-  // 第二次加锁后未复查 registered_，多线程下可能重复注册。
+  // 单次加锁完成注册检查(基类 RegisterBuffer 幂等),消除旧实现的双重检查
+  // 锁定竞态:原实现解锁→再加锁之间有窗口,且第二次加锁后未复查 registered_。
   {
     std::lock_guard<std::mutex> lk(mu_);
     if (registered_.count(mut_ptr)) {
@@ -109,8 +107,7 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
       return false;
     }
   }
-  // cuMemObjGetRDMAToken 是外部库调用，可能耗时较长，在锁外执行以提高
-  // 并发性：RegisterBuffer 已确保 impl_->client 有效且 buffer 已注册。
+  // cuMemObjGetRDMAToken 可能耗时较长,锁外执行以提高并发性。
   char* tok = nullptr;
   const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, CUOBJ_PUT, &tok);
   if (rc != CU_OBJ_SUCCESS || !tok) {
@@ -118,8 +115,7 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
                   ptr, size, offset, rc);
     return false;
   }
-  // 打印 backend 用以 RDMA-READ 的 token（形如 "hexaddr:rkey"），
-  // 便于跨机调试时核对 client 显存地址 + remote key 是否落在对端可达的 fabric 上。
+  // 打印 backend 用以 RDMA-READ 的 token("hexaddr:rkey"),跨机调试核对可达性。
   spdlog::info("AcquireToken: ptr={} size={} offset={} rdma_token={}",
                ptr, size, offset, tok);
   out = Token(impl_->client.get(), tok);
