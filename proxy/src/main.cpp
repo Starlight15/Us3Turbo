@@ -1,12 +1,18 @@
 #include <csignal>
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 #include <brpc/server.h>
 #include <gflags/gflags.h>
 #include <spdlog/spdlog.h>
 
-#include "proxy/src/service/proxy_control_plane_service.h"
+#include "proxy/src/api/proxy_control_plane_service.h"
+#include "proxy/src/index/in_memory_upload_index.h"
+#include "proxy/src/service/multipart_service.h"
+#include "proxy/src/service/single_put_service.h"
+#include "proxy/src/storage/backend_gateway.h"
+#include "proxy/src/storage/block_storage.h"
 
 DEFINE_int32(proxy_port, 9100, "proxy control-plane brpc port");
 DEFINE_string(bind_host, "192.168.1.198", "Bind host for the brpc listener");
@@ -35,8 +41,19 @@ void RunUntilAskedToQuit() {
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  us3_turbo::proxy::ProxyControlPlaneService service(
+  // 依赖注入装配：自底向上，存储层最长命（栈底），接口层最上，析构逆序安全。
+  auto gateway       = std::make_unique<us3_turbo::proxy::BackendGateway>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
+  auto block_storage = std::make_unique<us3_turbo::proxy::BlockStorage>(
+      FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
+  auto index         = std::make_unique<us3_turbo::proxy::InMemoryUploadIndex>();
+  auto single_svc    = std::make_unique<us3_turbo::proxy::SinglePutService>(
+      gateway.get());
+  auto multipart_svc = std::make_unique<us3_turbo::proxy::MultipartService>(
+      index.get(), block_storage.get());
+
+  us3_turbo::proxy::ProxyControlPlaneService service(
+      std::move(single_svc), std::move(multipart_svc), index.get());
 
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

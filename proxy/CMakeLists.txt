@@ -2,9 +2,12 @@ add_executable(us3_turbo_proxy
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/main.cpp
   src/common/utils.cpp
-  src/multipart/session_manager.cpp
-  src/multipart/multipart_put_handler.cpp
-  src/service/proxy_control_plane_service.cpp)
+  src/api/proxy_control_plane_service.cpp
+  src/service/single_put_service.cpp
+  src/service/multipart_service.cpp
+  src/index/in_memory_upload_index.cpp
+  src/storage/backend_gateway.cpp
+  src/storage/block_storage.cpp)
 
 add_dependencies(us3_turbo_proxy
   us3_turbo_control_plane_proto)
