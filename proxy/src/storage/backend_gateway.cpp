@@ -33,38 +33,52 @@ BackendGateway::BackendGateway(const std::string& backend_endpoint,
                backend_endpoint, timeout_ms_);
 }
 
-PutResult BackendGateway::ForwardGdsPut(
-    const ::us3_turbo::proxy::ClientProxyPutRequest& request) {
-  if (stub_ == nullptr)
-    return {ProxyStatus::Fail(PROXY_ERR_BACKEND_UNAVAILABLE, "no backend channel"),
-            {}, 0, 0};
+bool BackendGateway::ForwardGdsPut(
+    const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+    PutOutput& out, ProxyError& err) {
+  if (stub_ == nullptr) {
+    spdlog::warn("ForwardGdsPut: backend channel unavailable");
+    err = {PROXY_ERR_BACKEND_UNAVAILABLE, "no backend channel"};
+    return false;
+  }
   brpc::Controller bcntl;
   bcntl.set_timeout_ms(timeout_ms_);
   ::us3_turbo::proxy::PutPathResult bresp;
   stub_->GdsPut(&bcntl, &request, &bresp, nullptr);
-  if (bcntl.Failed())
-    return {ProxyStatus::Fail(PROXY_ERR_BACKEND_RPC,
-            std::string("backend GdsPut failed: ") + bcntl.ErrorText()),
-            {}, 0, 0};
-  return {ProxyStatus::Ok(), bresp.etag(), bresp.crc32c(),
-          bresp.bytes_written()};
+  if (bcntl.Failed()) {
+    spdlog::warn("ForwardGdsPut: backend GdsPut failed: {}", bcntl.ErrorText());
+    err = {PROXY_ERR_BACKEND_RPC,
+           std::string("backend GdsPut failed: ") + bcntl.ErrorText()};
+    return false;
+  }
+  out.etag          = bresp.etag();
+  out.crc32c        = bresp.crc32c();
+  out.bytes_written = bresp.bytes_written();
+  return true;
 }
 
-PutResult BackendGateway::ForwardUcxPut(
-    const ::us3_turbo::proxy::ClientProxyPutRequest& request) {
-  if (stub_ == nullptr)
-    return {ProxyStatus::Fail(PROXY_ERR_BACKEND_UNAVAILABLE, "no backend channel"),
-            {}, 0, 0};
+bool BackendGateway::ForwardUcxPut(
+    const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+    PutOutput& out, ProxyError& err) {
+  if (stub_ == nullptr) {
+    spdlog::warn("ForwardUcxPut: backend channel unavailable");
+    err = {PROXY_ERR_BACKEND_UNAVAILABLE, "no backend channel"};
+    return false;
+  }
   brpc::Controller bcntl;
   bcntl.set_timeout_ms(timeout_ms_);
   ::us3_turbo::proxy::PutPathResult bresp;
   stub_->UcxPut(&bcntl, &request, &bresp, nullptr);
-  if (bcntl.Failed())
-    return {ProxyStatus::Fail(PROXY_ERR_BACKEND_RPC,
-            std::string("backend UcxPut failed: ") + bcntl.ErrorText()),
-            {}, 0, 0};
-  return {ProxyStatus::Ok(), bresp.etag(), bresp.crc32c(),
-          bresp.bytes_written()};
+  if (bcntl.Failed()) {
+    spdlog::warn("ForwardUcxPut: backend UcxPut failed: {}", bcntl.ErrorText());
+    err = {PROXY_ERR_BACKEND_RPC,
+           std::string("backend UcxPut failed: ") + bcntl.ErrorText()};
+    return false;
+  }
+  out.etag          = bresp.etag();
+  out.crc32c        = bresp.crc32c();
+  out.bytes_written = bresp.bytes_written();
+  return true;
 }
 
 }  // namespace us3_turbo::proxy

@@ -7,10 +7,10 @@
 #include <gflags/gflags.h>
 #include <spdlog/spdlog.h>
 
-#include "proxy/src/api/proxy_control_plane_service.h"
+#include "proxy/src/api/control_plane_api.h"
 #include "proxy/src/index/in_memory_upload_index.h"
-#include "proxy/src/service/multipart_service.h"
-#include "proxy/src/service/single_put_service.h"
+#include "proxy/src/service/multipart.h"
+#include "proxy/src/service/single_put.h"
 #include "proxy/src/storage/backend_gateway.h"
 #include "proxy/src/storage/block_storage.h"
 
@@ -47,13 +47,13 @@ int main(int argc, char** argv) {
   auto block_storage = std::make_unique<us3_turbo::proxy::BlockStorage>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
   auto index         = std::make_unique<us3_turbo::proxy::InMemoryUploadIndex>();
-  auto single_svc    = std::make_unique<us3_turbo::proxy::SinglePutService>(
+  auto single_put    = std::make_unique<us3_turbo::proxy::SinglePut>(
       gateway.get());
-  auto multipart_svc = std::make_unique<us3_turbo::proxy::MultipartService>(
+  auto multipart     = std::make_unique<us3_turbo::proxy::Multipart>(
       index.get(), block_storage.get());
 
-  us3_turbo::proxy::ProxyControlPlaneService service(
-      std::move(single_svc), std::move(multipart_svc), index.get());
+  us3_turbo::proxy::ControlPlaneApi service(
+      std::move(single_put), std::move(multipart), index.get());
 
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

@@ -22,3 +22,6 @@ core.*
 .DS_Store
 *.swp
 compile_commands.json
+
+# Review notes (local-only planning docs, not part of source)
+review/

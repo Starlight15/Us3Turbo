@@ -1,4 +1,4 @@
-#include "proxy/src/api/proxy_control_plane_service.h"
+#include "proxy/src/api/control_plane_api.h"
 
 #include <chrono>
 #include <utility>
@@ -8,14 +8,16 @@
 #include <brpc/controller.h>
 #include <spdlog/spdlog.h>
 
+#include "proxy/src/common/errors.h"
+
 namespace us3_turbo::proxy {
 
-ProxyControlPlaneService::ProxyControlPlaneService(
-    std::unique_ptr<SinglePutService> single_put_svc,
-    std::unique_ptr<MultipartService> multipart_svc,
+ControlPlaneApi::ControlPlaneApi(
+    std::unique_ptr<SinglePut> single_put,
+    std::unique_ptr<Multipart> multipart,
     IUploadIndex* index_for_cleanup)
-    : single_put_svc_(std::move(single_put_svc)),
-      multipart_svc_(std::move(multipart_svc)),
+    : single_put_(std::move(single_put)),
+      multipart_(std::move(multipart)),
       index_(index_for_cleanup) {
   // 后台 TTL 清理：每小时扫一次，删 3 天前的会话；析构经 condition_variable 唤醒 join。
   cleanup_thread_ = std::thread([this]() {
@@ -34,7 +36,7 @@ ProxyControlPlaneService::ProxyControlPlaneService(
   });
 }
 
-ProxyControlPlaneService::~ProxyControlPlaneService() {
+ControlPlaneApi::~ControlPlaneApi() {
   {
     std::lock_guard lock(cleanup_mu_);
     stop_cleanup_ = true;
@@ -44,10 +46,10 @@ ProxyControlPlaneService::~ProxyControlPlaneService() {
 }
 
 // ===========================================================================
-// 单步 PUT（GDS / UCX）：薄委托服务层，status → response。
+// 单步 PUT（GDS / UCX）：薄委托服务层，false → SetFailed。
 // ===========================================================================
 
-void ProxyControlPlaneService::GdsPut(
+void ControlPlaneApi::GdsPut(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::ClientProxyPutRequest* request,
     ::us3_turbo::proxy::PutPathResult* response,
@@ -55,20 +57,21 @@ void ProxyControlPlaneService::GdsPut(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  auto r = single_put_svc_->PutGds(*request);
-  if (!r.status.ok()) {
-    cntl->SetFailed(r.status.code, "%s", r.status.message.c_str());
+  PutOutput out;
+  ProxyError err;
+  if (!single_put_->PutGds(*request, out, err)) {
+    cntl->SetFailed(err.code, "%s", err.message.c_str());
     return;
   }
   response->set_ok(true);
-  response->set_etag(r.etag);
-  response->set_bytes_written(r.bytes_written);
-  if (r.crc32c != 0) response->set_crc32c(r.crc32c);
+  response->set_etag(out.etag);
+  response->set_bytes_written(out.bytes_written);
+  if (out.crc32c != 0) response->set_crc32c(out.crc32c);
   spdlog::info("GdsPut: forwarded etag={} crc32c={:x} bytes={}",
-               r.etag, r.crc32c, r.bytes_written);
+               out.etag, out.crc32c, out.bytes_written);
 }
 
-void ProxyControlPlaneService::UcxPut(
+void ControlPlaneApi::UcxPut(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::ClientProxyPutRequest* request,
     ::us3_turbo::proxy::PutPathResult* response,
@@ -76,24 +79,25 @@ void ProxyControlPlaneService::UcxPut(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  auto r = single_put_svc_->PutUcx(*request);
-  if (!r.status.ok()) {
-    cntl->SetFailed(r.status.code, "%s", r.status.message.c_str());
+  PutOutput out;
+  ProxyError err;
+  if (!single_put_->PutUcx(*request, out, err)) {
+    cntl->SetFailed(err.code, "%s", err.message.c_str());
     return;
   }
   response->set_ok(true);
-  response->set_etag(r.etag);
-  response->set_bytes_written(r.bytes_written);
-  if (r.crc32c != 0) response->set_crc32c(r.crc32c);
+  response->set_etag(out.etag);
+  response->set_bytes_written(out.bytes_written);
+  if (out.crc32c != 0) response->set_crc32c(out.crc32c);
   spdlog::info("UcxPut: forwarded etag={} crc32c={:x} bytes={}",
-               r.etag, r.crc32c, r.bytes_written);
+               out.etag, out.crc32c, out.bytes_written);
 }
 
 // ===========================================================================
-// 分段上传：薄委托服务层。
+// 分段上传：薄委托服务层，false → set_error_message + SetFailed。
 // ===========================================================================
 
-void ProxyControlPlaneService::CreateMultipartUpload(
+void ControlPlaneApi::CreateMultipartUpload(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::CreateMultipartUploadRequest* request,
     ::us3_turbo::proxy::CreateMultipartUploadResponse* response,
@@ -101,22 +105,23 @@ void ProxyControlPlaneService::CreateMultipartUpload(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  auto r = multipart_svc_->CreateUpload(request->bucket(), request->key(),
-                                        request->path());
-  if (!r.status.ok()) {
+  std::string upload_id;
+  ProxyError err;
+  if (!multipart_->CreateUpload(request->bucket(), request->key(),
+                                request->path(), upload_id, err)) {
     response->set_ok(false);
-    response->set_error_message(r.status.message);
-    cntl->SetFailed(r.status.code, "%s", r.status.message.c_str());
+    response->set_error_message(err.message);
+    cntl->SetFailed(err.code, "%s", err.message.c_str());
     return;
   }
   response->set_ok(true);
-  response->set_upload_id(r.upload_id);
+  response->set_upload_id(upload_id);
   spdlog::info("CreateMultipartUpload: upload_id={} bucket={} key={} path={}",
-               r.upload_id, request->bucket(), request->key(),
+               upload_id, request->bucket(), request->key(),
                static_cast<int>(request->path()));
 }
 
-void ProxyControlPlaneService::UploadPartGds(
+void ControlPlaneApi::UploadPartGds(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::UploadPartGdsRequest* request,
     ::us3_turbo::proxy::UploadPartResponse* response,
@@ -124,28 +129,26 @@ void ProxyControlPlaneService::UploadPartGds(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  auto r = multipart_svc_->UploadPartGds(request->request_id(),
-                                         request->upload_id(),
-                                         request->part_number(),
-                                         request->part_size(),
-                                         request->rdma_token());
-  if (!r.status.ok()) {
+  UploadPartOutput out;
+  ProxyError err;
+  if (!multipart_->UploadPartGds(request->request_id(), request->upload_id(),
+                                 request->part_number(), request->part_size(),
+                                 request->rdma_token(), out, err)) {
     response->set_ok(false);
-    response->set_error_message(r.status.message);
-    cntl->SetFailed(r.status.code, "UploadPartGds failed: %s",
-                    r.status.message.c_str());
+    response->set_error_message(err.message);
+    cntl->SetFailed(err.code, "UploadPartGds failed: %s", err.message.c_str());
     return;
   }
   response->set_ok(true);
-  response->set_etag(r.etag);
-  response->set_bytes_written(r.bytes_written);
-  if (r.crc32c != 0) response->set_crc32c(r.crc32c);
+  response->set_etag(out.etag);
+  response->set_bytes_written(out.bytes_written);
+  if (out.crc32c != 0) response->set_crc32c(out.crc32c);
   spdlog::info("UploadPartGds: upload={} part={} size={} etag={} crc={:x}",
                request->upload_id(), request->part_number(),
-               request->part_size(), r.etag, r.crc32c);
+               request->part_size(), out.etag, out.crc32c);
 }
 
-void ProxyControlPlaneService::UploadPartUcx(
+void ControlPlaneApi::UploadPartUcx(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::UploadPartUcxRequest* request,
     ::us3_turbo::proxy::UploadPartResponse* response,
@@ -153,30 +156,27 @@ void ProxyControlPlaneService::UploadPartUcx(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  auto r = multipart_svc_->UploadPartUcx(request->request_id(),
-                                         request->upload_id(),
-                                         request->part_number(),
-                                         request->part_size(),
-                                         request->remote_addr(),
-                                         request->packed_rkey(),
-                                         request->client_ucx_addr());
-  if (!r.status.ok()) {
+  UploadPartOutput out;
+  ProxyError err;
+  if (!multipart_->UploadPartUcx(request->request_id(), request->upload_id(),
+                                 request->part_number(), request->part_size(),
+                                 request->remote_addr(), request->packed_rkey(),
+                                 request->client_ucx_addr(), out, err)) {
     response->set_ok(false);
-    response->set_error_message(r.status.message);
-    cntl->SetFailed(r.status.code, "UploadPartUcx failed: %s",
-                    r.status.message.c_str());
+    response->set_error_message(err.message);
+    cntl->SetFailed(err.code, "UploadPartUcx failed: %s", err.message.c_str());
     return;
   }
   response->set_ok(true);
-  response->set_etag(r.etag);
-  response->set_bytes_written(r.bytes_written);
-  if (r.crc32c != 0) response->set_crc32c(r.crc32c);
+  response->set_etag(out.etag);
+  response->set_bytes_written(out.bytes_written);
+  if (out.crc32c != 0) response->set_crc32c(out.crc32c);
   spdlog::info("UploadPartUcx: upload={} part={} size={} etag={} crc={:x}",
                request->upload_id(), request->part_number(),
-               request->part_size(), r.etag, r.crc32c);
+               request->part_size(), out.etag, out.crc32c);
 }
 
-void ProxyControlPlaneService::CompleteMultipartUpload(
+void ControlPlaneApi::CompleteMultipartUpload(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::CompleteMultipartUploadRequest* request,
     ::us3_turbo::proxy::CompleteMultipartUploadResponse* response,
@@ -191,30 +191,30 @@ void ProxyControlPlaneService::CompleteMultipartUpload(
     client_parts.push_back(request->parts(i));
   }
 
-  auto r = multipart_svc_->CompleteUpload(request->upload_id(), client_parts);
-  if (!r.status.ok()) {
+  CompleteOutput out;
+  ProxyError err;
+  if (!multipart_->CompleteUpload(request->upload_id(), client_parts, out, err)) {
     response->set_ok(false);
-    response->set_error_message(r.status.message);
-    cntl->SetFailed(r.status.code, "complete failed: %s",
-                    r.status.message.c_str());
+    response->set_error_message(err.message);
+    cntl->SetFailed(err.code, "complete failed: %s", err.message.c_str());
     return;
   }
   response->set_ok(true);
-  response->set_object_id(r.object_id);
-  response->set_etag(r.etag);
-  response->set_object_size(r.object_size);
+  response->set_object_id(out.object_id);
+  response->set_etag(out.etag);
+  response->set_object_size(out.object_size);
   spdlog::info("CompleteMultipartUpload: upload={} object_id={} size={} etag={}",
-               request->upload_id(), r.object_id, r.object_size, r.etag);
+               request->upload_id(), out.object_id, out.object_size, out.etag);
 }
 
-void ProxyControlPlaneService::AbortMultipartUpload(
+void ControlPlaneApi::AbortMultipartUpload(
     google::protobuf::RpcController* cntl_base,
     const ::us3_turbo::proxy::AbortMultipartUploadRequest* request,
     ::us3_turbo::proxy::AbortMultipartUploadResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   (void)static_cast<brpc::Controller*>(cntl_base);
-  (void)multipart_svc_->AbortUpload(request->upload_id());  // 幂等
+  (void)multipart_->AbortUpload(request->upload_id());  // 幂等，恒 true
   response->set_ok(true);
   spdlog::info("AbortMultipartUpload: upload={}", request->upload_id());
 }

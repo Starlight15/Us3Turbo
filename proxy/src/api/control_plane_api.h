@@ -11,16 +11,16 @@
 
 #include "control_plane.pb.h"
 #include "proxy/src/index/upload_index.h"
-#include "proxy/src/service/multipart_service.h"
-#include "proxy/src/service/single_put_service.h"
+#include "proxy/src/service/multipart.h"
+#include "proxy/src/service/single_put.h"
 
 namespace us3_turbo::proxy {
 
 /**
  * @brief 控制面接口层（Mode B）：唯一 brpc Control 子类，内部委托给服务层。
  *
- * 职责仅：ClosureGuard、proto↔域对象、ProxyStatus→cntl/response。
- * 不做参数校验、不编排——全在 SinglePutService / MultipartService；
+ * 职责仅：ClosureGuard、proto↔域对象、服务层 bool+ProxyError → cntl/response。
+ * 不做参数校验、不编排——全在 SinglePut / Multipart；
  * 不持 brpc channel——下沉到 BackendGateway / BlockStorage（main 装配注入）。
  *
  * 因 brpc 一个 proto service 只能注册一个 C++ 实例（按 service descriptor
@@ -29,14 +29,14 @@ namespace us3_turbo::proxy {
  *
  * 线程安全：构造后成员恒定，handler 可被 brpc 并发调用；下层自带同步。
  */
-class ProxyControlPlaneService final
+class ControlPlaneApi final
     : public ::us3_turbo::proxy::Control {
  public:
-  ProxyControlPlaneService(
-      std::unique_ptr<SinglePutService> single_put_svc,
-      std::unique_ptr<MultipartService> multipart_svc,
+  ControlPlaneApi(
+      std::unique_ptr<SinglePut> single_put,
+      std::unique_ptr<Multipart> multipart,
       IUploadIndex* index_for_cleanup);
-  ~ProxyControlPlaneService() override;
+  ~ControlPlaneApi() override;
 
   void GdsPut(
       google::protobuf::RpcController* cntl,
@@ -83,8 +83,8 @@ class ProxyControlPlaneService final
 
  private:
   // 服务层（main 注入，拥有下层）。
-  std::unique_ptr<SinglePutService>  single_put_svc_;
-  std::unique_ptr<MultipartService>  multipart_svc_;
+  std::unique_ptr<SinglePut>  single_put_;
+  std::unique_ptr<Multipart>  multipart_;
 
   // 索引层裸指针（main 持有，TTL 清理线程定时 RemoveExpired）。
   IUploadIndex* index_;

@@ -1,0 +1,70 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "control_plane.pb.h"
+#include "proxy/src/common/errors.h"
+#include "proxy/src/index/upload_index.h"
+#include "proxy/src/storage/block_storage.h"
+
+namespace us3_turbo::proxy {
+
+// 分段上传输出：成功时由服务层填充，接口层据此回填 response。
+struct UploadPartOutput {
+  std::string   etag;
+  std::uint32_t crc32c{0};
+  std::uint64_t bytes_written{0};
+};
+
+struct CompleteOutput {
+  std::string   object_id;
+  std::string   etag;
+  std::uint64_t object_size{0};
+};
+
+// 分段上传服务：编排 Create/UploadPart/Complete/Abort，业务规则（part 校验 /
+// final etag / client etag 比对）在本类。GDS/UCX 各自独立方法。依赖
+// IUploadIndex*（mock/Mongo 无差别替换）+ BlockStorage*（block 切分转发）。
+// 可失败路径返回 bool，失败先 spdlog 再填 err。
+class Multipart {
+ public:
+  Multipart(IUploadIndex* index, BlockStorage* block_storage);
+
+  [[nodiscard]] bool CreateUpload(
+      const std::string& bucket, const std::string& key,
+      ::us3_turbo::proxy::PutDataPath path,
+      std::string& out_upload_id, ProxyError& err);
+
+  [[nodiscard]] bool UploadPartGds(
+      const std::string& request_id, const std::string& upload_id,
+      std::uint32_t part_number, std::uint64_t part_size,
+      const std::string& rdma_token,
+      UploadPartOutput& out, ProxyError& err);
+
+  [[nodiscard]] bool UploadPartUcx(
+      const std::string& request_id, const std::string& upload_id,
+      std::uint32_t part_number, std::uint64_t part_size,
+      std::uint64_t remote_addr, const std::string& packed_rkey,
+      const std::string& client_ucx_addr,
+      UploadPartOutput& out, ProxyError& err);
+
+  [[nodiscard]] bool CompleteUpload(
+      const std::string& upload_id,
+      const std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>& client_parts,
+      CompleteOutput& out, ProxyError& err);
+
+  [[nodiscard]] bool AbortUpload(const std::string& upload_id);  // 幂等，恒 true
+
+ private:
+  // part 校验：失败先 spdlog 再填 err，返回 false。
+  [[nodiscard]] bool ValidateParts(const std::vector<PartRecord>& parts,
+                                   ProxyError& err);
+  std::string ComputeFinalETag(const std::vector<PartRecord>& parts);
+
+  IUploadIndex* index_;
+  BlockStorage* block_storage_;
+};
+
+}  // namespace us3_turbo::proxy
