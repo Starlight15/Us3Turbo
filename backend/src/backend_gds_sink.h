@@ -38,9 +38,10 @@ class BackendGdsSink {
   /**
    * @param compute_crc32c 为 false 时跳过对收到字节的 CRC32C 扫描
    *        (outcome.crc32c 恒为 0),用于关闭校验做纯吞吐压测。
+   *        默认 false;开启时同时作为内容派生 block etag 的来源。
    */
   BackendGdsSink(std::string bind_host, int rdma_port,
-                 bool compute_crc32c = true);
+                 bool compute_crc32c = false);
   ~BackendGdsSink();
 
   BackendGdsSink(const BackendGdsSink&) = delete;
@@ -59,10 +60,15 @@ class BackendGdsSink {
    *
    * length==0 视为成功空传输。length 超过 1 GiB cuObjServer 限制返回失败。
    * object_id 用 "bucket/object_key" 拼（与 gateway BuildObjectId 一致）。
+   * source_offset 为相对 token 注册 region 的偏移（分段上传 block 级拉取用，
+   * 单步 GdsPut 传 0）。cuObjServer handlePutObject 的 local_offset 形参是
+   * 「本地 pinned buffer 内偏移」，与远端 source_offset 无关——故本函数把
+   * source_offset 加到 remote_buf_start（远端地址）上，local_offset 仍为 0。
    */
   DiscardOutcome ReceiveAndDiscard(const std::string& object_id,
                                    const std::string& rdma_token,
-                                   std::uint64_t length);
+                                   std::uint64_t length,
+                                   std::uint64_t source_offset = 0);
 
  private:
   std::string bind_host_;

@@ -16,8 +16,8 @@ struct ClientOptions {
   // 默认超时
   std::chrono::milliseconds default_timeout{std::chrono::milliseconds(30000)};
 
-  // 单次 PUT 上限，与 backend 1 GiB chunk 对齐，0 表示不限
-  std::size_t put_single_max_bytes{1ULL * 1024 * 1024 * 1024};
+  // 单步 PUT 对象上限，默认 16MiB；超出走分段上传。0 表示不限制。
+  std::size_t put_single_max_bytes{16ULL * 1024 * 1024};
 
   // 端到端 CRC32C 校验开关
   bool verify_crc32c{false};

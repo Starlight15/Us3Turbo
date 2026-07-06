@@ -255,15 +255,21 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   }
   void* mut_ptr = const_cast<void*>(ptr);
 
-  std::scoped_lock lk(mu_);
-  // 幂等注册:已注册直接复用,未注册则 DoRegister。
-  ucp_mem_h* p_memh = FindLocked(mut_ptr);
-  if (p_memh == nullptr) {
-    if (!BufferRegistry::RegisterBuffer(mut_ptr, size)) return false;
-    p_memh = FindLocked(mut_ptr);
-    if (p_memh == nullptr) return false;  // 不应发生
+  // 单次加锁完成幂等注册检查并取出 memh。基类 BufferRegistry::RegisterBuffer
+  // 内部会再锁 mu_,此处已持锁须直接调 DoRegister(与 GdsMemoryManager
+  // ::AcquireToken 同构),否则 std::mutex 不可重入致自死锁。
+  ucp_mem_h memh{};
+  {
+    std::lock_guard<std::mutex> lk(mu_);
+    auto it = registered_.find(mut_ptr);
+    if (it == registered_.end()) {
+      ucp_mem_h h{};
+      if (!DoRegister(mut_ptr, size, h)) return false;
+      it = registered_.emplace(mut_ptr, std::move(h)).first;
+    }
+    memh = it->second;
   }
-  ucp_mem_h memh = *p_memh;
+  // ucp_rkey_pack 可能耗时,锁外执行以提高并发性(与 GDS token 获取同模式)。
   void* rkey_buf = nullptr;
   size_t rkey_size = 0;
   ucs_status_t st = ucp_rkey_pack(context_, memh, &rkey_buf, &rkey_size);

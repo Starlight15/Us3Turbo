@@ -71,9 +71,137 @@ message ClientProxyPutResponse {
   optional PutPathResult       ucx_result = 11;
 }
 
+// ========== 分段上传控制面消息 ==========
+// 设计：client 只与 proxy 的 Control 服务交互（CreateMultipartUpload /
+// UploadPart{Gds,Ucx} / CompleteMultipartUpload）；proxy 内存态会话 + 按 4MB
+// 切分后经 BackendDataPlane.PutBlock 调 backend。单步 GdsPut/UcxPut 保留不变，
+// 分段路径与之完全隔离。part_number 从 1 开始、客户端分配；block_no 从 0
+// 开始、proxy 分配。request_id 贯穿三层做日志关联。
+
+// 初始化分段上传。path 锁定整条会话的通路（PATH_GDS / PATH_UCX），后续
+// UploadPart 必须与会话 path 匹配，否则 proxy 拒绝。
+message CreateMultipartUploadRequest {
+  string      request_id = 1;
+  string      bucket     = 2;
+  string      key        = 3;
+  PutDataPath path       = 4;
+}
+
+message CreateMultipartUploadResponse {
+  bool   ok            = 1;
+  string upload_id     = 2;  // UUID，proxy 生成
+  string error_message = 3;
+}
+
+// 上传单个 part — GDS 路径。rdma_token 为本 part 独立注册的 cuObj RDMA
+// token（"hexaddr:rkey"），proxy 切分后把 source_offset 透传给 backend。
+message UploadPartGdsRequest {
+  string request_id  = 1;
+  string upload_id   = 2;
+  uint32 part_number = 3;  // 从 1 开始，客户端分配
+  uint64 part_size   = 4;  // 本 part 总大小
+  string rdma_token  = 5;
+}
+
+// 上传单个 part — UCX 路径。remote_addr 为本 part host buffer 起始虚拟地址，
+// proxy 切分后按 remote_addr + source_offset 传给 backend（地址加偏移）。
+message UploadPartUcxRequest {
+  string request_id      = 1;
+  string upload_id       = 2;
+  uint32 part_number     = 3;
+  uint64 part_size       = 4;
+  uint64 remote_addr     = 5;
+  bytes  packed_rkey     = 6;
+  string client_ucx_addr = 7;
+}
+
+// UploadPart 响应（GDS/UCX 共用）。etag 为本 part 的 ETag（proxy 汇总 block
+// etag 得到）；crc32c 仅在 backend 启用 CRC 计算时返回。
+message UploadPartResponse {
+  bool             ok            = 1;
+  string           etag          = 2;
+  optional uint32  crc32c        = 3;
+  uint64           bytes_written = 4;
+  string           error_message = 5;
+}
+
+// 完成分段上传。parts 可选（客户端用以校验已传 part 的 etag）。
+message CompleteMultipartUploadRequest {
+  string request_id = 1;
+  string upload_id  = 2;
+  repeated PartInfo parts = 3;
+
+  message PartInfo {
+    uint32 part_number = 1;
+    string etag        = 2;
+  }
+}
+
+message CompleteMultipartUploadResponse {
+  bool   ok            = 1;
+  string object_id     = 2;  // bucket/key 派生
+  string etag          = 3;  // 最终对象 ETag
+  uint64 object_size   = 4;
+  string error_message = 5;
+}
+
+// ========== Proxy → Backend 数据面消息（block 级，带 offset）==========
+// GDS block 数据源：source_offset 为相对 token 注册 region 的偏移，backend
+// 据此从 client 显存子区间反向 RDMA-READ（cuObjServer handlePutObject 的
+// local_offset 形参，替代单步路径硬编码的 0）。
+message GdsBlockSource {
+  string rdma_token    = 1;
+  uint64 source_offset = 2;
+  uint64 block_size    = 3;
+}
+
+// UCX block 数据源：remote_addr 已由 proxy 加上 source_offset，backend 直接
+// ucp_get_nbx(ep, buf, block_size, remote_addr, rkey)。
+message UcxBlockSource {
+  uint64 remote_addr     = 1;
+  bytes  packed_rkey     = 2;
+  string client_ucx_addr = 3;
+  uint64 block_size      = 4;
+}
+
+// proxy 向 backend 发送的 block 级请求。oneof source 区分 GDS/UCX。
+message ProxyBackendPutBlockRequest {
+  string      request_id  = 1;
+  string      upload_id   = 2;
+  uint32      part_number = 3;
+  uint32      block_no    = 4;  // part 内 block 序号（从 0 开始）
+  oneof source {
+    GdsBlockSource gds_source  = 10;
+    UcxBlockSource ucx_source  = 11;
+  }
+}
+
+message ProxyBackendPutBlockResponse {
+  bool             ok            = 1;
+  string           etag          = 2;  // 本 block 的 ETag
+  optional uint32  crc32c        = 3;  // backend 启用 CRC 时返回
+  string           error_message = 4;
+}
+
 // 单一 service，proxy 与 backend 都实现（brpc 按 service descriptor full_name
 // 去重，一进程一实例）。GdsPut / UcxPut 两个独立 RPC，内部代码独立、无共享逻辑。
 service Control {
   rpc GdsPut(ClientProxyPutRequest) returns (PutPathResult);
   rpc UcxPut(ClientProxyPutRequest) returns (PutPathResult);
+
+  // ===== 分段上传接口（client → proxy） =====
+  rpc CreateMultipartUpload(CreateMultipartUploadRequest)
+      returns (CreateMultipartUploadResponse);
+  rpc UploadPartGds(UploadPartGdsRequest) returns (UploadPartResponse);
+  rpc UploadPartUcx(UploadPartUcxRequest) returns (UploadPartResponse);
+  rpc CompleteMultipartUpload(CompleteMultipartUploadRequest)
+      returns (CompleteMultipartUploadResponse);
+}
+
+// Backend 数据面 block 级服务（proxy → backend）。与 Control 同进程注册：
+// brpc 按 service full_name 去重，Control 与 BackendDataPlane 是两个不同
+// descriptor，可共注册于同一 brpc server。backend 用独立的 C++ 类实现
+// （不能与 Control 共类继承——Service 多继承会产生 CallMethod 歧义）。
+service BackendDataPlane {
+  rpc PutBlock(ProxyBackendPutBlockRequest) returns (ProxyBackendPutBlockResponse);
 }

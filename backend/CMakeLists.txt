@@ -3,6 +3,7 @@ add_executable(us3_turbo_backend
   src/main.cpp
   src/backend_gds_sink.cpp
   src/backend_data_plane_service.cpp
+  src/backend_block_data_plane_service.cpp
   # GDS 数据面本地组件(原 gateway 借用文件,已并入 backend/src):
   #   gds/buffer_pool.cpp / gds/cuobj_resources.cpp —— cuObjServer pinned buffer 池与 RAII
   #   common/crc32c.cpp —— 自包含 CRC32C,供 PUT 丢弃前算校验和做端到端校验

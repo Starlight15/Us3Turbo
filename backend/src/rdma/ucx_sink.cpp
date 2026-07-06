@@ -28,7 +28,7 @@ inline double MsSince(clk::time_point t) {
   return std::chrono::duration<double, std::milli>(clk::now() - t).count();
 }
 
-constexpr std::uint64_t kMaxChunkBytes = 1ULL * 1024ULL * 1024ULL * 1024ULL;  // 1 GiB
+constexpr std::uint64_t kMaxChunkBytes = 16ULL * 1024ULL * 1024ULL;  // 16 MiB
 
 // 把 "ip:port" 解析成 sockaddr_in（UCX ep_create 的 SOCK_ADDR 需要）。
 // 仅支持 IPv4（与 134 的 mlx5 以太网 IP 一致）。失败返回 false。
@@ -130,7 +130,7 @@ DiscardOutcome UcxSink::ReceiveAndDiscard(const std::string& object_id,
   DiscardOutcome outcome;
 
   if (length > kMaxChunkBytes) {
-    outcome.error = "RDMA PUT chunk exceeds 1 GiB limit";
+    outcome.error = "PUT chunk exceeds 16MiB backend limit";
     return outcome;
   }
   if (length == 0U) {

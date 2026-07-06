@@ -1,6 +1,9 @@
 add_executable(us3_turbo_proxy
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/main.cpp
+  src/common/utils.cpp
+  src/multipart/session_manager.cpp
+  src/multipart/multipart_put_handler.cpp
   src/service/proxy_control_plane_service.cpp)
 
 add_dependencies(us3_turbo_proxy
@@ -16,7 +19,9 @@ target_link_libraries(us3_turbo_proxy
   PRIVATE
     us3_turbo_common
     us3_turbo_spdlog
-    us3_turbo_brpc)
+    us3_turbo_brpc
+    ${OPENSSL_SSL_STATIC_LIBRARY}
+    ${OPENSSL_CRYPTO_STATIC_LIBRARY})
 
 target_compile_options(us3_turbo_proxy
   PRIVATE

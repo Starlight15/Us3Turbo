@@ -24,7 +24,8 @@ inline double MsSince(clk::time_point t) {
 
 // 与 gateway GdsOptions 默认值对齐：1MB / 16MB / 256MB / 1GB，每 class 4 份。
 // 读自 gateway/include/us3_turbo/gateway/options.h，v1 照填。
-constexpr std::size_t kMaxChunkBytes = 1ULL * 1024ULL * 1024ULL * 1024ULL;  // 1 GiB
+// 单次 RDMA-READ 的 block 上限：16 MiB（分段 block ≤4MB，单步对象 ≤16MB）。
+constexpr std::size_t kMaxChunkBytes = 16ULL * 1024ULL * 1024ULL;  // 16 MiB
 
 const std::vector<std::size_t>& BufferSizeClasses() {
   static const std::vector<std::size_t> classes{
@@ -102,12 +103,13 @@ bool BackendGdsSink::available() const {
 
 DiscardOutcome BackendGdsSink::ReceiveAndDiscard(const std::string& object_id,
                                                  const std::string& rdma_token,
-                                                 std::uint64_t length) {
+                                                 std::uint64_t length,
+                                                 std::uint64_t source_offset) {
   using namespace us3_turbo::gateway::data_flow::gds;
   DiscardOutcome outcome;
 
   if (length > kMaxChunkBytes) {
-    outcome.error = "GDS PUT chunk exceeds 1 GiB cuObjServer limit";
+    outcome.error = "PUT chunk exceeds 16MiB backend limit";
     return outcome;
   }
   if (length == 0U) {
@@ -133,7 +135,13 @@ DiscardOutcome BackendGdsSink::ReceiveAndDiscard(const std::string& object_id,
   }
   ChannelGuard chan_guard(*server_, channel);
 
-  const auto remote_buf_start = ParseRemoteBufferAddress(rdma_token);
+  // token 形如 "hexaddr:rkey"：hexaddr 为 client 注册 region 的起始地址。
+  // 分段上传 block 级拉取时，source_offset 为相对该 region 的远端偏移，
+  // 加到 remote_buf_start 上得到 block 的远端起始地址；rkey 不变（同 MR）。
+  // cuObjServer handlePutObject 的 local_offset 形参是「本地 pinned buffer
+  // 内偏移」，与远端 source_offset 无关，故仍传 0。
+  const auto remote_base = ParseRemoteBufferAddress(rdma_token);
+  const auto remote_buf_start = remote_base + source_offset;
   ibv_wc_status status = IBV_WC_SUCCESS;
   const auto rdma_t0 = clk::now();
   const auto transferred = server_->handlePutObject(

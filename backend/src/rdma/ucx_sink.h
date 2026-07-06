@@ -45,8 +45,9 @@ class UcxSink {
   /**
    * @param compute_crc32c 为 false 时跳过对收到字节的 CRC32C 扫描
    *        (outcome.crc32c 恒为 0),用于关闭校验做纯吞吐压测。
+   *        默认 false;开启时同时作为内容派生 block etag 的来源。
    */
-  explicit UcxSink(bool compute_crc32c = true);
+  explicit UcxSink(bool compute_crc32c = false);
   ~UcxSink();
 
   UcxSink(const UcxSink&) = delete;

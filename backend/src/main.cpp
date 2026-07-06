@@ -6,6 +6,7 @@
 #include <gflags/gflags.h>
 #include <spdlog/spdlog.h>
 
+#include "backend/src/backend_block_data_plane_service.h"
 #include "backend/src/backend_data_plane_service.h"
 #include "backend/src/backend_gds_sink.h"
 #include "backend/src/rdma/ucx_sink.h"
@@ -17,10 +18,11 @@ DEFINE_string(bind_host, "192.168.1.198", "Bind host for brpc and cuObjServer");
 DEFINE_string(public_host, "192.168.1.198", "Public host (unused in v1)");
 DEFINE_int32(num_threads, 4, "brpc worker thread count");
 DEFINE_string(backend_id, "backend-0", "Backend identifier");
-DEFINE_bool(backend_compute_crc32c, true,
-            "Compute CRC32C over received bytes in the GDS/UCX sinks (for "
-            "end-to-end verification). Turn off to skip the scan and "
-            "measure raw transfer throughput (crc32c/etag then 0).");
+DEFINE_bool(backend_compute_crc32c, false,
+            "Compute CRC32C over received bytes in the GDS/UCX sinks (also "
+            "enables content-derived block etag). Default off for raw "
+            "throughput benchmarking; turn on for end-to-end integrity "
+            "verification (crc32c/etag then content-derived).");
 
 namespace {
 
@@ -62,9 +64,18 @@ int main(int argc, char** argv) {
   // 故 UcxPut 与 GdsPut 由同一对象持有，但内部代码独立、无共享逻辑。
   us3_turbo::backend::BackendDataPlaneService service(sink, ucx_sink);
 
+  // block 级数据面服务（分段上传 proxy → backend）：与 Control 是两个不同
+  // proto service descriptor，可共注册于同一 brpc server。
+  us3_turbo::backend::BackendBlockDataPlaneService block_service(sink, ucx_sink);
+
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
     spdlog::error("backend: failed to register data-plane service");
+    return EXIT_FAILURE;
+  }
+  if (server.AddService(&block_service,
+                        brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
+    spdlog::error("backend: failed to register block data-plane service");
     return EXIT_FAILURE;
   }
 

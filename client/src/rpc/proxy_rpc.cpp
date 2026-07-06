@@ -2,6 +2,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <brpc/controller.h>
 #include <brpc/errno.pb.h>
@@ -111,6 +112,158 @@ bool ProxyRpc::UcxPut(std::string_view request_id,
   result.etag         = resp.etag();
   result.crc32c       = resp.crc32c();
   result.bytes_written = resp.bytes_written();
+  return resp.ok();
+}
+
+// ---------------------------------------------------------------------------
+// 分段上传（client → proxy）。与单步 GdsPut/UcxPut 共用同一 brpc channel
+// 与 Control_Stub；proxy 在 Control service 上同时暴露这 4 个 RPC。
+// ---------------------------------------------------------------------------
+
+bool ProxyRpc::CreateMultipartUpload(
+    std::string_view request_id,
+    const std::string& bucket,
+    const std::string& key,
+    ::us3_turbo::proxy::PutDataPath path,
+    std::string& out_upload_id,
+    std::string& out_error) const {
+  if (!ok()) {
+    out_error = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  ::us3_turbo::proxy::CreateMultipartUploadRequest req;
+  req.set_request_id(std::string(request_id));
+  req.set_bucket(bucket);
+  req.set_key(key);
+  req.set_path(path);
+
+  ::us3_turbo::proxy::CreateMultipartUploadResponse resp;
+  stub()->CreateMultipartUpload(&controller, &req, &resp, nullptr);
+  if (controller.Failed()) {
+    out_error = controller.ErrorText();
+    spdlog::error("CreateMultipartUpload (req={}): rpc failed: {}",
+                  request_id, controller.ErrorText());
+    return false;
+  }
+  if (!resp.ok()) {
+    out_error = resp.error_message();
+    return false;
+  }
+  out_upload_id = resp.upload_id();
+  return true;
+}
+
+bool ProxyRpc::UploadPartGds(
+    std::string_view request_id,
+    const std::string& upload_id,
+    std::uint32_t part_number,
+    std::uint64_t part_size,
+    const std::string& rdma_token,
+    PutPathResult& result) const {
+  if (!ok()) {
+    result.ok = false;
+    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  ::us3_turbo::proxy::UploadPartGdsRequest req;
+  req.set_request_id(std::string(request_id));
+  req.set_upload_id(upload_id);
+  req.set_part_number(part_number);
+  req.set_part_size(part_size);
+  req.set_rdma_token(rdma_token);
+
+  ::us3_turbo::proxy::UploadPartResponse resp;
+  stub()->UploadPartGds(&controller, &req, &resp, nullptr);
+  if (controller.Failed()) {
+    return FailResult(result, controller, request_id, "UploadPartGds");
+  }
+  result.ok            = resp.ok();
+  result.error_message = resp.error_message();
+  result.etag          = resp.etag();
+  result.bytes_written = resp.bytes_written();
+  if (resp.has_crc32c()) result.crc32c = resp.crc32c();
+  return resp.ok();
+}
+
+bool ProxyRpc::UploadPartUcx(
+    std::string_view request_id,
+    const std::string& upload_id,
+    std::uint32_t part_number,
+    std::uint64_t part_size,
+    std::uint64_t remote_addr,
+    const std::string& packed_rkey,
+    const std::string& client_ucx_addr,
+    PutPathResult& result) const {
+  if (!ok()) {
+    result.ok = false;
+    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  ::us3_turbo::proxy::UploadPartUcxRequest req;
+  req.set_request_id(std::string(request_id));
+  req.set_upload_id(upload_id);
+  req.set_part_number(part_number);
+  req.set_part_size(part_size);
+  req.set_remote_addr(remote_addr);
+  req.set_packed_rkey(packed_rkey);
+  req.set_client_ucx_addr(client_ucx_addr);
+
+  ::us3_turbo::proxy::UploadPartResponse resp;
+  stub()->UploadPartUcx(&controller, &req, &resp, nullptr);
+  if (controller.Failed()) {
+    return FailResult(result, controller, request_id, "UploadPartUcx");
+  }
+  result.ok            = resp.ok();
+  result.error_message = resp.error_message();
+  result.etag          = resp.etag();
+  result.bytes_written = resp.bytes_written();
+  if (resp.has_crc32c()) result.crc32c = resp.crc32c();
+  return resp.ok();
+}
+
+bool ProxyRpc::CompleteMultipartUpload(
+    std::string_view request_id,
+    const std::string& upload_id,
+    const std::vector<std::pair<std::uint32_t, std::string>>& parts,
+    CompletedMultipart& out) const {
+  if (!ok()) {
+    out.error = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  ::us3_turbo::proxy::CompleteMultipartUploadRequest req;
+  req.set_request_id(std::string(request_id));
+  req.set_upload_id(upload_id);
+  for (const auto& [no, etag] : parts) {
+    auto* p = req.add_parts();
+    p->set_part_number(no);
+    p->set_etag(etag);
+  }
+
+  ::us3_turbo::proxy::CompleteMultipartUploadResponse resp;
+  stub()->CompleteMultipartUpload(&controller, &req, &resp, nullptr);
+  if (controller.Failed()) {
+    out.error = controller.ErrorText();
+    spdlog::error("CompleteMultipartUpload (req={}): rpc failed: {}",
+                  request_id, controller.ErrorText());
+    return false;
+  }
+  out.ok          = resp.ok();
+  out.object_id   = resp.object_id();
+  out.etag        = resp.etag();
+  out.object_size = resp.object_size();
+  out.error       = resp.error_message();
   return resp.ok();
 }
 
