@@ -1,7 +1,8 @@
 #pragma once
 
-#include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -36,15 +37,15 @@ namespace us3_turbo::proxy {
  * 无法另起子类。内存态会话由 SessionManager 管理；part 切分由
  * MultipartPutHandler 经 backend BackendDataPlane_Stub.PutBlock 调 backend。
  *
- * 线程安全：本类无状态（gateway_id_/backend_endpoint_ 构造后只读），
- * backend_channel_/backend_stub_ 构造后恒定不变，所有 RPC handler 可被
- * brpc 并发调用；session_manager_/put_handler_ 内部自带同步。
+ * 线程安全：本类无状态（backend_timeout_ms_ 构造后只读），
+ * backend_channel_/backend_stub_/backend_block_channel_/backend_block_stub_
+ * 构造后恒定不变，所有 RPC handler 可被 brpc 并发调用；
+ * session_manager_/put_handler_ 内部自带同步。
  */
 class ProxyControlPlaneService final
     : public ::us3_turbo::proxy::Control {
  public:
-  ProxyControlPlaneService(std::string gateway_id,
-                           std::string backend_endpoint,
+  ProxyControlPlaneService(std::string backend_endpoint,
                            int backend_timeout_ms);
   ~ProxyControlPlaneService() override;
 
@@ -85,30 +86,35 @@ class ProxyControlPlaneService final
       ::us3_turbo::proxy::CompleteMultipartUploadResponse* response,
       google::protobuf::Closure* done) override;
 
- private:
-  std::string gateway_id_;
-  std::string backend_endpoint_;  // backend 数据面地址，用于建 brpc channel
-  int         backend_timeout_ms_;
+  void AbortMultipartUpload(
+      google::protobuf::RpcController* cntl,
+      const ::us3_turbo::proxy::AbortMultipartUploadRequest* request,
+      ::us3_turbo::proxy::AbortMultipartUploadResponse* response,
+      google::protobuf::Closure* done) override;
 
-  // 到 backend 的同步转发 channel（Mode B）。构造失败则 stub 为空，
-  // GdsPut/UcxPut 以 PROXY_ERR_BACKEND_UNAVAILABLE 拒绝。
+ private:
+  int backend_timeout_ms_;
+
+  // 到 backend 的同步转发 channel（Mode B，单步 GdsPut/UcxPut）。构造失败则
+  // stub 为空，GdsPut/UcxPut 以 PROXY_ERR_BACKEND_UNAVAILABLE 拒绝。SINGLE 连接。
   std::shared_ptr<brpc::Channel>                     backend_channel_;
   std::unique_ptr<::us3_turbo::proxy::Control_Stub>   backend_stub_;
 
   // 到 backend 的 block 级 channel（BackendDataPlane 服务，分段上传用）。
-  // 复用同一 backend_endpoint，但 stub 类型不同（BackendDataPlane_Stub）。
-  std::unique_ptr<::us3_turbo::proxy::BackendDataPlane_Stub>
-      backend_block_stub_;
+  // 独立连接池 POOLED，避免与单步 SINGLE channel 串行阻塞；与 backend_block_stub_
+  // /put_handler_ 声明顺序保证析构逆序（put_handler_ 先释放对 stub 的引用）。
+  std::shared_ptr<brpc::Channel>                               backend_block_channel_;
+  std::unique_ptr<::us3_turbo::proxy::BackendDataPlane_Stub>   backend_block_stub_;
 
-  // 分段上传会话管理 + part 切分。put_handler_ 持有 backend_block_stub_ 的
-  // 裸引用，故声明在 put_handler_ 之前（成员析构逆序：put_handler_ 先析构，
-  // 释放对 stub 的引用，再 backend_block_stub_ 析构）。
+  // 分段上传会话管理 + part 切分。
   SessionManager                          session_manager_;
   std::unique_ptr<MultipartPutHandler>   put_handler_;
 
-  // 后台 TTL 清理线程（detach，进程退出时自然终止）。
-  std::thread cleanup_thread_;
-  std::atomic<bool> stop_cleanup_{false};
+  // 后台 TTL 清理线程（析构 join + condition_variable 唤醒，避免 detach 后访问已析构成员）。
+  std::thread             cleanup_thread_;
+  std::mutex              cleanup_mu_;
+  std::condition_variable cleanup_cv_;
+  bool                    stop_cleanup_{false};   // cleanup_mu_ 保护
 };
 
 }  // namespace us3_turbo::proxy

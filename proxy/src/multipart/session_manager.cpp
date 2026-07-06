@@ -4,6 +4,8 @@
 #include <shared_mutex>
 #include <utility>
 
+#include <spdlog/spdlog.h>
+
 #include "proxy/src/common/utils.h"
 
 namespace us3_turbo::proxy {
@@ -30,11 +32,13 @@ std::string SessionManager::CreateSession(const std::string& bucket,
   return upload_id;
 }
 
-UploadSession* SessionManager::GetSession(const std::string& upload_id) {
+bool SessionManager::GetSessionPath(const std::string& upload_id,
+                                    ::us3_turbo::proxy::PutDataPath& out_path) {
   std::shared_lock lock(sessions_mu_);
   auto it = sessions_.find(upload_id);
-  if (it == sessions_.end()) return nullptr;
-  return it->second.get();
+  if (it == sessions_.end()) return false;
+  out_path = it->second->path;
+  return true;
 }
 
 bool SessionManager::AddPart(const std::string& upload_id,
@@ -51,6 +55,10 @@ bool SessionManager::AddPart(const std::string& upload_id,
                           return q.part_number == part.part_number;
                         });
   if (p != session->parts.end()) {
+    if (p->part_size != part.part_size) {
+      spdlog::warn("AddPart: part {} size changed {} -> {} (overwrite)",
+                   part.part_number, p->part_size, part.part_size);
+    }
     *p = part;  // 同 part_number 覆盖
   } else {
     session->parts.push_back(part);
@@ -81,7 +89,7 @@ bool SessionManager::CompleteSession(
               return a.part_number < b.part_number;
             });
 
-  // 2. 连续性校验（1..N）。
+  // 2. 升序无重复校验（s3 语义：允许间隙如 1,3,5）。
   if (!ValidatePartList(*session, out_error)) return false;
 
   // 3. 客户端提供 part 列表时校验 etag 匹配。
@@ -114,10 +122,11 @@ bool SessionManager::ValidatePartList(const UploadSession& session,
     error = "no parts uploaded";
     return false;
   }
-  for (std::size_t i = 0; i < session.parts.size(); ++i) {
-    if (session.parts[i].part_number != i + 1) {
-      error = "part_number not consecutive, expected " + std::to_string(i + 1) +
-              " but got " + std::to_string(session.parts[i].part_number);
+  // s3 语义：part_number 升序且无重复（允许间隙，如 1,3,5）。
+  // parts 已在 CompleteSession 里按 part_number 排序，此处只校验严格升序。
+  for (std::size_t i = 1; i < session.parts.size(); ++i) {
+    if (session.parts[i].part_number <= session.parts[i - 1].part_number) {
+      error = "part_number not strictly ascending at index " + std::to_string(i);
       return false;
     }
   }

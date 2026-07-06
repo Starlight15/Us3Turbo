@@ -145,6 +145,17 @@ message CompleteMultipartUploadResponse {
   string error_message = 5;
 }
 
+// 终止分段上传：proxy 清理会话（幂等，不存在也 ok）。client 释放未完成上传
+// 的 proxy 内存态资源；之后再 UploadPart/Complete 该 upload_id → not found。
+message AbortMultipartUploadRequest {
+  string request_id = 1;
+  string upload_id  = 2;
+}
+message AbortMultipartUploadResponse {
+  bool   ok            = 1;
+  string error_message = 2;
+}
+
 // ========== Proxy → Backend 数据面消息（block 级，带 offset）==========
 // GDS block 数据源：source_offset 为相对 token 注册 region 的偏移，backend
 // 据此从 client 显存子区间反向 RDMA-READ（cuObjServer handlePutObject 的
@@ -196,6 +207,8 @@ service Control {
   rpc UploadPartUcx(UploadPartUcxRequest) returns (UploadPartResponse);
   rpc CompleteMultipartUpload(CompleteMultipartUploadRequest)
       returns (CompleteMultipartUploadResponse);
+  rpc AbortMultipartUpload(AbortMultipartUploadRequest)
+      returns (AbortMultipartUploadResponse);
 }
 
 // Backend 数据面 block 级服务（proxy → backend）。与 Control 同进程注册：

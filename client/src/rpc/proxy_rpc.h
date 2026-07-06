@@ -122,6 +122,12 @@ class ProxyRpc {
       const std::vector<std::pair<std::uint32_t, std::string>>& parts,
       CompletedMultipart& out) const;
 
+  /** @brief 终止分段上传，proxy 清理会话（幂等）。 */
+  [[nodiscard]] bool AbortMultipartUpload(
+      std::string_view request_id,
+      const std::string& upload_id,
+      std::string& out_error) const;
+
  private:
   void ApplyTimeout(brpc::Controller& controller) const {
     controller.set_timeout_ms(static_cast<int>(default_timeout_.count()));

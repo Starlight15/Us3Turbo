@@ -11,29 +11,19 @@ namespace us3_turbo::proxy::utils {
 
 namespace {
 
-// 16 进制单字符转数值（非法返回 -1）。
-int HexVal(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -1;
-}
-
 constexpr char kBase64Table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 }  // namespace
 
 std::string GenUuid() {
-  // UUID v4：128 位随机，置 version(4)/variant(10) 位。用 random_device 做种子
-  // 的 mt19937_64 生成，足够会话级唯一性。
+  // UUID v4（RFC 4122 version/variant），mt19937_64 seeded by random_device ^ steady_clock。
   static thread_local std::mt19937_64 rng{
-      (std::random_device{}() << 1) ^
+      std::random_device{}() ^
       static_cast<std::uint64_t>(
           std::chrono::steady_clock::now().time_since_epoch().count())};
   std::uint64_t a = rng();
   std::uint64_t b = rng();
-  // 把 128 位铺进 16 字节，再按 RFC 4122 调 version/variant。
   unsigned char bytes[16];
   for (int i = 0; i < 8; ++i) bytes[i]     = static_cast<unsigned char>(a >> (8 * (7 - i)));
   for (int i = 0; i < 8; ++i) bytes[i + 8] = static_cast<unsigned char>(b >> (8 * (7 - i)));

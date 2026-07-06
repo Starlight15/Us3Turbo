@@ -20,63 +20,73 @@ namespace {
 // 各模块内各自定义同名常量（client/proxy/backend），不跨模块共享头。
 constexpr std::uint64_t kMaxUploadBytes = 16ULL * 1024 * 1024;
 
-// path 是否包含某通路（bitflags：PATH_ALL=PATH_GDS|PATH_UCX）。
-bool HasPath(::us3_turbo::proxy::PutDataPath flags,
-             ::us3_turbo::proxy::PutDataPath check) {
-  return (static_cast<int>(flags) & static_cast<int>(check)) != 0;
-}
-
 }  // namespace
 
 ProxyControlPlaneService::ProxyControlPlaneService(
-    std::string gateway_id,
     std::string backend_endpoint,
     int backend_timeout_ms)
-    : gateway_id_(std::move(gateway_id)),
-      backend_endpoint_(std::move(backend_endpoint)),
-      backend_timeout_ms_(backend_timeout_ms) {
-  if (backend_endpoint_.empty()) {
+    : backend_timeout_ms_(backend_timeout_ms) {
+  if (backend_endpoint.empty()) {
     spdlog::warn("proxy: backend_endpoint empty, GdsPut will reject as "
                  "PROXY_ERR_BACKEND_UNAVAILABLE");
     return;
   }
+  // 单步 GdsPut/UcxPut 用的 SINGLE channel。
   auto channel = std::make_shared<brpc::Channel>();
   brpc::ChannelOptions options;
   options.timeout_ms = backend_timeout_ms_;
   options.connection_type = brpc::CONNECTION_TYPE_SINGLE;
-  if (channel->Init(backend_endpoint_.c_str(), nullptr, &options) != 0) {
+  if (channel->Init(backend_endpoint.c_str(), nullptr, &options) != 0) {
     spdlog::warn("proxy: failed to init backend channel to {}, GdsPut disabled",
-                 backend_endpoint_);
+                 backend_endpoint);
     return;
   }
   backend_channel_ = std::move(channel);
   backend_stub_ = std::make_unique<::us3_turbo::proxy::Control_Stub>(
       backend_channel_.get());
-  backend_block_stub_ =
-      std::make_unique<::us3_turbo::proxy::BackendDataPlane_Stub>(
-          backend_channel_.get());
-  put_handler_ = std::make_unique<MultipartPutHandler>(
-      backend_block_stub_.get(), backend_timeout_ms_);
-  spdlog::info("proxy: backend forward channel ready at {} (timeout {}ms)",
-               backend_endpoint_, backend_timeout_ms_);
 
-  // 后台 TTL 清理：每小时扫一次，删 3 天前的会话。
+  // block 级 POOLED channel（分段上传用）：独立连接池，避免与单步 SINGLE 串行阻塞。
+  auto block_channel = std::make_shared<brpc::Channel>();
+  brpc::ChannelOptions block_opts;
+  block_opts.timeout_ms = backend_timeout_ms_;
+  block_opts.connection_type = brpc::CONNECTION_TYPE_POOLED;
+  if (block_channel->Init(backend_endpoint.c_str(), nullptr, &block_opts) != 0) {
+    spdlog::warn("proxy: failed to init backend block channel; multipart disabled");
+  } else {
+    backend_block_channel_ = std::move(block_channel);
+    backend_block_stub_ =
+        std::make_unique<::us3_turbo::proxy::BackendDataPlane_Stub>(
+            backend_block_channel_.get());
+    put_handler_ = std::make_unique<MultipartPutHandler>(
+        backend_block_stub_.get(), backend_timeout_ms_);
+  }
+  spdlog::info("proxy: backend forward channel ready at {} (timeout {}ms)",
+               backend_endpoint, backend_timeout_ms_);
+
+  // 后台 TTL 清理：每小时扫一次，删 3 天前的会话；析构经 condition_variable 唤醒 join。
   cleanup_thread_ = std::thread([this]() {
-    constexpr std::int64_t kScanIntervalMs = 3600 * 1000;
     constexpr std::int64_t kTtlMs = 3LL * 24 * 3600 * 1000;
-    while (!stop_cleanup_.load(std::memory_order_relaxed)) {
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(kScanIntervalMs));
-      if (stop_cleanup_.load(std::memory_order_relaxed)) break;
+    constexpr auto kScanInterval = std::chrono::hours(1);
+    std::unique_lock lock(cleanup_mu_);
+    while (!stop_cleanup_) {
+      if (cleanup_cv_.wait_for(lock, kScanInterval,
+                               [this] { return stop_cleanup_; })) {
+        break;  // 被析构唤醒
+      }
+      lock.unlock();
       session_manager_.CleanupExpiredSessions(kTtlMs);
+      lock.lock();
     }
-    (void)kTtlMs;
   });
-  cleanup_thread_.detach();
 }
 
 ProxyControlPlaneService::~ProxyControlPlaneService() {
-  stop_cleanup_.store(true, std::memory_order_relaxed);
+  {
+    std::lock_guard lock(cleanup_mu_);
+    stop_cleanup_ = true;
+  }
+  cleanup_cv_.notify_all();
+  if (cleanup_thread_.joinable()) cleanup_thread_.join();
 }
 
 void ProxyControlPlaneService::GdsPut(
@@ -102,9 +112,8 @@ void ProxyControlPlaneService::GdsPut(
                     "object_size exceeds 16MiB single-step limit; use multipart");
     return;
   }
-  if (!HasPath(request->path(), ::us3_turbo::proxy::PATH_GDS)) {
-    cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED,
-                    "GdsPut requires path with PATH_GDS");
+  if (request->path() != ::us3_turbo::proxy::PATH_GDS) {
+    cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED, "GdsPut requires PATH_GDS");
     return;
   }
   if (!request->has_gds_source()) {
@@ -161,9 +170,8 @@ void ProxyControlPlaneService::UcxPut(
                     "object_size exceeds 16MiB single-step limit; use multipart");
     return;
   }
-  if (!HasPath(request->path(), ::us3_turbo::proxy::PATH_UCX)) {
-    cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED,
-                    "UcxPut requires path with PATH_UCX");
+  if (request->path() != ::us3_turbo::proxy::PATH_UCX) {
+    cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED, "UcxPut requires PATH_UCX");
     return;
   }
   if (!request->has_ucx_source()) {
@@ -238,14 +246,14 @@ void ProxyControlPlaneService::UploadPartGds(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  UploadSession* session = session_manager_.GetSession(request->upload_id());
-  if (session == nullptr) {
+  ::us3_turbo::proxy::PutDataPath path{};
+  if (!session_manager_.GetSessionPath(request->upload_id(), path)) {
     response->set_ok(false);
     response->set_error_message("upload_id not found");
     cntl->SetFailed(PROXY_ERR_INVALID_PARAM, "upload_id not found");
     return;
   }
-  if (session->path != ::us3_turbo::proxy::PATH_GDS) {
+  if (path != ::us3_turbo::proxy::PATH_GDS) {
     response->set_ok(false);
     response->set_error_message("session path is not PATH_GDS");
     cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED,
@@ -304,14 +312,14 @@ void ProxyControlPlaneService::UploadPartUcx(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  UploadSession* session = session_manager_.GetSession(request->upload_id());
-  if (session == nullptr) {
+  ::us3_turbo::proxy::PutDataPath path{};
+  if (!session_manager_.GetSessionPath(request->upload_id(), path)) {
     response->set_ok(false);
     response->set_error_message("upload_id not found");
     cntl->SetFailed(PROXY_ERR_INVALID_PARAM, "upload_id not found");
     return;
   }
-  if (session->path != ::us3_turbo::proxy::PATH_UCX) {
+  if (path != ::us3_turbo::proxy::PATH_UCX) {
     response->set_ok(false);
     response->set_error_message("session path is not PATH_UCX");
     cntl->SetFailed(PROXY_ERR_PATH_NOT_SUPPORTED,
@@ -401,6 +409,19 @@ void ProxyControlPlaneService::CompleteMultipartUpload(
 
   spdlog::info("CompleteMultipartUpload: upload={} object_id={} size={} etag={}",
                request->upload_id(), object_id, object_size, etag);
+}
+
+void ProxyControlPlaneService::AbortMultipartUpload(
+    google::protobuf::RpcController* cntl_base,
+    const ::us3_turbo::proxy::AbortMultipartUploadRequest* request,
+    ::us3_turbo::proxy::AbortMultipartUploadResponse* response,
+    google::protobuf::Closure* done) {
+  brpc::ClosureGuard done_guard(done);
+  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
+  (void)cntl;
+  session_manager_.CleanupSession(request->upload_id());  // 幂等，不存在也 ok
+  response->set_ok(true);
+  spdlog::info("AbortMultipartUpload: upload={}", request->upload_id());
 }
 
 }  // namespace us3_turbo::proxy

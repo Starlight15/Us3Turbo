@@ -267,4 +267,34 @@ bool ProxyRpc::CompleteMultipartUpload(
   return resp.ok();
 }
 
+bool ProxyRpc::AbortMultipartUpload(
+    std::string_view request_id,
+    const std::string& upload_id,
+    std::string& out_error) const {
+  if (!ok()) {
+    out_error = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  ::us3_turbo::proxy::AbortMultipartUploadRequest req;
+  req.set_request_id(std::string(request_id));
+  req.set_upload_id(upload_id);
+
+  ::us3_turbo::proxy::AbortMultipartUploadResponse resp;
+  stub()->AbortMultipartUpload(&controller, &req, &resp, nullptr);
+  if (controller.Failed()) {
+    out_error = controller.ErrorText();
+    spdlog::error("AbortMultipartUpload (req={}): rpc failed: {}",
+                  request_id, controller.ErrorText());
+    return false;
+  }
+  if (!resp.ok()) {
+    out_error = resp.error_message();
+    return false;
+  }
+  return true;
+}
+
 }  // namespace us3_turbo::client

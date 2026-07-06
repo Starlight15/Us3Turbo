@@ -11,11 +11,10 @@
 DEFINE_int32(proxy_port, 9100, "proxy control-plane brpc port");
 DEFINE_string(bind_host, "192.168.1.198", "Bind host for the brpc listener");
 DEFINE_int32(num_threads, 4, "brpc worker thread count");
-DEFINE_string(gateway_id, "proxy-0", "Proxy identifier");
 DEFINE_string(backend_endpoint, "192.168.1.198:9200",
-              "GDS backend data plane endpoint (proxy forwards GdsPut here)");
+              "backend data plane endpoint (GdsPut/UcxPut/PutBlock)");
 DEFINE_int32(backend_timeout_ms, 30000,
-             "Timeout (ms) for proxy→backend GdsPut forward");
+             "Timeout (ms) for proxy→backend forward (GdsPut/UcxPut/PutBlock)");
 
 namespace {
 
@@ -37,7 +36,7 @@ int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   us3_turbo::proxy::ProxyControlPlaneService service(
-      FLAGS_gateway_id, FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
+      FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
 
   brpc::Server server;
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

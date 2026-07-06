@@ -92,6 +92,11 @@ class Client {
       const std::vector<PartInfo>& parts,
       CompletedMultipart& out) const;
 
+  /** @brief 终止分段上传，释放 proxy 会话（幂等）。 */
+  [[nodiscard]] bool AbortMultipartUpload(
+      const std::string& upload_id,
+      std::string& out_error) const;
+
  private:
   ClientOptions                  options_;
   std::unique_ptr<ProxyRpc>      proxy_;

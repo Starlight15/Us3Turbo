@@ -352,4 +352,15 @@ bool Client::CompleteMultipartUpload(
   return out.ok;
 }
 
+bool Client::AbortMultipartUpload(
+    const std::string& upload_id,
+    std::string& out_error) const {
+  if (!initialized_) {
+    out_error = "Client not initialized";
+    return false;
+  }
+  const std::string request_id = detail::MakeRequestId();
+  return proxy_->AbortMultipartUpload(request_id, upload_id, out_error);
+}
+
 }  // namespace us3_turbo::client
