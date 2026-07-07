@@ -19,7 +19,8 @@ namespace us3_turbo::proxy {
 /**
  * @brief 控制面接口层（Mode B）：唯一 brpc Control 子类，内部委托给服务层。
  *
- * 职责仅：ClosureGuard、proto↔域对象、服务层 int 返回码 → cntl/response。
+ * 职责仅：ClosureGuard、proto↔域对象、服务层 int 返回码 → cntl/response、
+ * 记 Access 审计日志（每 handler 一条）+ App 日志（LOG_*，rid 贯穿三层）。
  * 不做参数校验、不编排——全在 SinglePut / Multipart；
  * 不持 brpc channel——下沉到 BackendGateway / BlockStorage（main 装配注入）。
  *

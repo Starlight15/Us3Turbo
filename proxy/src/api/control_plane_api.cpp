@@ -1,16 +1,35 @@
 #include "proxy/src/api/control_plane_api.h"
 
 #include <chrono>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <brpc/closure_guard.h>
 #include <brpc/controller.h>
-#include <spdlog/spdlog.h>
+#include <gflags/gflags.h>
 
 #include "proxy/src/common/errors.h"
+#include "proxy/src/common/flags.h"
+#include "proxy/src/logging/access_logger.h"
+#include "proxy/src/logging/logger.h"
 
 namespace us3_turbo::proxy {
+
+namespace {
+
+// 接口层测量每个 handler 耗时用。steady_clock 单调，不受系统时钟跳变影响。
+using SteadyClock = std::chrono::steady_clock;
+
+std::chrono::milliseconds ElapsedMs(SteadyClock::time_point start) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      SteadyClock::now() - start);
+}
+
+// bucket/key 在 multipart part/complete/abort 请求里没有，Access 日志用占位。
+constexpr const char* kDash = "-";
+
+}  // namespace
 
 ControlPlaneApi::ControlPlaneApi(
     std::unique_ptr<SinglePut> single_put,
@@ -19,10 +38,11 @@ ControlPlaneApi::ControlPlaneApi(
     : single_put_(std::move(single_put)),
       multipart_(std::move(multipart)),
       index_(index_for_cleanup) {
-  // 后台 TTL 清理：每小时扫一次，删 3 天前的会话；析构经 condition_variable 唤醒 join。
+  // 后台 TTL 清理：按 scan interval 扫一次，删 ttl 前的会话；析构经 condition_variable 唤醒 join。
   cleanup_thread_ = std::thread([this]() {
-    constexpr std::int64_t kTtlMs = 3LL * 24 * 3600 * 1000;
-    constexpr auto kScanInterval = std::chrono::hours(1);
+    const std::int64_t kTtlMs = FLAGS_upload_ttl_ms;
+    const auto kScanInterval =
+        std::chrono::milliseconds(FLAGS_upload_ttl_scan_interval_ms);
     std::unique_lock lock(cleanup_mu_);
     while (!stop_cleanup_) {
       if (cleanup_cv_.wait_for(lock, kScanInterval,
@@ -47,6 +67,7 @@ ControlPlaneApi::~ControlPlaneApi() {
 
 // ===========================================================================
 // 单步 PUT（GDS / UCX）：薄委托服务层，ret != 0 → SetFailed。
+// 每个 handler 开始记 LOG_INFO，结束打 Access 日志（成功/失败均打）。
 // ===========================================================================
 
 void ControlPlaneApi::GdsPut(
@@ -57,18 +78,30 @@ void ControlPlaneApi::GdsPut(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
+  const std::string& rid = request->request_id();
+  const auto start = SteadyClock::now();
+  LOG_INFO(rid, "GdsPut start bucket={} key={} size={}",
+           request->bucket(), request->key(), request->object_size());
+
   PutOutput out;
   int ret = single_put_->PutGds(*request, out);
+  const auto latency = ElapsedMs(start);
+
   if (ret != 0) {
+    LOG_WARN(rid, "GdsPut failed code={}", ret);
     cntl->SetFailed(ret, "%s", ProxyErrorMessage(ret));
+    AccessLogger::Instance().LogRequest(
+        "GdsPut", rid, request->bucket(), request->key(), ret, 0, latency);
     return;
   }
   response->set_ok(true);
   response->set_etag(out.etag);
   response->set_bytes_written(out.bytes_written);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  spdlog::info("GdsPut: forwarded etag={} crc32c={:x} bytes={}",
-               out.etag, out.crc32c, out.bytes_written);
+  LOG_INFO(rid, "GdsPut success etag={} bytes={}", out.etag, out.bytes_written);
+  AccessLogger::Instance().LogRequest(
+      "GdsPut", rid, request->bucket(), request->key(),
+      0, out.bytes_written, latency);
 }
 
 void ControlPlaneApi::UcxPut(
@@ -79,22 +112,35 @@ void ControlPlaneApi::UcxPut(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
+  const std::string& rid = request->request_id();
+  const auto start = SteadyClock::now();
+  LOG_INFO(rid, "UcxPut start bucket={} key={} size={}",
+           request->bucket(), request->key(), request->object_size());
+
   PutOutput out;
   int ret = single_put_->PutUcx(*request, out);
+  const auto latency = ElapsedMs(start);
+
   if (ret != 0) {
+    LOG_WARN(rid, "UcxPut failed code={}", ret);
     cntl->SetFailed(ret, "%s", ProxyErrorMessage(ret));
+    AccessLogger::Instance().LogRequest(
+        "UcxPut", rid, request->bucket(), request->key(), ret, 0, latency);
     return;
   }
   response->set_ok(true);
   response->set_etag(out.etag);
   response->set_bytes_written(out.bytes_written);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  spdlog::info("UcxPut: forwarded etag={} crc32c={:x} bytes={}",
-               out.etag, out.crc32c, out.bytes_written);
+  LOG_INFO(rid, "UcxPut success etag={} bytes={}", out.etag, out.bytes_written);
+  AccessLogger::Instance().LogRequest(
+      "UcxPut", rid, request->bucket(), request->key(),
+      0, out.bytes_written, latency);
 }
 
 // ===========================================================================
 // 分段上传：薄委托服务层，ret != 0 → set_error_message + SetFailed。
+// multipart part/complete/abort 请求无 bucket/key，Access 日志用 "-" 占位。
 // ===========================================================================
 
 void ControlPlaneApi::CreateMultipartUpload(
@@ -105,21 +151,33 @@ void ControlPlaneApi::CreateMultipartUpload(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
+  const std::string& rid = request->request_id();
+  const auto start = SteadyClock::now();
+  LOG_INFO(rid, "CreateMultipartUpload start bucket={} key={} path={}",
+           request->bucket(), request->key(), static_cast<int>(request->path()));
+
   std::string upload_id;
   int ret = multipart_->CreateUpload(request->bucket(), request->key(),
                                      request->path(), upload_id);
+  const auto latency = ElapsedMs(start);
+
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "CreateMultipartUpload failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "%s", msg);
+    AccessLogger::Instance().LogRequest(
+        "CreateMultipartUpload", rid, request->bucket(), request->key(),
+        ret, 0, latency);
     return;
   }
   response->set_ok(true);
   response->set_upload_id(upload_id);
-  spdlog::info("CreateMultipartUpload: upload_id={} bucket={} key={} path={}",
-               upload_id, request->bucket(), request->key(),
-               static_cast<int>(request->path()));
+  LOG_INFO(rid, "CreateMultipartUpload success upload_id={}", upload_id);
+  AccessLogger::Instance().LogRequest(
+      "CreateMultipartUpload", rid, request->bucket(), request->key(),
+      0, 0, latency);
 }
 
 void ControlPlaneApi::UploadPartGds(
@@ -130,24 +188,35 @@ void ControlPlaneApi::UploadPartGds(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
+  const std::string& rid = request->request_id();
+  const auto start = SteadyClock::now();
+  LOG_INFO(rid, "UploadPartGds start upload={} part={} size={}",
+           request->upload_id(), request->part_number(), request->part_size());
+
   UploadPartOutput out;
   int ret = multipart_->UploadPartGds(request->request_id(), request->upload_id(),
                                       request->part_number(), request->part_size(),
                                       request->rdma_token(), out);
+  const auto latency = ElapsedMs(start);
+
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "UploadPartGds failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "UploadPartGds failed: %s", msg);
+    AccessLogger::Instance().LogRequest(
+        "UploadPartGds", rid, kDash, kDash, ret, 0, latency);
     return;
   }
   response->set_ok(true);
   response->set_etag(out.etag);
   response->set_bytes_written(out.bytes_written);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  spdlog::info("UploadPartGds: upload={} part={} size={} etag={} crc={:x}",
-               request->upload_id(), request->part_number(),
-               request->part_size(), out.etag, out.crc32c);
+  LOG_INFO(rid, "UploadPartGds success part={} etag={} bytes={}",
+           request->part_number(), out.etag, out.bytes_written);
+  AccessLogger::Instance().LogRequest(
+      "UploadPartGds", rid, kDash, kDash, 0, out.bytes_written, latency);
 }
 
 void ControlPlaneApi::UploadPartUcx(
@@ -158,25 +227,36 @@ void ControlPlaneApi::UploadPartUcx(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
+  const std::string& rid = request->request_id();
+  const auto start = SteadyClock::now();
+  LOG_INFO(rid, "UploadPartUcx start upload={} part={} size={}",
+           request->upload_id(), request->part_number(), request->part_size());
+
   UploadPartOutput out;
   int ret = multipart_->UploadPartUcx(request->request_id(), request->upload_id(),
                                       request->part_number(), request->part_size(),
                                       request->remote_addr(), request->packed_rkey(),
                                       request->client_ucx_addr(), out);
+  const auto latency = ElapsedMs(start);
+
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "UploadPartUcx failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "UploadPartUcx failed: %s", msg);
+    AccessLogger::Instance().LogRequest(
+        "UploadPartUcx", rid, kDash, kDash, ret, 0, latency);
     return;
   }
   response->set_ok(true);
   response->set_etag(out.etag);
   response->set_bytes_written(out.bytes_written);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  spdlog::info("UploadPartUcx: upload={} part={} size={} etag={} crc={:x}",
-               request->upload_id(), request->part_number(),
-               request->part_size(), out.etag, out.crc32c);
+  LOG_INFO(rid, "UploadPartUcx success part={} etag={} bytes={}",
+           request->part_number(), out.etag, out.bytes_written);
+  AccessLogger::Instance().LogRequest(
+      "UploadPartUcx", rid, kDash, kDash, 0, out.bytes_written, latency);
 }
 
 void ControlPlaneApi::CompleteMultipartUpload(
@@ -187,6 +267,11 @@ void ControlPlaneApi::CompleteMultipartUpload(
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
+  const std::string& rid = request->request_id();
+  const auto start = SteadyClock::now();
+  LOG_INFO(rid, "CompleteMultipartUpload start upload={} parts={}",
+           request->upload_id(), request->parts_size());
+
   std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>
       client_parts;
   client_parts.reserve(request->parts_size());
@@ -196,19 +281,27 @@ void ControlPlaneApi::CompleteMultipartUpload(
 
   CompleteOutput out;
   int ret = multipart_->CompleteUpload(request->upload_id(), client_parts, out);
+  const auto latency = ElapsedMs(start);
+
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "CompleteMultipartUpload failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "complete failed: %s", msg);
+    AccessLogger::Instance().LogRequest(
+        "CompleteMultipartUpload", rid, kDash, kDash, ret, 0, latency);
     return;
   }
   response->set_ok(true);
   response->set_object_id(out.object_id);
   response->set_etag(out.etag);
   response->set_object_size(out.object_size);
-  spdlog::info("CompleteMultipartUpload: upload={} object_id={} size={} etag={}",
-               request->upload_id(), out.object_id, out.object_size, out.etag);
+  LOG_INFO(rid, "CompleteMultipartUpload success object_id={} size={} etag={}",
+           out.object_id, out.object_size, out.etag);
+  AccessLogger::Instance().LogRequest(
+      "CompleteMultipartUpload", rid, kDash, kDash,
+      0, out.object_size, latency);
 }
 
 void ControlPlaneApi::AbortMultipartUpload(
@@ -218,9 +311,17 @@ void ControlPlaneApi::AbortMultipartUpload(
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   (void)static_cast<brpc::Controller*>(cntl_base);
+
+  const std::string& rid = request->request_id();
+  const auto start = SteadyClock::now();
+  LOG_INFO(rid, "AbortMultipartUpload start upload={}", request->upload_id());
+
   (void)multipart_->AbortUpload(request->upload_id());  // 幂等，恒 true
   response->set_ok(true);
-  spdlog::info("AbortMultipartUpload: upload={}", request->upload_id());
+  const auto latency = ElapsedMs(start);
+  LOG_INFO(rid, "AbortMultipartUpload done upload={}", request->upload_id());
+  AccessLogger::Instance().LogRequest(
+      "AbortMultipartUpload", rid, kDash, kDash, 0, 0, latency);
 }
 
 }  // namespace us3_turbo::proxy

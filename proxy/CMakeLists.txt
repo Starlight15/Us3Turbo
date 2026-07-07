@@ -3,6 +3,8 @@ add_executable(us3_turbo_proxy
   src/main.cpp
   src/common/flags.cpp
   src/common/utils.cpp
+  src/logging/logger.cpp
+  src/logging/access_logger.cpp
   src/api/control_plane_api.cpp
   src/service/single_put.cpp
   src/service/multipart.cpp
@@ -26,13 +28,6 @@ target_link_libraries(us3_turbo_proxy
     us3_turbo_brpc
     ${OPENSSL_SSL_STATIC_LIBRARY}
     ${OPENSSL_CRYPTO_STATIC_LIBRARY})
-
-target_compile_options(us3_turbo_proxy
-  PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-    -Wconversion)
 
 target_compile_options(us3_turbo_proxy
   PRIVATE

@@ -4,9 +4,8 @@
 #include <shared_mutex>
 #include <utility>
 
-#include <spdlog/spdlog.h>
-
 #include "proxy/src/common/utils.h"
+#include "proxy/src/logging/logger.h"
 
 namespace us3_turbo::proxy {
 
@@ -52,8 +51,8 @@ bool InMemoryUploadIndex::AddPart(const std::string& upload_id,
                         });
   if (p != entry->parts.end()) {
     if (p->part_size != part.part_size) {
-      spdlog::warn("AddPart: part {} size changed {} -> {} (overwrite)",
-                   part.part_number, p->part_size, part.part_size);
+      LOG_WARN("-", "AddPart part {} size changed {} -> {} (overwrite)",
+               part.part_number, p->part_size, part.part_size);
     }
     *p = part;  // 同 part_number 覆盖
   } else {

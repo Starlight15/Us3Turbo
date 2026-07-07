@@ -10,12 +10,23 @@
 #include "proxy/src/api/control_plane_api.h"
 #include "proxy/src/common/flags.h"
 #include "proxy/src/index/in_memory_upload_index.h"
+#include "proxy/src/logging/access_logger.h"
+#include "proxy/src/logging/logger.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
 #include "proxy/src/storage/backend_gateway.h"
 #include "proxy/src/storage/block_storage.h"
 
 namespace {
+
+// 解析 --log_level 字符串为 spdlog 级别（未知值回落 info）。
+spdlog::level::level_enum ParseLogLevel(const std::string& s) {
+  if (s == "debug") return spdlog::level::debug;
+  if (s == "info")  return spdlog::level::info;
+  if (s == "warn")  return spdlog::level::warn;
+  if (s == "error") return spdlog::level::err;
+  return spdlog::level::info;
+}
 
 void RunUntilAskedToQuit() {
   sigset_t mask{};
@@ -34,11 +45,23 @@ void RunUntilAskedToQuit() {
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
+  // 初始化 App 日志（rotating 文件 + 控制台双 sink）。
+  us3_turbo::proxy::Logger::Init(
+      ParseLogLevel(FLAGS_log_level),
+      static_cast<std::size_t>(FLAGS_log_max_size_mb),
+      static_cast<std::size_t>(FLAGS_log_max_files));
+
+  // 初始化 Access 审计日志（单例，按天切分，永久开启）。
+  us3_turbo::proxy::AccessLogger::Instance();
+
+  spdlog::info("proxy starting on {}:{}", FLAGS_bind_host, FLAGS_proxy_port);
+
   // 依赖注入装配：自底向上，存储层最长命（栈底），接口层最上，析构逆序安全。
   auto gateway       = std::make_unique<us3_turbo::proxy::BackendGateway>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
   auto block_storage = std::make_unique<us3_turbo::proxy::BlockStorage>(
-      FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
+      FLAGS_backend_endpoint, FLAGS_backend_timeout_ms,
+      FLAGS_backend_block_size_bytes);
   auto index         = std::make_unique<us3_turbo::proxy::InMemoryUploadIndex>();
   auto single_put    = std::make_unique<us3_turbo::proxy::SinglePut>(
       gateway.get());

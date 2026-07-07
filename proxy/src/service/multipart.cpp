@@ -4,10 +4,9 @@
 #include <string>
 #include <vector>
 
-#include <spdlog/spdlog.h>
-
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/utils.h"
+#include "proxy/src/logging/logger.h"
 
 namespace us3_turbo::proxy {
 
@@ -19,16 +18,18 @@ int Multipart::CreateUpload(
     ::us3_turbo::proxy::PutDataPath path,
     std::string& out_upload_id) {
   if (bucket.empty() || key.empty()) {
-    spdlog::warn("CreateUpload: bucket/key empty bucket={} key={}", bucket, key);
+    LOG_WARN("-", "CreateUpload bucket/key empty bucket={} key={}", bucket, key);
     return PROXY_ERR_INVALID_PARAM;
   }
   if (path != ::us3_turbo::proxy::PATH_GDS &&
       path != ::us3_turbo::proxy::PATH_UCX) {
-    spdlog::warn("CreateUpload: path={} not GDS/UCX bucket={}/{}",
-                 static_cast<int>(path), bucket, key);
+    LOG_WARN("-", "CreateUpload path={} not GDS/UCX bucket={}/{}",
+             static_cast<int>(path), bucket, key);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
   out_upload_id = index_->Create(bucket, key, path);
+  LOG_INFO("-", "CreateUpload upload_id={} bucket={}/{} path={}",
+           out_upload_id, bucket, key, static_cast<int>(path));
   return 0;
 }
 
@@ -39,30 +40,30 @@ int Multipart::UploadPartGds(
     UploadPartOutput& out) {
   UploadRecord rec;
   if (!index_->Get(upload_id, rec)) {
-    spdlog::warn("UploadPartGds: upload_id not found upload={}", upload_id);
+    LOG_WARN(request_id, "UploadPartGds upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
   if (rec.path != ::us3_turbo::proxy::PATH_GDS) {
-    spdlog::warn("UploadPartGds: session path={} != PATH_GDS upload={}",
-                 static_cast<int>(rec.path), upload_id);
+    LOG_WARN(request_id, "UploadPartGds session path={} != PATH_GDS upload={}",
+             static_cast<int>(rec.path), upload_id);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
   if (part_number == 0 || part_size == 0) {
-    spdlog::warn("UploadPartGds: upload={} part={} part_size={} zero",
-                 upload_id, part_number, part_size);
+    LOG_WARN(request_id, "UploadPartGds upload={} part={} part_size={} zero",
+             upload_id, part_number, part_size);
     return PROXY_ERR_INVALID_PARAM;
   }
   if (rdma_token.empty()) {
-    spdlog::warn("UploadPartGds: upload={} part={} rdma_token empty",
-                 upload_id, part_number);
+    LOG_WARN(request_id, "UploadPartGds upload={} part={} rdma_token empty",
+             upload_id, part_number);
     return PROXY_ERR_MISSING_SOURCE;
   }
 
   auto r = block_storage_->PutPartGds(request_id, upload_id, part_number,
                                       part_size, rdma_token);
   if (r.ret_code != 0) {
-    spdlog::warn("UploadPartGds: upload={} part={} block_storage failed: {}",
-                 upload_id, part_number, r.error);
+    LOG_WARN(request_id, "UploadPartGds upload={} part={} block_storage failed: {}",
+             upload_id, part_number, r.error);
     return r.ret_code;
   }
 
@@ -76,6 +77,8 @@ int Multipart::UploadPartGds(
   out.etag          = r.etag;
   out.crc32c        = r.crc32c;
   out.bytes_written = part_size;
+  LOG_DEBUG(request_id, "UploadPartGds upload={} part={} etag={} bytes={}",
+            upload_id, part_number, out.etag, out.bytes_written);
   return 0;
 }
 
@@ -87,22 +90,22 @@ int Multipart::UploadPartUcx(
     UploadPartOutput& out) {
   UploadRecord rec;
   if (!index_->Get(upload_id, rec)) {
-    spdlog::warn("UploadPartUcx: upload_id not found upload={}", upload_id);
+    LOG_WARN(request_id, "UploadPartUcx upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
   if (rec.path != ::us3_turbo::proxy::PATH_UCX) {
-    spdlog::warn("UploadPartUcx: session path={} != PATH_UCX upload={}",
-                 static_cast<int>(rec.path), upload_id);
+    LOG_WARN(request_id, "UploadPartUcx session path={} != PATH_UCX upload={}",
+             static_cast<int>(rec.path), upload_id);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
   if (part_number == 0 || part_size == 0) {
-    spdlog::warn("UploadPartUcx: upload={} part={} part_size={} zero",
-                 upload_id, part_number, part_size);
+    LOG_WARN(request_id, "UploadPartUcx upload={} part={} part_size={} zero",
+             upload_id, part_number, part_size);
     return PROXY_ERR_INVALID_PARAM;
   }
   if (remote_addr == 0 || packed_rkey.empty() || client_ucx_addr.empty()) {
-    spdlog::warn("UploadPartUcx: upload={} part={} ucx source fields incomplete",
-                 upload_id, part_number);
+    LOG_WARN(request_id, "UploadPartUcx upload={} part={} ucx source fields incomplete",
+             upload_id, part_number);
     return PROXY_ERR_MISSING_SOURCE;
   }
 
@@ -110,8 +113,8 @@ int Multipart::UploadPartUcx(
                                       part_size, remote_addr, packed_rkey,
                                       client_ucx_addr);
   if (r.ret_code != 0) {
-    spdlog::warn("UploadPartUcx: upload={} part={} block_storage failed: {}",
-                 upload_id, part_number, r.error);
+    LOG_WARN(request_id, "UploadPartUcx upload={} part={} block_storage failed: {}",
+             upload_id, part_number, r.error);
     return r.ret_code;
   }
 
@@ -125,6 +128,8 @@ int Multipart::UploadPartUcx(
   out.etag          = r.etag;
   out.crc32c        = r.crc32c;
   out.bytes_written = part_size;
+  LOG_DEBUG(request_id, "UploadPartUcx upload={} part={} etag={} bytes={}",
+            upload_id, part_number, out.etag, out.bytes_written);
   return 0;
 }
 
@@ -134,7 +139,7 @@ int Multipart::CompleteUpload(
     CompleteOutput& out) {
   UploadRecord rec;
   if (!index_->Get(upload_id, rec)) {
-    spdlog::warn("CompleteUpload: upload_id not found upload={}", upload_id);
+    LOG_WARN("-", "CompleteUpload upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
 
@@ -154,15 +159,15 @@ int Multipart::CompleteUpload(
   // 3. client 提供 part 列表时校验 etag 匹配。
   if (!client_parts.empty()) {
     if (client_parts.size() != parts.size()) {
-      spdlog::warn("CompleteUpload: upload={} client parts={} != actual={}",
-                   upload_id, client_parts.size(), parts.size());
+      LOG_WARN("-", "CompleteUpload upload={} client parts={} != actual={}",
+               upload_id, client_parts.size(), parts.size());
       return PROXY_ERR_INVALID_PARAM;
     }
     for (std::size_t i = 0; i < parts.size(); ++i) {
       if (client_parts[i].part_number() != parts[i].part_number ||
           client_parts[i].etag() != parts[i].etag) {
-        spdlog::warn("CompleteUpload: upload={} part {} etag mismatch",
-                     upload_id, parts[i].part_number);
+        LOG_WARN("-", "CompleteUpload upload={} part {} etag mismatch",
+                 upload_id, parts[i].part_number);
         return PROXY_ERR_INVALID_PARAM;
       }
     }
@@ -176,6 +181,8 @@ int Multipart::CompleteUpload(
   out.etag        = ComputeFinalETag(parts);
   out.object_size = size;
   index_->Remove(upload_id);  // 成功后清理
+  LOG_INFO("-", "CompleteUpload upload={} object_id={} size={} etag={}",
+           upload_id, out.object_id, out.object_size, out.etag);
   return 0;
 }
 
@@ -188,13 +195,13 @@ bool Multipart::AbortUpload(const std::string& upload_id) {
 // parts 已在 CompleteUpload 里按 part_number 排序，此处只校验严格升序。
 int Multipart::ValidateParts(const std::vector<PartRecord>& parts) {
   if (parts.empty()) {
-    spdlog::warn("ValidateParts: no parts uploaded");
+    LOG_WARN("-", "ValidateParts no parts uploaded");
     return PROXY_ERR_INVALID_PARAM;
   }
   for (std::size_t i = 1; i < parts.size(); ++i) {
     if (parts[i].part_number <= parts[i - 1].part_number) {
-      spdlog::warn("ValidateParts: part {} not strictly ascending at index {}",
-                   parts[i].part_number, i);
+      LOG_WARN("-", "ValidateParts part {} not strictly ascending at index {}",
+               parts[i].part_number, i);
       return PROXY_ERR_INVALID_PARAM;
     }
   }
