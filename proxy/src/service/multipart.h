@@ -33,6 +33,7 @@ class Multipart {
   Multipart(IUploadIndex* index, BlockStorage* block_storage);
 
   [[nodiscard]] int CreateUpload(
+      const std::string& request_id,
       const std::string& bucket, const std::string& key,
       ::us3_turbo::proxy::PutDataPath path,
       std::string& out_upload_id);
@@ -51,15 +52,18 @@ class Multipart {
       UploadPartOutput& out);
 
   [[nodiscard]] int CompleteUpload(
+      const std::string& request_id,
       const std::string& upload_id,
       const std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>& client_parts,
       CompleteOutput& out);
 
-  [[nodiscard]] bool AbortUpload(const std::string& upload_id);  // 幂等，恒 true
+  [[nodiscard]] bool AbortUpload(const std::string& request_id,
+                                 const std::string& upload_id);  // 幂等，恒 true
 
  private:
-  // part 校验：失败先 spdlog，返回非 0 错误码；成功返回 0。
-  [[nodiscard]] int ValidateParts(const std::vector<PartRecord>& parts);
+  // part 校验：失败先 LOG_WARN，返回非 0 错误码；成功返回 0。
+  [[nodiscard]] int ValidateParts(const std::string& request_id,
+                                   const std::vector<PartRecord>& parts);
   std::string ComputeFinalETag(const std::vector<PartRecord>& parts);
 
   IUploadIndex* index_;

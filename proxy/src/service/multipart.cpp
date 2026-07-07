@@ -14,21 +14,22 @@ Multipart::Multipart(IUploadIndex* index, BlockStorage* block_storage)
     : index_(index), block_storage_(block_storage) {}
 
 int Multipart::CreateUpload(
+    const std::string& request_id,
     const std::string& bucket, const std::string& key,
     ::us3_turbo::proxy::PutDataPath path,
     std::string& out_upload_id) {
   if (bucket.empty() || key.empty()) {
-    LOG_WARN("-", "CreateUpload bucket/key empty bucket={} key={}", bucket, key);
+    LOG_WARN(request_id, "bucket/key empty bucket={} key={}", bucket, key);
     return PROXY_ERR_INVALID_PARAM;
   }
   if (path != ::us3_turbo::proxy::PATH_GDS &&
       path != ::us3_turbo::proxy::PATH_UCX) {
-    LOG_WARN("-", "CreateUpload path={} not GDS/UCX bucket={}/{}",
+    LOG_WARN(request_id, "path={} not GDS/UCX bucket={}/{}",
              static_cast<int>(path), bucket, key);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
   out_upload_id = index_->Create(bucket, key, path);
-  LOG_INFO("-", "CreateUpload upload_id={} bucket={}/{} path={}",
+  LOG_INFO(request_id, "created upload_id={} bucket={}/{} path={}",
            out_upload_id, bucket, key, static_cast<int>(path));
   return 0;
 }
@@ -62,7 +63,7 @@ int Multipart::UploadPartGds(
   auto r = block_storage_->PutPartGds(request_id, upload_id, part_number,
                                       part_size, rdma_token);
   if (r.ret_code != 0) {
-    LOG_WARN(request_id, "UploadPartGds upload={} part={} block_storage failed: {}",
+    LOG_WARN(request_id, "upload={} part={} block_storage failed: {}",
              upload_id, part_number, r.error);
     return r.ret_code;
   }
@@ -77,7 +78,7 @@ int Multipart::UploadPartGds(
   out.etag          = r.etag;
   out.crc32c        = r.crc32c;
   out.bytes_written = part_size;
-  LOG_DEBUG(request_id, "UploadPartGds upload={} part={} etag={} bytes={}",
+  LOG_DEBUG(request_id, "upload={} part={} etag={} bytes={}",
             upload_id, part_number, out.etag, out.bytes_written);
   return 0;
 }
@@ -113,7 +114,7 @@ int Multipart::UploadPartUcx(
                                       part_size, remote_addr, packed_rkey,
                                       client_ucx_addr);
   if (r.ret_code != 0) {
-    LOG_WARN(request_id, "UploadPartUcx upload={} part={} block_storage failed: {}",
+    LOG_WARN(request_id, "upload={} part={} block_storage failed: {}",
              upload_id, part_number, r.error);
     return r.ret_code;
   }
@@ -128,18 +129,19 @@ int Multipart::UploadPartUcx(
   out.etag          = r.etag;
   out.crc32c        = r.crc32c;
   out.bytes_written = part_size;
-  LOG_DEBUG(request_id, "UploadPartUcx upload={} part={} etag={} bytes={}",
+  LOG_DEBUG(request_id, "upload={} part={} etag={} bytes={}",
             upload_id, part_number, out.etag, out.bytes_written);
   return 0;
 }
 
 int Multipart::CompleteUpload(
+    const std::string& request_id,
     const std::string& upload_id,
     const std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>& client_parts,
     CompleteOutput& out) {
   UploadRecord rec;
   if (!index_->Get(upload_id, rec)) {
-    LOG_WARN("-", "CompleteUpload upload_id not found upload={}", upload_id);
+    LOG_WARN(request_id, "upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
 
@@ -153,20 +155,20 @@ int Multipart::CompleteUpload(
             });
 
   // 2. 升序无重复校验（s3 语义：允许间隙如 1,3,5）。
-  int ret = ValidateParts(parts);
+  int ret = ValidateParts(request_id, parts);
   if (ret != 0) return ret;
 
   // 3. client 提供 part 列表时校验 etag 匹配。
   if (!client_parts.empty()) {
     if (client_parts.size() != parts.size()) {
-      LOG_WARN("-", "CompleteUpload upload={} client parts={} != actual={}",
+      LOG_WARN(request_id, "upload={} client parts={} != actual={}",
                upload_id, client_parts.size(), parts.size());
       return PROXY_ERR_INVALID_PARAM;
     }
     for (std::size_t i = 0; i < parts.size(); ++i) {
       if (client_parts[i].part_number() != parts[i].part_number ||
           client_parts[i].etag() != parts[i].etag) {
-        LOG_WARN("-", "CompleteUpload upload={} part {} etag mismatch",
+        LOG_WARN(request_id, "upload={} part {} etag mismatch",
                  upload_id, parts[i].part_number);
         return PROXY_ERR_INVALID_PARAM;
       }
@@ -181,26 +183,29 @@ int Multipart::CompleteUpload(
   out.etag        = ComputeFinalETag(parts);
   out.object_size = size;
   index_->Remove(upload_id);  // 成功后清理
-  LOG_INFO("-", "CompleteUpload upload={} object_id={} size={} etag={}",
-           upload_id, out.object_id, out.object_size, out.etag);
+  LOG_INFO(request_id, "completed object_id={} size={} etag={}",
+           out.object_id, out.object_size, out.etag);
   return 0;
 }
 
-bool Multipart::AbortUpload(const std::string& upload_id) {
+bool Multipart::AbortUpload(const std::string& request_id,
+                            const std::string& upload_id) {
   index_->Remove(upload_id);  // 幂等，不存在也 ok
+  LOG_INFO(request_id, "aborted upload={}", upload_id);
   return true;
 }
 
 // s3 语义：part_number 升序且无重复（允许间隙，如 1,3,5）。
 // parts 已在 CompleteUpload 里按 part_number 排序，此处只校验严格升序。
-int Multipart::ValidateParts(const std::vector<PartRecord>& parts) {
+int Multipart::ValidateParts(const std::string& request_id,
+                              const std::vector<PartRecord>& parts) {
   if (parts.empty()) {
-    LOG_WARN("-", "ValidateParts no parts uploaded");
+    LOG_WARN(request_id, "no parts uploaded");
     return PROXY_ERR_INVALID_PARAM;
   }
   for (std::size_t i = 1; i < parts.size(); ++i) {
     if (parts[i].part_number <= parts[i - 1].part_number) {
-      LOG_WARN("-", "ValidateParts part {} not strictly ascending at index {}",
+      LOG_WARN(request_id, "part {} not strictly ascending at index {}",
                parts[i].part_number, i);
       return PROXY_ERR_INVALID_PARAM;
     }
