@@ -12,4 +12,3 @@ DECLARE_uint64(backend_block_size_bytes);
 DECLARE_string(log_level);
 DECLARE_int32(log_max_size_mb);
 DECLARE_int32(log_max_files);
-DECLARE_int32(backend_setid);

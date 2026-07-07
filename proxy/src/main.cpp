@@ -45,8 +45,7 @@ struct AssembledStack {
 std::unique_ptr<AssembledStack> AssembleServices() {
   auto stack = std::make_unique<AssembledStack>();
   stack->gateway = std::make_unique<us3_turbo::proxy::BackendGateway>(
-      FLAGS_backend_endpoint, FLAGS_backend_timeout_ms,
-      static_cast<std::uint32_t>(FLAGS_backend_setid));
+      FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
   stack->block_storage = std::make_unique<us3_turbo::proxy::BlockStorage>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms,
       FLAGS_backend_block_size_bytes);
