@@ -21,13 +21,11 @@ std::string MakeLogFileName() {
   return buf;
 }
 
-// 创建 logs/ 目录（spdlog 文件 sink 也会建父目录，这里显式做一次，
-// 便于启动日志在目录就绪后落盘，避免竞态）。
+// 创建 logs/ 目录
 void EnsureLogDir() {
   struct stat st{};
   if (::stat("logs", &st) == 0) return;  // 已存在
   if (::mkdir("logs", 0755) == 0) return;
-  // EEXIST 视为成功（并发创建）；其余失败不致命，sink 会再尝试建目录。
 }
 
 }  // namespace
