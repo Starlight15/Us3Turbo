@@ -88,6 +88,11 @@ int BackendGateway::ForwardGdsPut(
     return PROXY_ERR_INVALID_PARAM;
   }
   const auto& token = request.gds_source().rdma_token();
+  if (token.empty()) {
+    LOG_WARN(rid, "gds rdma_token empty bucket={}/{}",
+             request.bucket(), request.key());
+    return PROXY_ERR_INVALID_PARAM;
+  }
   LOG_DEBUG(rid, "sending GdsPut to backend bucket={}/{} size={} klen={} tlen={}",
             request.bucket(), request.key(), request.object_size(),
             key.size(), token.size());
