@@ -19,19 +19,16 @@
 
 namespace {
 
-// 解析 --log_level 字符串为 spdlog 级别（未知值回落 info）。
-spdlog::level::level_enum ParseLogLevel(const std::string& s) {
-  if (s == "debug") return spdlog::level::debug;
-  if (s == "info")  return spdlog::level::info;
-  if (s == "warn")  return spdlog::level::warn;
-  if (s == "error") return spdlog::level::err;
-  return spdlog::level::info;
-}
-
 // 阶段 1：初始化日志系统（App 应用日志 + Access 审计日志）。
+// 解析 --log_level 字符串为 spdlog 级别（未知值回落 info），再建 default logger
+// （rotating 文件 + 控制台双 sink）+ Access 审计日志单例。
 void InitLogging() {
+  spdlog::level::level_enum level = spdlog::level::info;
+  if (FLAGS_log_level == "debug")      level = spdlog::level::debug;
+  else if (FLAGS_log_level == "warn")  level = spdlog::level::warn;
+  else if (FLAGS_log_level == "error") level = spdlog::level::err;
   us3_turbo::proxy::Logger::Init(
-      ParseLogLevel(FLAGS_log_level),
+      level,
       static_cast<std::size_t>(FLAGS_log_max_size_mb),
       static_cast<std::size_t>(FLAGS_log_max_files));
   us3_turbo::proxy::AccessLogger::Instance();
