@@ -19,16 +19,16 @@ struct PutOutput {
 };
 
 // 单步上传服务：参数校验后委托存储层转发。GDS/UCX 各自独立方法，
-// 不共享内部分支函数。可失败路径返回 bool，失败先 spdlog 再填 err。
+// 不共享内部分支函数。成功返回 0，失败先 spdlog 再 return 错误码。
 class SinglePut {
  public:
   // gateway 由 main 持有，本类不拥有。
   explicit SinglePut(BackendGateway* gateway);
 
-  [[nodiscard]] bool PutGds(const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-                            PutOutput& out, ProxyError& err);
-  [[nodiscard]] bool PutUcx(const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-                            PutOutput& out, ProxyError& err);
+  [[nodiscard]] int PutGds(const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+                           PutOutput& out);
+  [[nodiscard]] int PutUcx(const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+                           PutOutput& out);
 
  private:
   BackendGateway* gateway_;

@@ -17,72 +17,60 @@ constexpr std::uint64_t kMaxUploadBytes = 16ULL * 1024 * 1024;
 
 SinglePut::SinglePut(BackendGateway* gateway) : gateway_(gateway) {}
 
-bool SinglePut::PutGds(
+int SinglePut::PutGds(
     const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-    PutOutput& out, ProxyError& err) {
+    PutOutput& out) {
   if (request.bucket().empty() || request.key().empty()) {
     spdlog::warn("PutGds: bucket/key empty bucket={} key={}",
                  request.bucket(), request.key());
-    err = {PROXY_ERR_INVALID_PARAM, "missing bucket or key"};
-    return false;
+    return PROXY_ERR_INVALID_PARAM;
   }
   if (request.object_size() == 0) {
     spdlog::warn("PutGds: object_size=0 bucket={}/{}", request.bucket(), request.key());
-    err = {PROXY_ERR_INVALID_PARAM, "object_size must be > 0 for GDS PUT"};
-    return false;
+    return PROXY_ERR_INVALID_PARAM;
   }
   if (request.object_size() > kMaxUploadBytes) {
     spdlog::warn("PutGds: object_size={} exceeds 16MiB bucket={}/{}",
                  request.object_size(), request.bucket(), request.key());
-    err = {PROXY_ERR_INVALID_PARAM,
-           "object_size exceeds 16MiB single-step limit; use multipart"};
-    return false;
+    return PROXY_ERR_INVALID_PARAM;
   }
   if (request.path() != ::us3_turbo::proxy::PATH_GDS) {
     spdlog::warn("PutGds: path={} != PATH_GDS", static_cast<int>(request.path()));
-    err = {PROXY_ERR_PATH_NOT_SUPPORTED, "GdsPut requires PATH_GDS"};
-    return false;
+    return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
   if (!request.has_gds_source()) {
     spdlog::warn("PutGds: gds_source missing bucket={}/{}", request.bucket(), request.key());
-    err = {PROXY_ERR_MISSING_SOURCE, "GdsPut requires gds_source"};
-    return false;
+    return PROXY_ERR_MISSING_SOURCE;
   }
-  return gateway_->ForwardGdsPut(request, out, err);
+  return gateway_->ForwardGdsPut(request, out);
 }
 
-bool SinglePut::PutUcx(
+int SinglePut::PutUcx(
     const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-    PutOutput& out, ProxyError& err) {
+    PutOutput& out) {
   if (request.bucket().empty() || request.key().empty()) {
     spdlog::warn("PutUcx: bucket/key empty bucket={} key={}",
                  request.bucket(), request.key());
-    err = {PROXY_ERR_INVALID_PARAM, "missing bucket or key"};
-    return false;
+    return PROXY_ERR_INVALID_PARAM;
   }
   if (request.object_size() == 0) {
     spdlog::warn("PutUcx: object_size=0 bucket={}/{}", request.bucket(), request.key());
-    err = {PROXY_ERR_INVALID_PARAM, "object_size must be > 0 for UCX PUT"};
-    return false;
+    return PROXY_ERR_INVALID_PARAM;
   }
   if (request.object_size() > kMaxUploadBytes) {
     spdlog::warn("PutUcx: object_size={} exceeds 16MiB bucket={}/{}",
                  request.object_size(), request.bucket(), request.key());
-    err = {PROXY_ERR_INVALID_PARAM,
-           "object_size exceeds 16MiB single-step limit; use multipart"};
-    return false;
+    return PROXY_ERR_INVALID_PARAM;
   }
   if (request.path() != ::us3_turbo::proxy::PATH_UCX) {
     spdlog::warn("PutUcx: path={} != PATH_UCX", static_cast<int>(request.path()));
-    err = {PROXY_ERR_PATH_NOT_SUPPORTED, "UcxPut requires PATH_UCX"};
-    return false;
+    return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
   if (!request.has_ucx_source()) {
     spdlog::warn("PutUcx: ucx_source missing bucket={}/{}", request.bucket(), request.key());
-    err = {PROXY_ERR_MISSING_SOURCE, "UcxPut requires ucx_source"};
-    return false;
+    return PROXY_ERR_MISSING_SOURCE;
   }
-  return gateway_->ForwardUcxPut(request, out, err);
+  return gateway_->ForwardUcxPut(request, out);
 }
 
 }  // namespace us3_turbo::proxy

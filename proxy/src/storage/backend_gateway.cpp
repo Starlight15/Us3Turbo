@@ -33,13 +33,12 @@ BackendGateway::BackendGateway(const std::string& backend_endpoint,
                backend_endpoint, timeout_ms_);
 }
 
-bool BackendGateway::ForwardGdsPut(
+int BackendGateway::ForwardGdsPut(
     const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-    PutOutput& out, ProxyError& err) {
+    PutOutput& out) {
   if (stub_ == nullptr) {
     spdlog::warn("ForwardGdsPut: backend channel unavailable");
-    err = {PROXY_ERR_BACKEND_UNAVAILABLE, "no backend channel"};
-    return false;
+    return PROXY_ERR_BACKEND_UNAVAILABLE;
   }
   brpc::Controller bcntl;
   bcntl.set_timeout_ms(timeout_ms_);
@@ -47,23 +46,20 @@ bool BackendGateway::ForwardGdsPut(
   stub_->GdsPut(&bcntl, &request, &bresp, nullptr);
   if (bcntl.Failed()) {
     spdlog::warn("ForwardGdsPut: backend GdsPut failed: {}", bcntl.ErrorText());
-    err = {PROXY_ERR_BACKEND_RPC,
-           std::string("backend GdsPut failed: ") + bcntl.ErrorText()};
-    return false;
+    return PROXY_ERR_BACKEND_RPC;
   }
   out.etag          = bresp.etag();
   out.crc32c        = bresp.crc32c();
   out.bytes_written = bresp.bytes_written();
-  return true;
+  return 0;
 }
 
-bool BackendGateway::ForwardUcxPut(
+int BackendGateway::ForwardUcxPut(
     const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-    PutOutput& out, ProxyError& err) {
+    PutOutput& out) {
   if (stub_ == nullptr) {
     spdlog::warn("ForwardUcxPut: backend channel unavailable");
-    err = {PROXY_ERR_BACKEND_UNAVAILABLE, "no backend channel"};
-    return false;
+    return PROXY_ERR_BACKEND_UNAVAILABLE;
   }
   brpc::Controller bcntl;
   bcntl.set_timeout_ms(timeout_ms_);
@@ -71,14 +67,12 @@ bool BackendGateway::ForwardUcxPut(
   stub_->UcxPut(&bcntl, &request, &bresp, nullptr);
   if (bcntl.Failed()) {
     spdlog::warn("ForwardUcxPut: backend UcxPut failed: {}", bcntl.ErrorText());
-    err = {PROXY_ERR_BACKEND_RPC,
-           std::string("backend UcxPut failed: ") + bcntl.ErrorText()};
-    return false;
+    return PROXY_ERR_BACKEND_RPC;
   }
   out.etag          = bresp.etag();
   out.crc32c        = bresp.crc32c();
   out.bytes_written = bresp.bytes_written();
-  return true;
+  return 0;
 }
 
 }  // namespace us3_turbo::proxy

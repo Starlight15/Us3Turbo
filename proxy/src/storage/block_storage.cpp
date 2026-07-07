@@ -118,7 +118,7 @@ BlockStorage::PartResult BlockStorage::Aggregate(
   // 1. 任一 block 失败 → part 失败（取第一个失败原因）。
   for (const auto& [plan, resp] : results) {
     if (!resp.ok()) {
-      r.ok = false;
+      r.ret_code = PROXY_ERR_BACKEND_RPC;
       r.error = "block " + std::to_string(plan.block_no) +
                 " failed: " + resp.error_message();
       return r;
@@ -140,7 +140,7 @@ BlockStorage::PartResult BlockStorage::Aggregate(
     r.crc32c = sorted[0].second.crc32c();
   }
   // 多 block 不汇总 crc（block crc 仅做传输校验，不合成 part crc）。
-  r.ok = true;
+  r.ret_code = 0;
   return r;
 }
 
@@ -151,7 +151,7 @@ BlockStorage::PartResult BlockStorage::PutPartGds(
     std::uint64_t part_size,
     const std::string& rdma_token) {
   if (stub_ == nullptr) {
-    return {false, "", "backend block stub not available", 0, 0};
+    return {PROXY_ERR_BACKEND_UNAVAILABLE, "", "backend block stub not available", 0, 0};
   }
   const auto blocks = SplitToBlocks(part_size);
   spdlog::info("PutPartGds: req={} upload={} part={} size={} blocks={}",
@@ -168,8 +168,8 @@ BlockStorage::PartResult BlockStorage::PutPartGds(
   }
 
   auto r = Aggregate(results, part_size);
-  spdlog::info("PutPartGds done: req={} part={} ok={} etag={} crc={:x}",
-               request_id, part_number, r.ok, r.etag, r.crc32c);
+  spdlog::info("PutPartGds done: req={} part={} ret={} etag={} crc={:x}",
+               request_id, part_number, r.ret_code, r.etag, r.crc32c);
   return r;
 }
 
@@ -182,7 +182,7 @@ BlockStorage::PartResult BlockStorage::PutPartUcx(
     const std::string& packed_rkey,
     const std::string& client_ucx_addr) {
   if (stub_ == nullptr) {
-    return {false, "", "backend block stub not available", 0, 0};
+    return {PROXY_ERR_BACKEND_UNAVAILABLE, "", "backend block stub not available", 0, 0};
   }
   const auto blocks = SplitToBlocks(part_size);
   spdlog::info("PutPartUcx: req={} upload={} part={} size={} blocks={}",
@@ -200,8 +200,8 @@ BlockStorage::PartResult BlockStorage::PutPartUcx(
   }
 
   auto r = Aggregate(results, part_size);
-  spdlog::info("PutPartUcx done: req={} part={} ok={} etag={} crc={:x}",
-               request_id, part_number, r.ok, r.etag, r.crc32c);
+  spdlog::info("PutPartUcx done: req={} part={} ret={} etag={} crc={:x}",
+               request_id, part_number, r.ret_code, r.etag, r.crc32c);
   return r;
 }
 

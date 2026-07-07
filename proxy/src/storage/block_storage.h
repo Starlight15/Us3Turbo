@@ -8,6 +8,7 @@
 #include <brpc/channel.h>
 
 #include "control_plane.pb.h"
+#include "proxy/src/common/errors.h"
 
 namespace us3_turbo::proxy {
 
@@ -19,8 +20,10 @@ class BlockStorage {
   BlockStorage(const std::string& backend_endpoint, int timeout_ms,
                std::uint64_t block_size = 4ULL * 1024 * 1024);
 
+  // ret_code: 0=成功，非 0=PROXY_ERR_*；error 为失败时的上下文（成功时为空）。
+  // PartResult 保持结构体返回（需同时回带 etag + bytes + crc）。
   struct PartResult {
-    bool          ok{false};
+    int           ret_code{0};
     std::string   etag;
     std::string   error;
     std::uint32_t crc32c{0};     // 单 block 时取该 block crc；多 block 暂不汇总

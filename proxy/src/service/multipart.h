@@ -27,40 +27,39 @@ struct CompleteOutput {
 // 分段上传服务：编排 Create/UploadPart/Complete/Abort，业务规则（part 校验 /
 // final etag / client etag 比对）在本类。GDS/UCX 各自独立方法。依赖
 // IUploadIndex*（mock/Mongo 无差别替换）+ BlockStorage*（block 切分转发）。
-// 可失败路径返回 bool，失败先 spdlog 再填 err。
+// 成功返回 0，失败先 spdlog 再 return 错误码。AbortUpload 幂等保持 bool。
 class Multipart {
  public:
   Multipart(IUploadIndex* index, BlockStorage* block_storage);
 
-  [[nodiscard]] bool CreateUpload(
+  [[nodiscard]] int CreateUpload(
       const std::string& bucket, const std::string& key,
       ::us3_turbo::proxy::PutDataPath path,
-      std::string& out_upload_id, ProxyError& err);
+      std::string& out_upload_id);
 
-  [[nodiscard]] bool UploadPartGds(
+  [[nodiscard]] int UploadPartGds(
       const std::string& request_id, const std::string& upload_id,
       std::uint32_t part_number, std::uint64_t part_size,
       const std::string& rdma_token,
-      UploadPartOutput& out, ProxyError& err);
+      UploadPartOutput& out);
 
-  [[nodiscard]] bool UploadPartUcx(
+  [[nodiscard]] int UploadPartUcx(
       const std::string& request_id, const std::string& upload_id,
       std::uint32_t part_number, std::uint64_t part_size,
       std::uint64_t remote_addr, const std::string& packed_rkey,
       const std::string& client_ucx_addr,
-      UploadPartOutput& out, ProxyError& err);
+      UploadPartOutput& out);
 
-  [[nodiscard]] bool CompleteUpload(
+  [[nodiscard]] int CompleteUpload(
       const std::string& upload_id,
       const std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>& client_parts,
-      CompleteOutput& out, ProxyError& err);
+      CompleteOutput& out);
 
   [[nodiscard]] bool AbortUpload(const std::string& upload_id);  // 幂等，恒 true
 
  private:
-  // part 校验：失败先 spdlog 再填 err，返回 false。
-  [[nodiscard]] bool ValidateParts(const std::vector<PartRecord>& parts,
-                                   ProxyError& err);
+  // part 校验：失败先 spdlog，返回非 0 错误码；成功返回 0。
+  [[nodiscard]] int ValidateParts(const std::vector<PartRecord>& parts);
   std::string ComputeFinalETag(const std::vector<PartRecord>& parts);
 
   IUploadIndex* index_;

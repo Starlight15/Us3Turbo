@@ -13,17 +13,17 @@ namespace us3_turbo::proxy {
 
 // 单步转发存储层：自持 SINGLE channel + Control_Stub，执行 backend RPC。
 // GDS/UCX 各独立方法；参数校验留在 SinglePut，本类只管转发。
-// 可失败路径返回 bool，失败先 spdlog 再填 err。
+// 成功返回 0，失败先 spdlog 再 return 错误码。
 class BackendGateway {
  public:
   BackendGateway(const std::string& backend_endpoint, int timeout_ms);
 
-  [[nodiscard]] bool ForwardGdsPut(
+  [[nodiscard]] int ForwardGdsPut(
       const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-      PutOutput& out, ProxyError& err);
-  [[nodiscard]] bool ForwardUcxPut(
+      PutOutput& out);
+  [[nodiscard]] int ForwardUcxPut(
       const ::us3_turbo::proxy::ClientProxyPutRequest& request,
-      PutOutput& out, ProxyError& err);
+      PutOutput& out);
 
  private:
   int                                     timeout_ms_;

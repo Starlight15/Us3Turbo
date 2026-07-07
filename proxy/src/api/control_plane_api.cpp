@@ -46,7 +46,7 @@ ControlPlaneApi::~ControlPlaneApi() {
 }
 
 // ===========================================================================
-// 单步 PUT（GDS / UCX）：薄委托服务层，false → SetFailed。
+// 单步 PUT（GDS / UCX）：薄委托服务层，ret != 0 → SetFailed。
 // ===========================================================================
 
 void ControlPlaneApi::GdsPut(
@@ -58,9 +58,9 @@ void ControlPlaneApi::GdsPut(
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
   PutOutput out;
-  ProxyError err;
-  if (!single_put_->PutGds(*request, out, err)) {
-    cntl->SetFailed(err.code, "%s", err.message.c_str());
+  int ret = single_put_->PutGds(*request, out);
+  if (ret != 0) {
+    cntl->SetFailed(ret, "%s", ProxyErrorMessage(ret));
     return;
   }
   response->set_ok(true);
@@ -80,9 +80,9 @@ void ControlPlaneApi::UcxPut(
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
   PutOutput out;
-  ProxyError err;
-  if (!single_put_->PutUcx(*request, out, err)) {
-    cntl->SetFailed(err.code, "%s", err.message.c_str());
+  int ret = single_put_->PutUcx(*request, out);
+  if (ret != 0) {
+    cntl->SetFailed(ret, "%s", ProxyErrorMessage(ret));
     return;
   }
   response->set_ok(true);
@@ -94,7 +94,7 @@ void ControlPlaneApi::UcxPut(
 }
 
 // ===========================================================================
-// 分段上传：薄委托服务层，false → set_error_message + SetFailed。
+// 分段上传：薄委托服务层，ret != 0 → set_error_message + SetFailed。
 // ===========================================================================
 
 void ControlPlaneApi::CreateMultipartUpload(
@@ -106,12 +106,13 @@ void ControlPlaneApi::CreateMultipartUpload(
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
   std::string upload_id;
-  ProxyError err;
-  if (!multipart_->CreateUpload(request->bucket(), request->key(),
-                                request->path(), upload_id, err)) {
+  int ret = multipart_->CreateUpload(request->bucket(), request->key(),
+                                     request->path(), upload_id);
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
     response->set_ok(false);
-    response->set_error_message(err.message);
-    cntl->SetFailed(err.code, "%s", err.message.c_str());
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "%s", msg);
     return;
   }
   response->set_ok(true);
@@ -130,13 +131,14 @@ void ControlPlaneApi::UploadPartGds(
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
   UploadPartOutput out;
-  ProxyError err;
-  if (!multipart_->UploadPartGds(request->request_id(), request->upload_id(),
-                                 request->part_number(), request->part_size(),
-                                 request->rdma_token(), out, err)) {
+  int ret = multipart_->UploadPartGds(request->request_id(), request->upload_id(),
+                                      request->part_number(), request->part_size(),
+                                      request->rdma_token(), out);
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
     response->set_ok(false);
-    response->set_error_message(err.message);
-    cntl->SetFailed(err.code, "UploadPartGds failed: %s", err.message.c_str());
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "UploadPartGds failed: %s", msg);
     return;
   }
   response->set_ok(true);
@@ -157,14 +159,15 @@ void ControlPlaneApi::UploadPartUcx(
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
   UploadPartOutput out;
-  ProxyError err;
-  if (!multipart_->UploadPartUcx(request->request_id(), request->upload_id(),
-                                 request->part_number(), request->part_size(),
-                                 request->remote_addr(), request->packed_rkey(),
-                                 request->client_ucx_addr(), out, err)) {
+  int ret = multipart_->UploadPartUcx(request->request_id(), request->upload_id(),
+                                      request->part_number(), request->part_size(),
+                                      request->remote_addr(), request->packed_rkey(),
+                                      request->client_ucx_addr(), out);
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
     response->set_ok(false);
-    response->set_error_message(err.message);
-    cntl->SetFailed(err.code, "UploadPartUcx failed: %s", err.message.c_str());
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "UploadPartUcx failed: %s", msg);
     return;
   }
   response->set_ok(true);
@@ -192,11 +195,12 @@ void ControlPlaneApi::CompleteMultipartUpload(
   }
 
   CompleteOutput out;
-  ProxyError err;
-  if (!multipart_->CompleteUpload(request->upload_id(), client_parts, out, err)) {
+  int ret = multipart_->CompleteUpload(request->upload_id(), client_parts, out);
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
     response->set_ok(false);
-    response->set_error_message(err.message);
-    cntl->SetFailed(err.code, "complete failed: %s", err.message.c_str());
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "complete failed: %s", msg);
     return;
   }
   response->set_ok(true);
