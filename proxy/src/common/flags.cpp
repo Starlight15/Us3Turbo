@@ -21,3 +21,5 @@ DEFINE_int32(log_max_size_mb, 50,
              "max size per app log file (MB); rotates when exceeded");
 DEFINE_int32(log_max_files, 10,
              "max number of rotated app log files to keep");
+DEFINE_int32(backend_setid, 1,
+             "ufile-ac backend setid (must match backend g_setid; default 1)");

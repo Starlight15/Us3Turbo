@@ -15,6 +15,12 @@ namespace us3_turbo::proxy {
 // block 切分存储层（迁自 multipart_put_handler）：自持 POOLED channel +
 // BackendDataPlane_Stub，把单个 part 按 block_size 切分串行调 backend PutBlock。
 // GDS/UCX 各独立方法。串行 block（block 数 ≤4）、Aggregate 汇总 etag 不变。
+//
+// TODO: 本类仍走 brpc PutBlock（BackendDataPlane proto），未迁移到 ufile-ac 自定义
+// 协议。ufile-ac message.h 无 OSD_BLOCK_PUT 消息类型；review/
+// proxy_backend_protocol_migration.md §5 方案 B 明确暂缓，待 backend 支持 block
+// 协议后再改。注意 ufile-ac GDS PUT key 受 KEY_MAX_LENGTH(48) 限制，方案 A
+// （key 后缀）对长对象名不可行。brpc 依赖因此保留（见 CMakeLists）。
 class BlockStorage {
  public:
   BlockStorage(const std::string& backend_endpoint, int timeout_ms,

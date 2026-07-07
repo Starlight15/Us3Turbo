@@ -9,6 +9,7 @@ add_executable(us3_turbo_proxy
   src/service/single_put.cpp
   src/service/multipart.cpp
   src/index/in_memory_upload_index.cpp
+  src/storage/tcp_connection.cpp
   src/storage/backend_gateway.cpp
   src/storage/block_storage.cpp)
 
