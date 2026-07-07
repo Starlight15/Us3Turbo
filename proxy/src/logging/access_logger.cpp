@@ -9,7 +9,6 @@ namespace us3_turbo::proxy {
 namespace {
 
 // Access 日志固定文件名模板：logs/access-YYYY-MM-DD.log
-// 用 daily_file_format_sink_mt（strftime 解析文件名），保持与设计文档一致。
 constexpr const char* kAccessLogPattern = "logs/access-%Y-%m-%d.log";
 
 }  // namespace
@@ -20,9 +19,7 @@ AccessLogger& AccessLogger::Instance() {
 }
 
 AccessLogger::AccessLogger() {
-  // 独立 logger：按天切分（每天 00:00），保留 30 天。
-  // daily_file_format_sink_mt 按 strftime 解析 base filename，文件名形如
-  // logs/access-2026-07-07.log。
+  // 独立 logger：按天切分
   auto sink = std::make_shared<spdlog::sinks::daily_file_format_sink_mt>(
       kAccessLogPattern,
       0,     // rotation hour
@@ -33,7 +30,7 @@ AccessLogger::AccessLogger() {
   logger_ = std::make_shared<spdlog::logger>("access", sink);
   logger_->set_level(spdlog::level::info);
 
-  // 固定格式：时间戳|内容（便于 awk/grep 解析）；内容为 method|rid|bucket|key|status|bytes|latency。
+  // 内容为 method|rid|bucket|key|status|bytes|latency。
   logger_->set_pattern("%Y-%m-%d %H:%M:%S|%v");
 
   spdlog::register_logger(logger_);

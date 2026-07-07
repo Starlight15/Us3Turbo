@@ -19,9 +19,7 @@
 
 namespace {
 
-// 阶段 1：初始化日志系统（App 应用日志 + Access 审计日志）。
-// 解析 --log_level 字符串为 spdlog 级别（未知值回落 info），再建 default logger
-// （rotating 文件 + 控制台双 sink）+ Access 审计日志单例。
+// 初始化日志
 void InitLogging() {
   spdlog::level::level_enum level = spdlog::level::info;
   if (FLAGS_log_level == "debug")      level = spdlog::level::debug;
@@ -34,9 +32,8 @@ void InitLogging() {
   us3_turbo::proxy::AccessLogger::Instance();
 }
 
-// 依赖注入装配产物：存储层（gateway/block_storage）+ 索引层 + 接口层（service）。
+// 依赖注入装配产物：存储层 + 索引层 + 接口层
 // 成员析构逆序 = service→index→block_storage→gateway，保证 service 的 TTL 清理
-// 线程先停，再释放其依赖的 index/storage（与原"栈底最长命"约定一致）。
 struct AssembledStack {
   std::unique_ptr<us3_turbo::proxy::BackendGateway>      gateway;
   std::unique_ptr<us3_turbo::proxy::BlockStorage>        block_storage;
@@ -44,7 +41,7 @@ struct AssembledStack {
   std::unique_ptr<us3_turbo::proxy::ControlPlaneApi>     service;
 };
 
-// 阶段 2：依赖注入装配（自底向上：存储层最长命，接口层最上）。
+// 依赖注入装配，自底向上：存储层最长命，接口层最上
 std::unique_ptr<AssembledStack> AssembleServices() {
   auto stack = std::make_unique<AssembledStack>();
   stack->gateway = std::make_unique<us3_turbo::proxy::BackendGateway>(
@@ -62,7 +59,7 @@ std::unique_ptr<AssembledStack> AssembleServices() {
   return stack;
 }
 
-// 阶段 3：注册 service 并启动 brpc server。失败返回 false（已打错误日志）。
+// 注册 service 并启动 brpc server
 bool StartServer(brpc::Server& server,
                  us3_turbo::proxy::ControlPlaneApi& service) {
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
@@ -98,25 +95,22 @@ void RunUntilAskedToQuit() {
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  // 阶段 1：初始化日志系统。
   InitLogging();
-  LOG_SYS_INFO("[1/3] logging initialized (level={})", FLAGS_log_level);
+  LOG_SYS_INFO("[START] logging initialized (level={})", FLAGS_log_level);
 
-  // 阶段 2：依赖注入装配。
   auto stack = AssembleServices();
-  LOG_SYS_INFO("[2/3] services assembled (backend={})",
+  LOG_SYS_INFO("[START] services assembled (backend={})",
                FLAGS_backend_endpoint);
 
-  // 阶段 3：启动 brpc 服务（server 声明晚于 stack，析构先于 stack，保证停服后再释放服务）。
   brpc::Server server;
   if (!StartServer(server, *stack->service)) return EXIT_FAILURE;
-  LOG_SYS_INFO("[3/3] proxy started, listening on {}:{}",
+  LOG_SYS_INFO("[START] proxy started, listening on {}:{}",
                FLAGS_bind_host, FLAGS_proxy_port);
 
   RunUntilAskedToQuit();
 
   server.Stop(0);
   server.Join();
-  LOG_SYS_INFO("proxy stopped");
+  LOG_SYS_INFO("[STOP] proxy stopped");
   return EXIT_SUCCESS;
 }

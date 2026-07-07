@@ -66,8 +66,7 @@ ControlPlaneApi::~ControlPlaneApi() {
 }
 
 // ===========================================================================
-// 单步 PUT（GDS / UCX）：薄委托服务层，ret != 0 → SetFailed。
-// 每个 handler 开始记 LOG_INFO，结束打 Access 日志（成功/失败均打）。
+// 单步 PUT（GDS / UCX）
 // ===========================================================================
 
 void ControlPlaneApi::GdsPut(
@@ -139,8 +138,7 @@ void ControlPlaneApi::UcxPut(
 }
 
 // ===========================================================================
-// 分段上传：薄委托服务层，ret != 0 → set_error_message + SetFailed。
-// multipart part/complete/abort 请求无 bucket/key，Access 日志用 "-" 占位。
+// 分段上传（GDS / UCX）
 // ===========================================================================
 
 void ControlPlaneApi::CreateMultipartUpload(
