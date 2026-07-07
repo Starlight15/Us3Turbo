@@ -14,8 +14,8 @@ BackendGateway::BackendGateway(const std::string& backend_endpoint,
                                int timeout_ms)
     : timeout_ms_(timeout_ms) {
   if (backend_endpoint.empty()) {
-    LOG_WARN("-", "backend_endpoint empty, single-step PUT will reject as "
-                  "PROXY_ERR_BACKEND_UNAVAILABLE");
+    LOG_SYS_WARN("backend_endpoint empty, single-step PUT will reject as "
+                 "PROXY_ERR_BACKEND_UNAVAILABLE");
     return;
   }
   auto channel = std::make_shared<brpc::Channel>();
@@ -23,14 +23,14 @@ BackendGateway::BackendGateway(const std::string& backend_endpoint,
   options.timeout_ms = timeout_ms_;
   options.connection_type = brpc::CONNECTION_TYPE_SINGLE;
   if (channel->Init(backend_endpoint.c_str(), nullptr, &options) != 0) {
-    LOG_WARN("-", "failed to init backend channel to {}, single-step PUT disabled",
-              backend_endpoint);
+    LOG_SYS_WARN("failed to init backend channel to {}, single-step PUT disabled",
+                 backend_endpoint);
     return;
   }
   channel_ = std::move(channel);
   stub_ = std::make_unique<::us3_turbo::proxy::Control_Stub>(channel_.get());
-  LOG_INFO("-", "backend forward channel ready at {} (timeout {}ms)",
-           backend_endpoint, timeout_ms_);
+  LOG_SYS_INFO("backend forward channel ready at {} (timeout {}ms)",
+               backend_endpoint, timeout_ms_);
 }
 
 int BackendGateway::ForwardGdsPut(

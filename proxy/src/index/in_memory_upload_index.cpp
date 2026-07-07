@@ -51,8 +51,8 @@ bool InMemoryUploadIndex::AddPart(const std::string& upload_id,
                         });
   if (p != entry->parts.end()) {
     if (p->part_size != part.part_size) {
-      LOG_WARN("-", "AddPart part {} size changed {} -> {} (overwrite)",
-               part.part_number, p->part_size, part.part_size);
+      LOG_SYS_WARN("part {} size changed {} -> {} (overwrite), upload={}",
+                   part.part_number, p->part_size, part.part_size, upload_id);
     }
     *p = part;  // 同 part_number 覆盖
   } else {

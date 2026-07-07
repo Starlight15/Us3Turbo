@@ -16,7 +16,7 @@ BlockStorage::BlockStorage(const std::string& backend_endpoint, int timeout_ms,
     : timeout_ms_(timeout_ms),
       block_size_(block_size == 0 ? 4ULL * 1024 * 1024 : block_size) {
   if (backend_endpoint.empty()) {
-    LOG_WARN("-", "backend_endpoint empty, multipart disabled");
+    LOG_SYS_WARN("backend_endpoint empty, multipart disabled");
     return;
   }
   auto channel = std::make_shared<brpc::Channel>();
@@ -24,7 +24,7 @@ BlockStorage::BlockStorage(const std::string& backend_endpoint, int timeout_ms,
   options.timeout_ms = timeout_ms_;
   options.connection_type = brpc::CONNECTION_TYPE_POOLED;
   if (channel->Init(backend_endpoint.c_str(), nullptr, &options) != 0) {
-    LOG_WARN("-", "failed to init backend block channel; multipart disabled");
+    LOG_SYS_WARN("failed to init backend block channel; multipart disabled");
     return;
   }
   channel_ = std::move(channel);

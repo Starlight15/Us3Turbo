@@ -54,6 +54,8 @@ void Logger::Init(spdlog::level::level_enum level,
   // 格式：[时间][级别] 内容（%v 已含 [函数名][req=...] 消息，由 LOG_* 宏拼好）。
   logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$] %v");
 
+  // 设为全局默认：之后 spdlog::info/...（main.cpp 进程生命周期日志）与
+  // LOG_* 宏（请求日志）均走此 logger，统一写 proxy-*.log + 控制台。
   spdlog::set_default_logger(logger);
 }
 
