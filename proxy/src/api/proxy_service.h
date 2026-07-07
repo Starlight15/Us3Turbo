@@ -3,7 +3,6 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <thread>
 
 #include <google/protobuf/service.h>
@@ -17,16 +16,28 @@
 namespace us3_turbo::proxy {
 
 /**
- * @brief 控制面接口层（Mode B）：唯一 brpc Control 子类，内部委托给服务层。
+ * @brief Proxy 唯一 brpc Service（Mode B）：实现 Control proto service，内部委托给服务层。
+ *
+ * 职责仅：ClosureGuard、proto↔域对象、服务层 int 返回值 → cntl/response、
+ * Access 日志记录。不做参数校验、不编排——全在 SinglePut / Multipart；
+ * 不持 brpc channel——下沉到 BackendGateway / BlockStorage（main 装配注入）。
+ *
+ * 因 brpc 一个 proto service 只能注册一个 C++ 实例（按 service descriptor
+ * full_name 去重），GdsPut/UcxPut/分段 7 个 RPC 必须共处本类；GDS/UCX
+ * 代码经服务层各自独立方法保持隔离。
+ *
+ * 后台 TTL 清理线程：定期扫描索引层删除过期 multipart 会话，见 CleanupThreadMain。
+ *
+ * 线程安全：构造后成员恒定，handler 可被 brpc 并发调用；下层自带同步。
  */
-class ControlPlaneApi final
+class ProxyService final
     : public ::us3_turbo::proxy::Control {
  public:
-  ControlPlaneApi(
+  ProxyService(
       std::unique_ptr<SinglePut> single_put,
       std::unique_ptr<Multipart> multipart,
       IUploadIndex* index_for_cleanup);
-  ~ControlPlaneApi() override;
+  ~ProxyService() override;
 
   void GdsPut(
       google::protobuf::RpcController* cntl,
@@ -72,18 +83,21 @@ class ControlPlaneApi final
       google::protobuf::Closure* done) override;
 
  private:
-  // 服务层
+  // TTL 清理线程主函数（后台周期扫描，删除过期 multipart 会话）。
+  void CleanupThreadMain();
+
+  // 服务层（main 注入，拥有下层）。
   std::unique_ptr<SinglePut>  single_put_;
   std::unique_ptr<Multipart>  multipart_;
 
-  // 索引层裸指针
+  // 索引层裸指针（main 持有，TTL 清理线程定时 RemoveExpired）。
   IUploadIndex* index_;
 
-  // 后台 TTL 清理线程
+  // 后台 TTL 清理线程（析构 join + condition_variable 唤醒）。
   std::thread             cleanup_thread_;
   std::mutex              cleanup_mu_;
   std::condition_variable cleanup_cv_;
-  bool                    stop_cleanup_{false};
+  bool                    stop_cleanup_{false};   // cleanup_mu_ 保护
 };
 
 }  // namespace us3_turbo::proxy

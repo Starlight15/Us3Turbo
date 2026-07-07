@@ -7,7 +7,7 @@
 #include <gflags/gflags.h>
 #include <spdlog/spdlog.h>
 
-#include "proxy/src/api/control_plane_api.h"
+#include "proxy/src/api/proxy_service.h"
 #include "proxy/src/common/flags.h"
 #include "proxy/src/index/in_memory_upload_index.h"
 #include "proxy/src/logging/access_logger.h"
@@ -38,7 +38,7 @@ struct AssembledStack {
   std::unique_ptr<us3_turbo::proxy::BackendGateway>      gateway;
   std::unique_ptr<us3_turbo::proxy::BlockStorage>        block_storage;
   std::unique_ptr<us3_turbo::proxy::InMemoryUploadIndex> index;
-  std::unique_ptr<us3_turbo::proxy::ControlPlaneApi>     service;
+  std::unique_ptr<us3_turbo::proxy::ProxyService>     service;
 };
 
 // 依赖注入装配，自底向上：存储层最长命，接口层最上
@@ -54,14 +54,14 @@ std::unique_ptr<AssembledStack> AssembleServices() {
       stack->gateway.get());
   auto multipart = std::make_unique<us3_turbo::proxy::Multipart>(
       stack->index.get(), stack->block_storage.get());
-  stack->service = std::make_unique<us3_turbo::proxy::ControlPlaneApi>(
+  stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(
       std::move(single_put), std::move(multipart), stack->index.get());
   return stack;
 }
 
 // 注册 service 并启动 brpc server
 bool StartServer(brpc::Server& server,
-                 us3_turbo::proxy::ControlPlaneApi& service) {
+                 us3_turbo::proxy::ProxyService& service) {
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
     LOG_SYS_ERROR("failed to register control-plane service");
     return false;

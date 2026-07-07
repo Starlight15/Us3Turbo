@@ -6,6 +6,7 @@
 // 实现走 OpenSSL（libcrypto）：SHA1 用 EVP；base64 手写以控制无换行/填充策略
 // 失败时返回空串，调用方按空判错。
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -32,5 +33,17 @@ namespace us3_turbo::proxy::utils {
  * （block→part）汇总共用，避免两处逐字节重复。
  */
 [[nodiscard]] std::string CombineETags(const std::vector<std::string>& etags);
+
+/**
+ * @brief 计算从 start 到现在的耗时（毫秒）。
+ *
+ * steady_clock 单调，不受系统时钟跳变影响，适合 handler 性能测量。
+ * inline 定义在头文件，避免多翻译单元符号重复。
+ */
+[[nodiscard]] inline std::chrono::milliseconds ElapsedMs(
+    std::chrono::steady_clock::time_point start) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start);
+}
 
 }  // namespace us3_turbo::proxy::utils
