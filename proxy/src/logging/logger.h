@@ -20,11 +20,7 @@ namespace us3_turbo::proxy {
 
 /**
  * @brief 应用日志：proxy-YYYY-MM-DD-HH-MM.log，按大小滚动，支持 info/debug 级别。
- *
- * 输出格式：
- *   [时间][级别] [函数名][req=request_id] 消息内容      （请求日志）
- *   [时间][级别] [函数名] 消息内容                       （进程日志）
- *
+
  * 文件策略：
  *   - 按大小滚动（可配置，默认 50MB）
  *   - 保留文件数可配置（默认 10 个）
@@ -36,7 +32,6 @@ namespace us3_turbo::proxy {
  */
 class Logger {
  public:
-  // 初始化（main 函数调用一次）。
   static void Init(spdlog::level::level_enum level = spdlog::level::info,
                    std::size_t max_file_size_mb = 50,
                    std::size_t max_files = 10);
