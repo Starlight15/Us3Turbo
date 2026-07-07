@@ -1,6 +1,7 @@
 add_executable(us3_turbo_proxy
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/main.cpp
+  src/common/flags.cpp
   src/common/utils.cpp
   src/api/control_plane_api.cpp
   src/service/single_put.cpp

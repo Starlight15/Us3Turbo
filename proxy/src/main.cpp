@@ -8,19 +8,12 @@
 #include <spdlog/spdlog.h>
 
 #include "proxy/src/api/control_plane_api.h"
+#include "proxy/src/common/flags.h"
 #include "proxy/src/index/in_memory_upload_index.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
 #include "proxy/src/storage/backend_gateway.h"
 #include "proxy/src/storage/block_storage.h"
-
-DEFINE_int32(proxy_port, 9100, "proxy control-plane brpc port");
-DEFINE_string(bind_host, "192.168.1.198", "Bind host for the brpc listener");
-DEFINE_int32(num_threads, 4, "brpc worker thread count");
-DEFINE_string(backend_endpoint, "192.168.1.198:9200",
-              "backend data plane endpoint (GdsPut/UcxPut/PutBlock)");
-DEFINE_int32(backend_timeout_ms, 30000,
-             "Timeout (ms) for proxy→backend forward (GdsPut/UcxPut/PutBlock)");
 
 namespace {
 
