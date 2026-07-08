@@ -46,9 +46,10 @@ std::unique_ptr<AssembledStack> AssembleServices() {
   auto stack = std::make_unique<AssembledStack>();
   stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
+  // 阶段二方案 A：BlockStorage 退化为 UfileAcClient 透传壳，multipart block 写
+  // 经它拿到 UfileAcClient。旧 brpc 三参 ctor 不再用（brpc 依赖待阶段三清理）。
   stack->block_storage = std::make_unique<us3_turbo::proxy::BlockStorage>(
-      FLAGS_backend_brpc_endpoint, FLAGS_backend_timeout_ms,
-      FLAGS_backend_block_size_bytes);
+      stack->ufile_ac.get());
   stack->index = std::make_unique<us3_turbo::proxy::InMemoryUploadIndex>();
   auto single_put = std::make_unique<us3_turbo::proxy::SinglePut>(
       stack->ufile_ac.get());
@@ -100,10 +101,8 @@ int main(int argc, char** argv) {
 
   auto stack = AssembleServices();
   LOG_SYS_INFO("[START] services assembled");
-  LOG_SYS_INFO("[CONFIG] backend_endpoint={} (ufile-ac TCP, single-step)",
+  LOG_SYS_INFO("[CONFIG] backend_endpoint={} (ufile-ac TCP, single-step + multipart blocks)",
                FLAGS_backend_endpoint);
-  LOG_SYS_INFO("[CONFIG] backend_brpc_endpoint={} (brpc, multipart)",
-               FLAGS_backend_brpc_endpoint);
 
   brpc::Server server;
   if (!StartServer(server, *stack->service)) return EXIT_FAILURE;

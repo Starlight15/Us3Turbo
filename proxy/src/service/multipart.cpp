@@ -1,14 +1,47 @@
 #include "proxy/src/service/multipart.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/utils.h"
 #include "proxy/src/logging/logger.h"
+#include "proxy/src/storage/ufile_ac_client.h"
 
 namespace us3_turbo::proxy {
+
+namespace {
+
+// block 大小：4MB（与 s3proxy 对齐；单 part 超此则拆多块串行写）。
+constexpr std::uint64_t kBlockSize = 4ULL * 1024 * 1024;
+
+// 去除 UUID 连字符（36 → 32 字节），压缩 block key 以符合 backend KEY_MAX_LENGTH(48)。
+std::string StripUuidDashes(const std::string& upload_id) {
+  std::string result;
+  result.reserve(32);
+  for (char c : upload_id) {
+    if (c != '-') result.push_back(c);
+  }
+  return result;
+}
+
+// 生成紧凑 block key：mp/{uuid32}/p{part:04u}b{block:02u}
+// 长度 = 3 + 32 + 1 + 5 + 6 = 47 ≤ KEY_MAX_LENGTH(48) ✓
+std::string GenerateBlockKey(const std::string& upload_id,
+                             std::uint32_t part_number,
+                             std::uint32_t block_no) {
+  const std::string uuid_nodash = StripUuidDashes(upload_id);
+  char buf[64];
+  std::snprintf(buf, sizeof(buf), "mp/%s/p%04ub%02u",
+                uuid_nodash.c_str(), part_number, block_no);
+  return buf;
+}
+
+}  // namespace
 
 Multipart::Multipart(IUploadIndex* index, BlockStorage* block_storage)
     : index_(index), block_storage_(block_storage) {}
@@ -60,26 +93,62 @@ int Multipart::UploadPartGds(
     return PROXY_ERR_MISSING_SOURCE;
   }
 
-  auto r = block_storage_->PutPartGds(request_id, upload_id, part_number,
-                                      part_size, rdma_token);
-  if (r.ret_code != 0) {
-    LOG_WARN(request_id, "upload={} part={} block_storage failed: {}",
-             upload_id, part_number, r.error);
-    return r.ret_code;
+  // 阶段二：part → blocks 串行写 ufile-ac，每块独立 key + crc32c，记录 BlockInfo。
+  UfileAcClient* client = block_storage_->GetUfileAcClient();
+  if (client == nullptr) {
+    LOG_WARN(request_id, "upload={} part={} ufile-ac client unavailable",
+             upload_id, part_number);
+    return PROXY_ERR_BACKEND_UNAVAILABLE;
   }
+
+  const std::uint64_t block_count = (part_size + kBlockSize - 1) / kBlockSize;
+  LOG_INFO(request_id, "upload={} part={} size={} blocks={}",
+           upload_id, part_number, part_size, block_count);
+
+  std::vector<BlockInfo> block_infos;
+  block_infos.reserve(block_count);
+  std::vector<std::uint32_t> crcs;
+  crcs.reserve(block_count);
+
+  for (std::uint64_t i = 0; i < block_count; ++i) {
+    const std::uint64_t offset = i * kBlockSize;
+    const std::uint64_t len = std::min(kBlockSize, part_size - offset);
+    const std::string block_key = GenerateBlockKey(
+        upload_id, part_number, static_cast<std::uint32_t>(i));
+
+    auto result = client->PutBlockGds(block_key, rdma_token, offset, len);
+    if (result.ret_code != 0) {
+      LOG_ERROR(request_id, "upload={} part={} block {} failed: {}",
+                upload_id, part_number, i, result.error);
+      return result.ret_code;  // 已写 block 留 ufile-ac TTL 清理
+    }
+
+    BlockInfo info;
+    info.key    = block_key;
+    info.offset = offset;
+    info.size   = len;
+    info.crc32c = result.crc32c;
+    block_infos.push_back(std::move(info));
+    crcs.push_back(result.crc32c);
+    LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
+              upload_id, part_number, i, block_key, result.crc32c);
+  }
+
+  const std::string part_etag = utils::CombineBlockCRC32s(crcs);
 
   PartRecord part;
   part.part_number    = part_number;
   part.part_size      = part_size;
-  part.etag           = r.etag;
+  part.etag           = part_etag;
   part.upload_time_ms = utils::NowMs();
+  part.blocks         = std::move(block_infos);
   index_->AddPart(upload_id, part);
 
-  out.etag          = r.etag;
-  out.crc32c        = r.crc32c;
+  out.etag          = part_etag;
+  out.crc32c        = crcs[0];
   out.bytes_written = part_size;
-  LOG_DEBUG(request_id, "upload={} part={} etag={} bytes={}",
-            upload_id, part_number, out.etag, out.bytes_written);
+  LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}",
+           upload_id, part_number, out.etag, part.blocks.size());
   return 0;
 }
 
@@ -110,27 +179,63 @@ int Multipart::UploadPartUcx(
     return PROXY_ERR_MISSING_SOURCE;
   }
 
-  auto r = block_storage_->PutPartUcx(request_id, upload_id, part_number,
-                                      part_size, remote_addr, packed_rkey,
-                                      client_ucx_addr);
-  if (r.ret_code != 0) {
-    LOG_WARN(request_id, "upload={} part={} block_storage failed: {}",
-             upload_id, part_number, r.error);
-    return r.ret_code;
+  // 阶段二：part → blocks 串行写 ufile-ac（UCX：remote_addr 基址 + source_offset 偏移）。
+  UfileAcClient* client = block_storage_->GetUfileAcClient();
+  if (client == nullptr) {
+    LOG_WARN(request_id, "upload={} part={} ufile-ac client unavailable",
+             upload_id, part_number);
+    return PROXY_ERR_BACKEND_UNAVAILABLE;
   }
+
+  const std::uint64_t block_count = (part_size + kBlockSize - 1) / kBlockSize;
+  LOG_INFO(request_id, "upload={} part={} size={} blocks={}",
+           upload_id, part_number, part_size, block_count);
+
+  std::vector<BlockInfo> block_infos;
+  block_infos.reserve(block_count);
+  std::vector<std::uint32_t> crcs;
+  crcs.reserve(block_count);
+
+  for (std::uint64_t i = 0; i < block_count; ++i) {
+    const std::uint64_t offset = i * kBlockSize;
+    const std::uint64_t len = std::min(kBlockSize, part_size - offset);
+    const std::string block_key = GenerateBlockKey(
+        upload_id, part_number, static_cast<std::uint32_t>(i));
+
+    auto result = client->PutBlockUcx(block_key, remote_addr, packed_rkey,
+                                      client_ucx_addr, offset, len);
+    if (result.ret_code != 0) {
+      LOG_ERROR(request_id, "upload={} part={} block {} failed: {}",
+                upload_id, part_number, i, result.error);
+      return result.ret_code;  // 已写 block 留 ufile-ac TTL 清理
+    }
+
+    BlockInfo info;
+    info.key    = block_key;
+    info.offset = offset;
+    info.size   = len;
+    info.crc32c = result.crc32c;
+    block_infos.push_back(std::move(info));
+    crcs.push_back(result.crc32c);
+    LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
+              upload_id, part_number, i, block_key, result.crc32c);
+  }
+
+  const std::string part_etag = utils::CombineBlockCRC32s(crcs);
 
   PartRecord part;
   part.part_number    = part_number;
   part.part_size      = part_size;
-  part.etag           = r.etag;
+  part.etag           = part_etag;
   part.upload_time_ms = utils::NowMs();
+  part.blocks         = std::move(block_infos);
   index_->AddPart(upload_id, part);
 
-  out.etag          = r.etag;
-  out.crc32c        = r.crc32c;
+  out.etag          = part_etag;
+  out.crc32c        = crcs[0];
   out.bytes_written = part_size;
-  LOG_DEBUG(request_id, "upload={} part={} etag={} bytes={}",
-            upload_id, part_number, out.etag, out.bytes_written);
+  LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}",
+           upload_id, part_number, out.etag, part.blocks.size());
   return 0;
 }
 

@@ -35,6 +35,25 @@ namespace us3_turbo::proxy::utils {
 [[nodiscard]] std::string CombineETags(const std::vector<std::string>& etags);
 
 /**
+ * @brief 单个 CRC32C → 8 位十六进制 ETag（单 block 场景，亦供单步 PUT 复用）。
+ *
+ * backend (ufile-ac) 不返回 etag（etagLen_ 恒 0，F7），故以 crc32c 十六进制作 etag。
+ * 非标准 S3 etag，仅作占位标识。
+ */
+[[nodiscard]] std::string Crc32cToETag(std::uint32_t crc32c);
+
+/**
+ * @brief 组合多个 block 的 CRC32C 生成 part 级 ETag。
+ *
+ * - 空 → 空串；
+ * - 单 block → Crc32cToETag（与单步 PUT 一致）；
+ * - 多 block → MD5(各 crc 大端 4 字节拼接) 的十六进制。
+ *
+ * 用大端字节序使摘要与主机序无关；MD5 走 EVP（与 Sha1 同栈，避免直接调 MD5()）。
+ */
+[[nodiscard]] std::string CombineBlockCRC32s(const std::vector<std::uint32_t>& crcs);
+
+/**
  * @brief 计算从 start 到现在的耗时（毫秒）。
  *
  * steady_clock 单调，不受系统时钟跳变影响，适合 handler 性能测量。

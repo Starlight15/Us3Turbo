@@ -8,12 +8,24 @@
 
 namespace us3_turbo::proxy {
 
+// block 级元数据（一个 part 按 kBlockSize 拆成多个 block，每块单独写 ufile-ac）。
+struct BlockInfo {
+  std::string   key;            // ufile-ac 中的 block key
+                               // 格式：mp/{uuid32}/p{part_no:04u}b{block_no:02u}（≤48）
+  std::uint64_t offset{0};      // block 在 part 数据中的偏移（= gpu/source offset）
+  std::uint64_t size{0};        // block 大小（通常 4MB，末块可能更小）
+  std::uint32_t crc32c{0};      // block 数据 CRC32C（ufile-ac 返回）
+};
+
 // part 元数据（对齐 s3proxy Us3PartElement，去掉业务方法）。
 struct PartRecord {
   std::uint32_t part_number{0};   // 1-based
   std::uint64_t part_size{0};
-  std::string   etag;             // part 级 ETag（block etag 汇总得到）
+  std::string   etag;             // part 级 ETag（由各 block crc32c 组合得到）
   std::int64_t  upload_time_ms{0};
+
+  // 该 part 拆分的所有 block（含 key，供 Complete 后 Get/Delete 定位）。
+  std::vector<BlockInfo> blocks;
 };
 
 // 会话元数据（对齐 s3proxy Us3MinitIdxInfo，去掉 TotalSize/IsExpired）。

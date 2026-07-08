@@ -12,9 +12,16 @@
 
 namespace us3_turbo::proxy {
 
+class UfileAcClient;  // 阶段二：multipart block 写透传 ufile-ac（前向声明，定义见 ufile_ac_client.h）
+
 // block 切分存储层（迁自 multipart_put_handler）：自持 POOLED channel +
 // BackendDataPlane_Stub，把单个 part 按 block_size 切分串行调 backend PutBlock。
 // GDS/UCX 各独立方法。串行 block（block 数 ≤4）、Aggregate 汇总 etag 不变。
+//
+// 阶段二：multipart 改走 ufile-ac 自定义协议（UfileAcClient::PutBlockGds/Ucx），
+// 由 Multipart 自行循环写 block 并记录 BlockInfo；本类经 GetUfileAcClient() 把
+// UfileAcClient 暴露给 Multipart。原有 brpc PutPart* / SplitToBlocks / Aggregate
+// 不再被调用，保留待阶段三清理 brpc 依赖时一并删除。
 //
 // TODO: 本类仍走 brpc PutBlock（BackendDataPlane proto），未迁移到 ufile-ac 自定义
 // 协议。ufile-ac message.h 无 OSD_BLOCK_PUT 消息类型；review/
@@ -25,6 +32,13 @@ class BlockStorage {
  public:
   BlockStorage(const std::string& backend_endpoint, int timeout_ms,
                std::uint64_t block_size = 4ULL * 1024 * 1024);
+
+  // 阶段二方案 A：透传壳，仅持有 UfileAcClient* 供 Multipart 写 block。
+  // 不再初始化 brpc 通道（旧 brpc 方法此时不可用，保留仅为编译占位）。
+  explicit BlockStorage(UfileAcClient* client);
+
+  /** @brief 暴露 UfileAcClient 给 Multipart 写 block（阶段二方案 A）。 */
+  UfileAcClient* GetUfileAcClient() { return client_; }
 
   // ret_code: 0=成功，非 0=PROXY_ERR_*；error 为失败时的上下文（成功时为空）。
   // PartResult 保持结构体返回（需同时回带 etag + bytes + crc）。
@@ -84,10 +98,11 @@ class BlockStorage {
                                   ProxyBackendPutBlockResponse>>& results,
       std::uint64_t part_size);
 
-  int                                     timeout_ms_;
-  std::uint64_t                           block_size_;
+  int                                     timeout_ms_{0};
+  std::uint64_t                           block_size_{0};
   std::shared_ptr<brpc::Channel>          channel_;
   std::unique_ptr<BackendDataPlane_Stub> stub_;
+  UfileAcClient*                          client_{nullptr};  // 阶段二方案 A 透传
 };
 
 }  // namespace us3_turbo::proxy

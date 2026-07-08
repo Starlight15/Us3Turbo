@@ -4,6 +4,7 @@
 #include <string>
 
 #include "proxy/src/common/errors.h"
+#include "proxy/src/common/utils.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/ufile_ac_client.h"
 
@@ -54,12 +55,9 @@ int SinglePut::PutGds(
   }
   out.crc32c        = result.crc32c;
   out.bytes_written = result.bytes_written;
-  // backend 不返回 etag（etagLen_=0，F7），暂以 crc32c 十六进制占位
-  // （待 utils::Crc32cToETag 落地后替换）
-  char etag_buf[16];
-  std::snprintf(etag_buf, sizeof(etag_buf), "%08x",
-                static_cast<unsigned int>(result.crc32c));
-  out.etag = etag_buf;
+  // backend 不返回 etag（etagLen_=0，F7），以 crc32c 十六进制作 etag 占位
+  // （utils::Crc32cToETag，非标准 S3 etag）
+  out.etag = utils::Crc32cToETag(result.crc32c);
   LOG_DEBUG(rid, "backend ok etag={} bytes={}", out.etag, out.bytes_written);
   return 0;
 }
@@ -101,10 +99,7 @@ int SinglePut::PutUcx(
   }
   out.crc32c        = result.crc32c;
   out.bytes_written = result.bytes_written;
-  char etag_buf[16];
-  std::snprintf(etag_buf, sizeof(etag_buf), "%08x",
-                static_cast<unsigned int>(result.crc32c));
-  out.etag = etag_buf;
+  out.etag = utils::Crc32cToETag(result.crc32c);
   LOG_DEBUG(rid, "backend ok etag={} bytes={}", out.etag, out.bytes_written);
   return 0;
 }

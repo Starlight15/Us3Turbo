@@ -107,4 +107,41 @@ std::string CombineETags(const std::vector<std::string>& etags) {
   return Base64Encode(raw);
 }
 
+std::string Crc32cToETag(std::uint32_t crc32c) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%08x", crc32c);
+  return buf;
+}
+
+std::string CombineBlockCRC32s(const std::vector<std::uint32_t>& crcs) {
+  if (crcs.empty()) return {};
+  if (crcs.size() == 1) return Crc32cToETag(crcs[0]);
+
+  // 各 crc 按大端 4 字节拼接（与主机序无关），再 MD5 → 十六进制。
+  std::string data;
+  data.reserve(crcs.size() * 4);
+  for (const std::uint32_t c : crcs) {
+    data.push_back(static_cast<char>((c >> 24) & 0xff));
+    data.push_back(static_cast<char>((c >> 16) & 0xff));
+    data.push_back(static_cast<char>((c >> 8) & 0xff));
+    data.push_back(static_cast<char>(c & 0xff));
+  }
+
+  unsigned char md[EVP_MAX_MD_SIZE];
+  unsigned int md_len = 0;
+  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_md5(),
+                 nullptr) != 1) {
+    return {};
+  }
+
+  std::string hex;
+  hex.reserve(md_len * 2);
+  static constexpr char kHex[] = "0123456789abcdef";
+  for (unsigned int i = 0; i < md_len; ++i) {
+    hex.push_back(kHex[(md[i] >> 4) & 0xf]);
+    hex.push_back(kHex[md[i] & 0xf]);
+  }
+  return hex;
+}
+
 }  // namespace us3_turbo::proxy::utils

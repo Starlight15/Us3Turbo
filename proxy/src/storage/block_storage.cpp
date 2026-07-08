@@ -34,6 +34,13 @@ BlockStorage::BlockStorage(const std::string& backend_endpoint, int timeout_ms,
                backend_endpoint, timeout_ms_);
 }
 
+BlockStorage::BlockStorage(UfileAcClient* client) : client_(client) {
+  // 阶段二方案 A：透传壳，不建 brpc 通道。multipart block 写由 Multipart 经
+  // GetUfileAcClient() 直接调 UfileAcClient::PutBlockGds/Ucx 完成。
+  LOG_SYS_INFO("block storage ready (ufile-ac passthrough, multipart blocks via "
+               "UfileAcClient)");
+}
+
 std::vector<BlockStorage::BlockPlan>
 BlockStorage::SplitToBlocks(std::uint64_t part_size) const {
   std::vector<BlockPlan> blocks;
