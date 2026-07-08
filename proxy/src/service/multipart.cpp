@@ -16,14 +16,14 @@ Multipart::Multipart(IUploadIndex* index, BlockStorage* block_storage)
 int Multipart::CreateUpload(
     const std::string& request_id,
     const std::string& bucket, const std::string& key,
-    ::us3_turbo::proxy::PutDataPath path,
+    PutDataPath path,
     std::string& out_upload_id) {
   if (bucket.empty() || key.empty()) {
     LOG_WARN(request_id, "bucket/key empty bucket={} key={}", bucket, key);
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (path != ::us3_turbo::proxy::PATH_GDS &&
-      path != ::us3_turbo::proxy::PATH_UCX) {
+  if (path != PATH_GDS &&
+      path != PATH_UCX) {
     LOG_WARN(request_id, "path={} not GDS/UCX bucket={}/{}",
              static_cast<int>(path), bucket, key);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
@@ -44,7 +44,7 @@ int Multipart::UploadPartGds(
     LOG_WARN(request_id, "UploadPartGds upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (rec.path != ::us3_turbo::proxy::PATH_GDS) {
+  if (rec.path != PATH_GDS) {
     LOG_WARN(request_id, "UploadPartGds session path={} != PATH_GDS upload={}",
              static_cast<int>(rec.path), upload_id);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
@@ -94,7 +94,7 @@ int Multipart::UploadPartUcx(
     LOG_WARN(request_id, "UploadPartUcx upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (rec.path != ::us3_turbo::proxy::PATH_UCX) {
+  if (rec.path != PATH_UCX) {
     LOG_WARN(request_id, "UploadPartUcx session path={} != PATH_UCX upload={}",
              static_cast<int>(rec.path), upload_id);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
@@ -137,7 +137,7 @@ int Multipart::UploadPartUcx(
 int Multipart::CompleteUpload(
     const std::string& request_id,
     const std::string& upload_id,
-    const std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>& client_parts,
+    const std::vector<CompleteMultipartUploadRequest_PartInfo>& client_parts,
     CompleteOutput& out) {
   UploadRecord rec;
   if (!index_->Get(upload_id, rec)) {

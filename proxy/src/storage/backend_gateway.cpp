@@ -166,7 +166,7 @@ std::pair<std::size_t, TcpConnection*> BackendGateway::AcquireConn() {
 }
 
 int BackendGateway::ForwardGdsPut(
-    const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+    const ClientProxyPutRequest& request,
     PutOutput& out) {
   const std::string& rid = request.request_id();
 
@@ -271,7 +271,7 @@ int BackendGateway::ForwardGdsPut(
 }
 
 int BackendGateway::ForwardUcxPut(
-    const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+    const ClientProxyPutRequest& request,
     PutOutput& out) {
   const std::string& rid = request.request_id();
 

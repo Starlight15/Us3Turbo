@@ -25,9 +25,9 @@ class SinglePut {
   // gateway 由 main 持有，本类不拥有。
   explicit SinglePut(BackendGateway* gateway);
 
-  [[nodiscard]] int PutGds(const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+  [[nodiscard]] int PutGds(const ClientProxyPutRequest& request,
                            PutOutput& out);
-  [[nodiscard]] int PutUcx(const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+  [[nodiscard]] int PutUcx(const ClientProxyPutRequest& request,
                            PutOutput& out);
 
  private:

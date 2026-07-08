@@ -61,14 +61,14 @@ class BlockStorage {
 
   std::vector<BlockPlan> SplitToBlocks(std::uint64_t part_size) const;
 
-  ::us3_turbo::proxy::ProxyBackendPutBlockResponse CallBackendPutBlockGds(
+  ProxyBackendPutBlockResponse CallBackendPutBlockGds(
       const std::string& request_id,
       const std::string& upload_id,
       std::uint32_t part_number,
       const BlockPlan& block,
       const std::string& rdma_token);
 
-  ::us3_turbo::proxy::ProxyBackendPutBlockResponse CallBackendPutBlockUcx(
+  ProxyBackendPutBlockResponse CallBackendPutBlockUcx(
       const std::string& request_id,
       const std::string& upload_id,
       std::uint32_t part_number,
@@ -81,13 +81,13 @@ class BlockStorage {
   // 多 block → 4 字节 LE count 前缀 + SHA1(各 etag 拼接) 再 base64。
   PartResult Aggregate(
       const std::vector<std::pair<BlockPlan,
-                                  ::us3_turbo::proxy::ProxyBackendPutBlockResponse>>& results,
+                                  ProxyBackendPutBlockResponse>>& results,
       std::uint64_t part_size);
 
   int                                     timeout_ms_;
   std::uint64_t                           block_size_;
   std::shared_ptr<brpc::Channel>          channel_;
-  std::unique_ptr<::us3_turbo::proxy::BackendDataPlane_Stub> stub_;
+  std::unique_ptr<BackendDataPlane_Stub> stub_;
 };
 
 }  // namespace us3_turbo::proxy

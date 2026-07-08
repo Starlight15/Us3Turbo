@@ -17,7 +17,7 @@ constexpr std::uint64_t kMaxUploadBytes = 16ULL * 1024 * 1024;
 SinglePut::SinglePut(BackendGateway* gateway) : gateway_(gateway) {}
 
 int SinglePut::PutGds(
-    const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+    const ClientProxyPutRequest& request,
     PutOutput& out) {
   const std::string& rid = request.request_id();
 
@@ -26,16 +26,12 @@ int SinglePut::PutGds(
              request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.object_size() == 0) {
-    LOG_WARN(rid, "object_size=0 bucket={}/{}", request.bucket(), request.key());
-    return PROXY_ERR_INVALID_PARAM;
-  }
-  if (request.object_size() > kMaxUploadBytes) {
-    LOG_WARN(rid, "object_size={} exceeds 16MiB bucket={}/{}",
+  if (request.object_size() == 0 || request.object_size() > kMaxUploadBytes) {
+    LOG_WARN(rid, "object_size={} out of range [1, 16MiB] bucket={}/{}",
              request.object_size(), request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.path() != ::us3_turbo::proxy::PATH_GDS) {
+  if (request.path() != PATH_GDS) {
     LOG_WARN(rid, "path={} != PATH_GDS", static_cast<int>(request.path()));
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
@@ -55,7 +51,7 @@ int SinglePut::PutGds(
 }
 
 int SinglePut::PutUcx(
-    const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+    const ClientProxyPutRequest& request,
     PutOutput& out) {
   const std::string& rid = request.request_id();
 
@@ -64,16 +60,12 @@ int SinglePut::PutUcx(
              request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.object_size() == 0) {
-    LOG_WARN(rid, "object_size=0 bucket={}/{}", request.bucket(), request.key());
-    return PROXY_ERR_INVALID_PARAM;
-  }
-  if (request.object_size() > kMaxUploadBytes) {
-    LOG_WARN(rid, "object_size={} exceeds 16MiB bucket={}/{}",
+  if (request.object_size() == 0 || request.object_size() > kMaxUploadBytes) {
+    LOG_WARN(rid, "object_size={} out of range [1, 16MiB] bucket={}/{}",
              request.object_size(), request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.path() != ::us3_turbo::proxy::PATH_UCX) {
+  if (request.path() != PATH_UCX) {
     LOG_WARN(rid, "path={} != PATH_UCX", static_cast<int>(request.path()));
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }

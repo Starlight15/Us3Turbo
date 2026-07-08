@@ -31,7 +31,7 @@ namespace us3_turbo::proxy {
  * 线程安全：构造后成员恒定，handler 可被 brpc 并发调用；下层自带同步。
  */
 class ProxyService final
-    : public ::us3_turbo::proxy::Control {
+    : public Control {
  public:
   ProxyService(
       std::unique_ptr<SinglePut> single_put,
@@ -41,45 +41,45 @@ class ProxyService final
 
   void GdsPut(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::ClientProxyPutRequest* request,
-      ::us3_turbo::proxy::PutPathResult* response,
+      const ClientProxyPutRequest* request,
+      PutPathResult* response,
       google::protobuf::Closure* done) override;
 
   void UcxPut(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::ClientProxyPutRequest* request,
-      ::us3_turbo::proxy::PutPathResult* response,
+      const ClientProxyPutRequest* request,
+      PutPathResult* response,
       google::protobuf::Closure* done) override;
 
   // ===== 分段上传接口（client → proxy） =====
   void CreateMultipartUpload(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::CreateMultipartUploadRequest* request,
-      ::us3_turbo::proxy::CreateMultipartUploadResponse* response,
+      const CreateMultipartUploadRequest* request,
+      CreateMultipartUploadResponse* response,
       google::protobuf::Closure* done) override;
 
   void UploadPartGds(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::UploadPartGdsRequest* request,
-      ::us3_turbo::proxy::UploadPartResponse* response,
+      const UploadPartGdsRequest* request,
+      UploadPartResponse* response,
       google::protobuf::Closure* done) override;
 
   void UploadPartUcx(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::UploadPartUcxRequest* request,
-      ::us3_turbo::proxy::UploadPartResponse* response,
+      const UploadPartUcxRequest* request,
+      UploadPartResponse* response,
       google::protobuf::Closure* done) override;
 
   void CompleteMultipartUpload(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::CompleteMultipartUploadRequest* request,
-      ::us3_turbo::proxy::CompleteMultipartUploadResponse* response,
+      const CompleteMultipartUploadRequest* request,
+      CompleteMultipartUploadResponse* response,
       google::protobuf::Closure* done) override;
 
   void AbortMultipartUpload(
       google::protobuf::RpcController* cntl,
-      const ::us3_turbo::proxy::AbortMultipartUploadRequest* request,
-      ::us3_turbo::proxy::AbortMultipartUploadResponse* response,
+      const AbortMultipartUploadRequest* request,
+      AbortMultipartUploadResponse* response,
       google::protobuf::Closure* done) override;
 
  private:

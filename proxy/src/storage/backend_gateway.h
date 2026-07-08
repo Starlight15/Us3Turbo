@@ -59,10 +59,10 @@ class BackendGateway {
   BackendGateway(const std::string& backend_endpoint, int timeout_ms);
 
   [[nodiscard]] int ForwardGdsPut(
-      const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+      const ClientProxyPutRequest& request,
       PutOutput& out);
   [[nodiscard]] int ForwardUcxPut(
-      const ::us3_turbo::proxy::ClientProxyPutRequest& request,
+      const ClientProxyPutRequest& request,
       PutOutput& out);
 
  private:

@@ -66,8 +66,8 @@ void ProxyService::CleanupThreadMain() {
 
 void ProxyService::GdsPut(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::ClientProxyPutRequest* request,
-    ::us3_turbo::proxy::PutPathResult* response,
+    const ClientProxyPutRequest* request,
+    PutPathResult* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
@@ -100,8 +100,8 @@ void ProxyService::GdsPut(
 
 void ProxyService::UcxPut(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::ClientProxyPutRequest* request,
-    ::us3_turbo::proxy::PutPathResult* response,
+    const ClientProxyPutRequest* request,
+    PutPathResult* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
@@ -139,8 +139,8 @@ void ProxyService::UcxPut(
 
 void ProxyService::CreateMultipartUpload(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::CreateMultipartUploadRequest* request,
-    ::us3_turbo::proxy::CreateMultipartUploadResponse* response,
+    const CreateMultipartUploadRequest* request,
+    CreateMultipartUploadResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
@@ -176,8 +176,8 @@ void ProxyService::CreateMultipartUpload(
 
 void ProxyService::UploadPartGds(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::UploadPartGdsRequest* request,
-    ::us3_turbo::proxy::UploadPartResponse* response,
+    const UploadPartGdsRequest* request,
+    UploadPartResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
@@ -215,8 +215,8 @@ void ProxyService::UploadPartGds(
 
 void ProxyService::UploadPartUcx(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::UploadPartUcxRequest* request,
-    ::us3_turbo::proxy::UploadPartResponse* response,
+    const UploadPartUcxRequest* request,
+    UploadPartResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
@@ -255,8 +255,8 @@ void ProxyService::UploadPartUcx(
 
 void ProxyService::CompleteMultipartUpload(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::CompleteMultipartUploadRequest* request,
-    ::us3_turbo::proxy::CompleteMultipartUploadResponse* response,
+    const CompleteMultipartUploadRequest* request,
+    CompleteMultipartUploadResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
@@ -266,7 +266,7 @@ void ProxyService::CompleteMultipartUpload(
   LOG_INFO(rid, "start upload={} parts={}",
            request->upload_id(), request->parts_size());
 
-  std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>
+  std::vector<CompleteMultipartUploadRequest_PartInfo>
       client_parts;
   client_parts.reserve(request->parts_size());
   for (int i = 0; i < request->parts_size(); ++i) {
@@ -300,8 +300,8 @@ void ProxyService::CompleteMultipartUpload(
 
 void ProxyService::AbortMultipartUpload(
     google::protobuf::RpcController* cntl_base,
-    const ::us3_turbo::proxy::AbortMultipartUploadRequest* request,
-    ::us3_turbo::proxy::AbortMultipartUploadResponse* response,
+    const AbortMultipartUploadRequest* request,
+    AbortMultipartUploadResponse* response,
     google::protobuf::Closure* done) {
   brpc::ClosureGuard done_guard(done);
   (void)static_cast<brpc::Controller*>(cntl_base);

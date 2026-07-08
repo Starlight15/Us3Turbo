@@ -11,7 +11,7 @@ namespace us3_turbo::proxy {
 
 std::string InMemoryUploadIndex::Create(
     const std::string& bucket, const std::string& key,
-    ::us3_turbo::proxy::PutDataPath path) {
+    PutDataPath path) {
   auto entry = std::make_unique<Entry>();
   entry->record.upload_id     = utils::GenUuid();
   entry->record.bucket        = bucket;

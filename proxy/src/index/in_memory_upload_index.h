@@ -25,7 +25,7 @@ class InMemoryUploadIndex final : public IUploadIndex {
 
   [[nodiscard]] std::string Create(
       const std::string& bucket, const std::string& key,
-      ::us3_turbo::proxy::PutDataPath path) override;
+      PutDataPath path) override;
 
   [[nodiscard]] bool Get(
       const std::string& upload_id, UploadRecord& out) override;

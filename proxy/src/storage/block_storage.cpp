@@ -28,7 +28,7 @@ BlockStorage::BlockStorage(const std::string& backend_endpoint, int timeout_ms,
     return;
   }
   channel_ = std::move(channel);
-  stub_ = std::make_unique<::us3_turbo::proxy::BackendDataPlane_Stub>(
+  stub_ = std::make_unique<BackendDataPlane_Stub>(
       channel_.get());
   LOG_SYS_INFO("backend block channel ready at {} (brpc, multipart, timeout {}ms)",
                backend_endpoint, timeout_ms_);
@@ -49,14 +49,14 @@ BlockStorage::SplitToBlocks(std::uint64_t part_size) const {
   return blocks;
 }
 
-::us3_turbo::proxy::ProxyBackendPutBlockResponse
+ProxyBackendPutBlockResponse
 BlockStorage::CallBackendPutBlockGds(
     const std::string& request_id,
     const std::string& upload_id,
     std::uint32_t part_number,
     const BlockPlan& block,
     const std::string& rdma_token) {
-  ::us3_turbo::proxy::ProxyBackendPutBlockRequest req;
+  ProxyBackendPutBlockRequest req;
   req.set_request_id(request_id);
   req.set_upload_id(upload_id);
   req.set_part_number(part_number);
@@ -66,7 +66,7 @@ BlockStorage::CallBackendPutBlockGds(
   src->set_source_offset(block.source_offset);  // 关键：透传 offset
   src->set_block_size(block.block_size);
 
-  ::us3_turbo::proxy::ProxyBackendPutBlockResponse resp;
+  ProxyBackendPutBlockResponse resp;
   brpc::Controller cntl;
   cntl.set_timeout_ms(timeout_ms_);
   stub_->PutBlock(&cntl, &req, &resp, nullptr);
@@ -79,7 +79,7 @@ BlockStorage::CallBackendPutBlockGds(
   return resp;
 }
 
-::us3_turbo::proxy::ProxyBackendPutBlockResponse
+ProxyBackendPutBlockResponse
 BlockStorage::CallBackendPutBlockUcx(
     const std::string& request_id,
     const std::string& upload_id,
@@ -88,7 +88,7 @@ BlockStorage::CallBackendPutBlockUcx(
     std::uint64_t remote_addr,
     const std::string& packed_rkey,
     const std::string& client_ucx_addr) {
-  ::us3_turbo::proxy::ProxyBackendPutBlockRequest req;
+  ProxyBackendPutBlockRequest req;
   req.set_request_id(request_id);
   req.set_upload_id(upload_id);
   req.set_part_number(part_number);
@@ -99,7 +99,7 @@ BlockStorage::CallBackendPutBlockUcx(
   src->set_client_ucx_addr(client_ucx_addr);
   src->set_block_size(block.block_size);
 
-  ::us3_turbo::proxy::ProxyBackendPutBlockResponse resp;
+  ProxyBackendPutBlockResponse resp;
   brpc::Controller cntl;
   cntl.set_timeout_ms(timeout_ms_);
   stub_->PutBlock(&cntl, &req, &resp, nullptr);
@@ -114,7 +114,7 @@ BlockStorage::CallBackendPutBlockUcx(
 
 BlockStorage::PartResult BlockStorage::Aggregate(
     const std::vector<std::pair<
-        BlockPlan, ::us3_turbo::proxy::ProxyBackendPutBlockResponse>>& results,
+        BlockPlan, ProxyBackendPutBlockResponse>>& results,
     std::uint64_t part_size) {
   PartResult r;
   r.bytes_written = part_size;
@@ -164,7 +164,7 @@ BlockStorage::PartResult BlockStorage::PutPartGds(
            upload_id, part_number, part_size, blocks.size());
 
   // 串行调用各 block（block 数 ≤4，串行简单、无线程开销）。
-  std::vector<std::pair<BlockPlan, ::us3_turbo::proxy::ProxyBackendPutBlockResponse>>
+  std::vector<std::pair<BlockPlan, ProxyBackendPutBlockResponse>>
       results;
   results.reserve(blocks.size());
   for (const auto& block : blocks) {
@@ -197,7 +197,7 @@ BlockStorage::PartResult BlockStorage::PutPartUcx(
            upload_id, part_number, part_size, blocks.size());
 
   // 串行调用各 block（block 数 ≤4，串行简单、无线程开销）。
-  std::vector<std::pair<BlockPlan, ::us3_turbo::proxy::ProxyBackendPutBlockResponse>>
+  std::vector<std::pair<BlockPlan, ProxyBackendPutBlockResponse>>
       results;
   results.reserve(blocks.size());
   for (const auto& block : blocks) {

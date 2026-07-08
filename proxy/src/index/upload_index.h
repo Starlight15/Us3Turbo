@@ -21,7 +21,7 @@ struct UploadRecord {
   std::string  upload_id;
   std::string  bucket;
   std::string  key;
-  ::us3_turbo::proxy::PutDataPath path{::us3_turbo::proxy::PATH_NONE};
+  PutDataPath path{PATH_NONE};
   std::int64_t created_at_ms{0};
 };
 
@@ -34,7 +34,7 @@ class IUploadIndex {
   /** @brief 创建新会话，返回 upload_id（UUID）。 */
   [[nodiscard]] virtual std::string Create(
       const std::string& bucket, const std::string& key,
-      ::us3_turbo::proxy::PutDataPath path) = 0;
+      PutDataPath path) = 0;
 
   /** @brief 读会话（不存在返回 false）。纯读，不含业务判断。 */
   [[nodiscard]] virtual bool Get(

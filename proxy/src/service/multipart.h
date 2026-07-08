@@ -35,7 +35,7 @@ class Multipart {
   [[nodiscard]] int CreateUpload(
       const std::string& request_id,
       const std::string& bucket, const std::string& key,
-      ::us3_turbo::proxy::PutDataPath path,
+      PutDataPath path,
       std::string& out_upload_id);
 
   [[nodiscard]] int UploadPartGds(
@@ -54,7 +54,7 @@ class Multipart {
   [[nodiscard]] int CompleteUpload(
       const std::string& request_id,
       const std::string& upload_id,
-      const std::vector<::us3_turbo::proxy::CompleteMultipartUploadRequest_PartInfo>& client_parts,
+      const std::vector<CompleteMultipartUploadRequest_PartInfo>& client_parts,
       CompleteOutput& out);
 
   [[nodiscard]] bool AbortUpload(const std::string& request_id,
