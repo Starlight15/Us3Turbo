@@ -6,6 +6,8 @@ DECLARE_string(bind_host);
 DECLARE_int32(num_threads);
 DECLARE_string(backend_endpoint);
 DECLARE_int32(backend_timeout_ms);
+DECLARE_int32(backend_setid);
+DECLARE_string(backend_brpc_endpoint);
 DECLARE_int64(upload_ttl_ms);
 DECLARE_int64(upload_ttl_scan_interval_ms);
 DECLARE_uint64(backend_block_size_bytes);

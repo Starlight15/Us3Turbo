@@ -47,7 +47,7 @@ std::unique_ptr<AssembledStack> AssembleServices() {
   stack->gateway = std::make_unique<us3_turbo::proxy::BackendGateway>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
   stack->block_storage = std::make_unique<us3_turbo::proxy::BlockStorage>(
-      FLAGS_backend_endpoint, FLAGS_backend_timeout_ms,
+      FLAGS_backend_brpc_endpoint, FLAGS_backend_timeout_ms,
       FLAGS_backend_block_size_bytes);
   stack->index = std::make_unique<us3_turbo::proxy::InMemoryUploadIndex>();
   auto single_put = std::make_unique<us3_turbo::proxy::SinglePut>(
@@ -99,8 +99,11 @@ int main(int argc, char** argv) {
   LOG_SYS_INFO("[START] logging initialized (level={})", FLAGS_log_level);
 
   auto stack = AssembleServices();
-  LOG_SYS_INFO("[START] services assembled (backend={})",
+  LOG_SYS_INFO("[START] services assembled");
+  LOG_SYS_INFO("[CONFIG] backend_endpoint={} (ufile-ac TCP, single-step)",
                FLAGS_backend_endpoint);
+  LOG_SYS_INFO("[CONFIG] backend_brpc_endpoint={} (brpc, multipart)",
+               FLAGS_backend_brpc_endpoint);
 
   brpc::Server server;
   if (!StartServer(server, *stack->service)) return EXIT_FAILURE;

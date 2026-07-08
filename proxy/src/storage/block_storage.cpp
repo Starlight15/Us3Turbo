@@ -30,6 +30,8 @@ BlockStorage::BlockStorage(const std::string& backend_endpoint, int timeout_ms,
   channel_ = std::move(channel);
   stub_ = std::make_unique<::us3_turbo::proxy::BackendDataPlane_Stub>(
       channel_.get());
+  LOG_SYS_INFO("backend block channel ready at {} (brpc, multipart, timeout {}ms)",
+               backend_endpoint, timeout_ms_);
 }
 
 std::vector<BlockStorage::BlockPlan>

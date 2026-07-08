@@ -3,10 +3,17 @@
 DEFINE_int32(proxy_port, 9100, "proxy control-plane brpc port");
 DEFINE_string(bind_host, "192.168.1.198", "Bind host for the brpc listener");
 DEFINE_int32(num_threads, 4, "brpc worker thread count");
-DEFINE_string(backend_endpoint, "192.168.1.198:9200",
-              "backend data plane endpoint (GdsPut/UcxPut/PutBlock)");
+DEFINE_string(backend_endpoint, "192.168.1.198:24000",
+              "backend ufile-ac TCP endpoint for single-step GdsPut/UcxPut "
+              "(doc F5; setid must match backend [common] setid).");
 DEFINE_int32(backend_timeout_ms, 30000,
              "Timeout (ms) for proxy→backend forward (GdsPut/UcxPut/PutBlock)");
+DEFINE_int32(backend_setid, 1,
+             "ufile-ac setid, must match backend [common] setid "
+             "(doc F3; mismatch → backend ForceClose)");
+DEFINE_string(backend_brpc_endpoint, "192.168.1.198:9200",
+              "backend brpc endpoint for multipart PutBlock "
+              "(separate from single-step ufile-ac TCP backend_endpoint)");
 DEFINE_int64(upload_ttl_ms, 3LL * 24 * 3600 * 1000,
              "multipart upload session TTL in ms; expired sessions are reaped "
              "by the background cleanup thread");
