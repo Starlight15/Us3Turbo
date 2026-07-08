@@ -175,7 +175,6 @@ add_custom_target(us3_turbo_control_plane_proto
 
 add_subdirectory(client)
 add_subdirectory(proxy)
-add_subdirectory(backend)
 
 if(US3_TURBO_ACCESS_BUILD_EXAMPLES)
   add_subdirectory(examples)
