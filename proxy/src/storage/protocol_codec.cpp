@@ -1,0 +1,175 @@
+#include "proxy/src/storage/protocol_codec.h"
+
+#include <arpa/inet.h>  // htonl
+
+#include <cstring>   // std::memcpy
+#include <string>
+
+namespace us3_turbo::proxy::codec {
+
+// ============================ GDS PUT ============================
+
+std::size_t EncodeGdsPutRequest(
+    const std::string& key,
+    const std::string& rdma_token,
+    std::uint64_t gpu_offset,
+    std::uint64_t data_len,
+    std::uint32_t setid,
+    std::uint64_t session_id,
+    std::vector<char>& out_buffer) {
+  const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
+  const std::uint32_t tok_len = static_cast<std::uint32_t>(rdma_token.size());
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(GDS_PUT_REQ_SIZE + key_len + tok_len);
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len -
+                                 sizeof(std::uint32_t));
+  const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
+
+  out_buffer.resize(total);
+  char* p = out_buffer.data();
+
+  // 请求头（仅 msgSize_ 大端，其余主机序直接赋值，F2）
+  Message msg{};
+  msg.msgSize_       = htonl(msg_size_field);
+  msg.magic_         = MESSAGE_MAGIC_NUMBER;
+  msg.version_       = MESSAGE_VERSION_NUMBER;
+  msg.type_          = OSD_GDS_PUT_REQ;
+  msg.flowno_        = 0;
+  msg.sessionIdLow_  = session_id;
+  msg.sessionIdHigh_ = 0;
+  msg.setid_         = setid;
+  msg.payload_       = 0;
+  msg.bodyLen_       = body_len;
+  std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
+  p += MESSAGE_HEAD_SIZE;
+
+  // GdsPutReq（requestId_/sessionId*_/flags_ 预留填 0，backend 不读，F4）
+  GdsPutReq req{};
+  req.keyLen_        = key_len;
+  req.tokenLen_      = tok_len;
+  req.dataLen_       = data_len;
+  req.gpuOffset_     = gpu_offset;
+  req.requestId_     = 0;
+  req.sessionIdLow_  = 0;
+  req.sessionIdHigh_ = 0;
+  req.flags_         = 0;
+  std::memcpy(p, &req, GDS_PUT_REQ_SIZE);
+  p += GDS_PUT_REQ_SIZE;
+
+  // 变长数据：key + rdma_token
+  std::memcpy(p, key.data(), key.size());
+  p += key.size();
+  std::memcpy(p, rdma_token.data(), rdma_token.size());
+  return total;
+}
+
+int DecodeGdsPutResponse(
+    const char* buffer,
+    std::size_t len,
+    GdsPutRsp& out_rsp,
+    std::string& out_err) {
+  if (len < GDS_PUT_RSP_SIZE) {
+    out_err = "GdsPut rsp body too short len=" + std::to_string(len);
+    return -1;
+  }
+  std::memcpy(&out_rsp, buffer, GDS_PUT_RSP_SIZE);
+  const std::uint32_t etag_len   = out_rsp.etagLen_;
+  const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
+  const std::size_t var_len = len - GDS_PUT_RSP_SIZE;
+  if (static_cast<std::size_t>(etag_len) + errmsg_len > var_len) {
+    out_err = "GdsPut rsp var overflow etag=" + std::to_string(etag_len) +
+              " errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
+    return -1;
+  }
+  out_err.assign(buffer + GDS_PUT_RSP_SIZE + etag_len, errmsg_len);
+  return 0;
+}
+
+// ============================ UCX PUT ============================
+
+std::size_t EncodeUcxPutRequest(
+    const std::string& key,
+    std::uint64_t remote_addr,
+    const std::string& packed_rkey,
+    const std::string& client_ucx_addr,
+    std::uint64_t source_offset,
+    std::uint64_t data_len,
+    std::uint32_t setid,
+    std::uint64_t session_id,
+    std::vector<char>& out_buffer) {
+  const std::uint32_t key_len  = static_cast<std::uint32_t>(key.size());
+  const std::uint32_t addr_len = static_cast<std::uint32_t>(client_ucx_addr.size());
+  const std::uint32_t rkey_len = static_cast<std::uint32_t>(packed_rkey.size());
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(UCX_PUT_REQ_SIZE + key_len + addr_len + rkey_len);
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len -
+                                 sizeof(std::uint32_t));
+  const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
+
+  out_buffer.resize(total);
+  char* p = out_buffer.data();
+
+  Message msg{};
+  msg.msgSize_       = htonl(msg_size_field);
+  msg.magic_         = MESSAGE_MAGIC_NUMBER;
+  msg.version_       = MESSAGE_VERSION_NUMBER;
+  msg.type_          = OSD_UCX_PUT_REQ;
+  msg.flowno_        = 0;
+  msg.sessionIdLow_  = session_id;
+  msg.sessionIdHigh_ = 0;
+  msg.setid_         = setid;
+  msg.payload_       = 0;
+  msg.bodyLen_       = body_len;
+  std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
+  p += MESSAGE_HEAD_SIZE;
+
+  // UcxPutReq（reserved0_/requestId_/sessionId*_/flags_ 预留填 0）
+  UcxPutReq req{};
+  req.keyLen_        = key_len;
+  req.addrLen_       = addr_len;
+  req.rkeyLen_       = rkey_len;
+  req.reserved0_     = 0;
+  req.dataLen_       = data_len;
+  req.remoteAddr_    = remote_addr;
+  req.sourceOffset_  = source_offset;
+  req.requestId_     = 0;
+  req.sessionIdLow_  = 0;
+  req.sessionIdHigh_ = 0;
+  req.flags_         = 0;
+  std::memcpy(p, &req, UCX_PUT_REQ_SIZE);
+  p += UCX_PUT_REQ_SIZE;
+
+  // 变长数据：key + client_ucx_addr + packed_rkey
+  std::memcpy(p, key.data(), key.size());
+  p += key.size();
+  std::memcpy(p, client_ucx_addr.data(), client_ucx_addr.size());
+  p += client_ucx_addr.size();
+  std::memcpy(p, packed_rkey.data(), packed_rkey.size());
+  return total;
+}
+
+int DecodeUcxPutResponse(
+    const char* buffer,
+    std::size_t len,
+    UcxPutRsp& out_rsp,
+    std::string& out_err) {
+  if (len < UCX_PUT_RSP_SIZE) {
+    out_err = "UcxPut rsp body too short len=" + std::to_string(len);
+    return -1;
+  }
+  std::memcpy(&out_rsp, buffer, UCX_PUT_RSP_SIZE);
+  const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
+  const std::size_t var_len = len - UCX_PUT_RSP_SIZE;
+  if (static_cast<std::size_t>(errmsg_len) > var_len) {
+    out_err = "UcxPut rsp var overflow errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
+    return -1;
+  }
+  out_err.assign(buffer + UCX_PUT_RSP_SIZE, errmsg_len);
+  return 0;
+}
+
+}  // namespace us3_turbo::proxy::codec

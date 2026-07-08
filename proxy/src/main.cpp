@@ -14,7 +14,7 @@
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
-#include "proxy/src/storage/backend_gateway.h"
+#include "proxy/src/storage/ufile_ac_client.h"
 #include "proxy/src/storage/block_storage.h"
 
 namespace {
@@ -33,9 +33,9 @@ void InitLogging() {
 }
 
 // 依赖注入装配产物：存储层 + 索引层 + 接口层
-// 成员析构逆序 = service→index→block_storage→gateway，保证 service 的 TTL 清理
+// 成员析构逆序 = service→index→block_storage→ufile_ac，保证 service 的 TTL 清理
 struct AssembledStack {
-  std::unique_ptr<us3_turbo::proxy::BackendGateway>      gateway;
+  std::unique_ptr<us3_turbo::proxy::UfileAcClient>       ufile_ac;
   std::unique_ptr<us3_turbo::proxy::BlockStorage>        block_storage;
   std::unique_ptr<us3_turbo::proxy::InMemoryUploadIndex> index;
   std::unique_ptr<us3_turbo::proxy::ProxyService>     service;
@@ -44,14 +44,14 @@ struct AssembledStack {
 // 依赖注入装配，自底向上：存储层最长命，接口层最上
 std::unique_ptr<AssembledStack> AssembleServices() {
   auto stack = std::make_unique<AssembledStack>();
-  stack->gateway = std::make_unique<us3_turbo::proxy::BackendGateway>(
+  stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
   stack->block_storage = std::make_unique<us3_turbo::proxy::BlockStorage>(
       FLAGS_backend_brpc_endpoint, FLAGS_backend_timeout_ms,
       FLAGS_backend_block_size_bytes);
   stack->index = std::make_unique<us3_turbo::proxy::InMemoryUploadIndex>();
   auto single_put = std::make_unique<us3_turbo::proxy::SinglePut>(
-      stack->gateway.get());
+      stack->ufile_ac.get());
   auto multipart = std::make_unique<us3_turbo::proxy::Multipart>(
       stack->index.get(), stack->block_storage.get());
   stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(

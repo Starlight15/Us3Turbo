@@ -1,8 +1,11 @@
 #include "proxy/src/service/single_put.h"
 
+#include <cstdio>
+#include <string>
+
 #include "proxy/src/common/errors.h"
 #include "proxy/src/logging/logger.h"
-#include "proxy/src/storage/backend_gateway.h"
+#include "proxy/src/storage/ufile_ac_client.h"
 
 namespace us3_turbo::proxy {
 
@@ -14,7 +17,7 @@ constexpr std::uint64_t kMaxUploadBytes = 16ULL * 1024 * 1024;
 
 }  // namespace
 
-SinglePut::SinglePut(BackendGateway* gateway) : gateway_(gateway) {}
+SinglePut::SinglePut(UfileAcClient* client) : client_(client) {}
 
 int SinglePut::PutGds(
     const ClientProxyPutRequest& request,
@@ -41,12 +44,23 @@ int SinglePut::PutGds(
   }
   LOG_DEBUG(rid, "validated bucket={}/{} size={} path=GDS",
             request.bucket(), request.key(), request.object_size());
-  int ret = gateway_->ForwardGdsPut(request, out);
-  if (ret != 0) {
-    LOG_ERROR(rid, "backend forward failed code={}", ret);
-    return ret;
+  // key 由 proxy 生成（block 级存储标识）；单步上传 gpu_offset=0
+  const std::string key = request.bucket() + "/" + request.key();
+  auto result = client_->PutBlockGds(
+      key, request.gds_source().rdma_token(), 0, request.object_size());
+  if (result.ret_code != 0) {
+    LOG_ERROR(rid, "ufile-ac failed: {}", result.error);
+    return result.ret_code;
   }
-  LOG_DEBUG(rid, "backend returned etag={} bytes={}", out.etag, out.bytes_written);
+  out.crc32c        = result.crc32c;
+  out.bytes_written = result.bytes_written;
+  // backend 不返回 etag（etagLen_=0，F7），暂以 crc32c 十六进制占位
+  // （待 utils::Crc32cToETag 落地后替换）
+  char etag_buf[16];
+  std::snprintf(etag_buf, sizeof(etag_buf), "%08x",
+                static_cast<unsigned int>(result.crc32c));
+  out.etag = etag_buf;
+  LOG_DEBUG(rid, "backend ok etag={} bytes={}", out.etag, out.bytes_written);
   return 0;
 }
 
@@ -75,12 +89,23 @@ int SinglePut::PutUcx(
   }
   LOG_DEBUG(rid, "validated bucket={}/{} size={} path=UCX",
             request.bucket(), request.key(), request.object_size());
-  int ret = gateway_->ForwardUcxPut(request, out);
-  if (ret != 0) {
-    LOG_ERROR(rid, "backend forward failed code={}", ret);
-    return ret;
+  // key 由 proxy 生成；单步上传 source_offset=0
+  const std::string key = request.bucket() + "/" + request.key();
+  const auto& src = request.ucx_source();
+  auto result = client_->PutBlockUcx(
+      key, src.remote_addr(), src.packed_rkey(), src.client_ucx_addr(),
+      0, request.object_size());
+  if (result.ret_code != 0) {
+    LOG_ERROR(rid, "ufile-ac failed: {}", result.error);
+    return result.ret_code;
   }
-  LOG_DEBUG(rid, "backend returned etag={} bytes={}", out.etag, out.bytes_written);
+  out.crc32c        = result.crc32c;
+  out.bytes_written = result.bytes_written;
+  char etag_buf[16];
+  std::snprintf(etag_buf, sizeof(etag_buf), "%08x",
+                static_cast<unsigned int>(result.crc32c));
+  out.etag = etag_buf;
+  LOG_DEBUG(rid, "backend ok etag={} bytes={}", out.etag, out.bytes_written);
   return 0;
 }
 

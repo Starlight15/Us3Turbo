@@ -9,7 +9,9 @@ add_executable(us3_turbo_proxy
   src/service/single_put.cpp
   src/service/multipart.cpp
   src/index/in_memory_upload_index.cpp
-  src/storage/backend_gateway.cpp
+  src/storage/tcp_connection.cpp
+  src/storage/protocol_codec.cpp
+  src/storage/ufile_ac_client.cpp
   src/storage/block_storage.cpp)
 
 add_dependencies(us3_turbo_proxy
