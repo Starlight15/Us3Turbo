@@ -21,3 +21,6 @@ DEFINE_int32(log_max_size_mb, 50,
              "max size per app log file (MB); rotates when exceeded");
 DEFINE_int32(log_max_files, 10,
              "max number of rotated app log files to keep");
+DEFINE_int32(backend_conn_pool_size, 8,
+             "backend connection pool size (recommend: ≈ num_threads for best "
+             "throughput)");
