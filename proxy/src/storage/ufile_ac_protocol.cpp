@@ -9,6 +9,8 @@ namespace us3_turbo::proxy {
 
 // ============================ GDS PUT ============================
 
+/* 编码 GDS PUT 请求：Message(52) + GdsPutReq(52) + key + rdma_token。
+ * 仅 msgSize_ 大端，其余主机序直接赋值；预留字段填 0。返回总字节数。 */
 std::size_t EncodeGdsPutRequest(
     const std::string& key,
     const std::string& rdma_token,
@@ -29,7 +31,7 @@ std::size_t EncodeGdsPutRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
-  // 请求头（仅 msgSize_ 大端，其余主机序直接赋值，F2）
+  // 请求头（仅 msgSize_ 大端，其余主机序直接赋值）
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -44,7 +46,7 @@ std::size_t EncodeGdsPutRequest(
   std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
   p += MESSAGE_HEAD_SIZE;
 
-  // GdsPutReq（requestId_/sessionId*_/flags_ 预留填 0，backend 不读，F4）
+  // GdsPutReq（requestId_/sessionId*_/flags_ 预留填 0）
   GdsPutReq req{};
   req.keyLen_        = key_len;
   req.tokenLen_      = tok_len;
@@ -64,6 +66,7 @@ std::size_t EncodeGdsPutRequest(
   return total;
 }
 
+/* 解码 GDS PUT 响应体（GdsPutRsp + errmsg）。返回 0=成功，-1=格式错误。 */
 int DecodeGdsPutResponse(
     const char* buffer,
     std::size_t len,
@@ -89,6 +92,8 @@ int DecodeGdsPutResponse(
 
 // ============================ UCX PUT ============================
 
+/* 编码 UCX PUT 请求：Message(52) + UcxPutReq(68) + key + client_ucx_addr + packed_rkey。
+ * 仅 msgSize_ 大端，其余主机序；预留字段填 0。返回总字节数。 */
 std::size_t EncodeUcxPutRequest(
     const std::string& key,
     std::uint64_t remote_addr,
@@ -112,6 +117,7 @@ std::size_t EncodeUcxPutRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
+  // 请求头（仅 msgSize_ 大端，其余主机序）
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -151,6 +157,7 @@ std::size_t EncodeUcxPutRequest(
   return total;
 }
 
+/* 解码 UCX PUT 响应体（UcxPutRsp + errmsg）。返回 0=成功，-1=格式错误。 */
 int DecodeUcxPutResponse(
     const char* buffer,
     std::size_t len,
@@ -174,6 +181,8 @@ int DecodeUcxPutResponse(
 
 // ============================ DEL ============================
 
+/* 编码 DEL 请求：Message(52) + DelReq(12) + key。
+ * 仅 msgSize_ 大端，其余主机序；reserve_ 填 0。返回总字节数。 */
 std::size_t EncodeDelRequest(
     const std::string& key,
     std::uint32_t setid,
@@ -190,7 +199,7 @@ std::size_t EncodeDelRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
-  // 请求头（仅 msgSize_ 大端，其余主机序，F2）
+  // 请求头（仅 msgSize_ 大端，其余主机序）
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -217,6 +226,7 @@ std::size_t EncodeDelRequest(
   return total;
 }
 
+/* 解码 DEL 响应体（DelRsp + errmsg）。返回 0=成功，-1=格式错误。 */
 int DecodeDelResponse(
     const char* buffer,
     std::size_t len,
