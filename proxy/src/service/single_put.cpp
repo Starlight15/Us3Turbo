@@ -72,52 +72,52 @@ int SinglePut::ValidateUcxRequest(const ClientProxyPutRequest& req) {
 int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
   const std::string& rid = req.request_id();
 
-  // ① 校验
+  // 校验
   int ret = ValidateGdsRequest(req);
   if (ret != 0) return ret;
 
-  // ② 生成对象标识 + 写单块（key = {obj_id}_0，s3proxy 可读）
+  // 生成对象标识 + 写单块
   const std::string obj_id     = utils::GenUuid();
   const std::string block_key  = obj_id + "_0";
-  const auto result = client_->PutBlockGds(block_key, req.gds_source().rdma_token(),
+  const auto res = client_->PutBlockGds(block_key, req.gds_source().rdma_token(),
                                            0, req.object_size());
-  if (result.ret_code != 0) {
-    LOG_ERROR(rid, "ufile-ac failed: {}", result.error);
-    return result.ret_code;
+  if (res.ret_code != 0) {
+    LOG_ERROR(rid, "ufile-ac failed: {}", res.error);
+    return res.ret_code;
   }
   LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}",
-            block_key, result.crc32c, result.bytes_written);
+            block_key, res.crc32c, res.bytes_written);
 
-  // ③ 写对象索引 + 填充输出
+  // 写对象索引 + 填充输出
   WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
-                   req.object_size(), result.crc32c, out);
+                   req.object_size(), res.crc32c, out);
   return 0;
 }
 
 int SinglePut::PutUcx(const ClientProxyPutRequest& req, PutOutput& out) {
   const std::string& rid = req.request_id();
 
-  // ① 校验
+  // 校验
   int ret = ValidateUcxRequest(req);
   if (ret != 0) return ret;
 
-  // ② 生成对象标识 + 写单块（key = {obj_id}_0，s3proxy 可读）
+  // 生成对象标识 + 写单块
   const std::string obj_id     = utils::GenUuid();
   const std::string block_key  = obj_id + "_0";
   const auto& usrc = req.ucx_source();
-  const auto result = client_->PutBlockUcx(block_key, usrc.remote_addr(),
+  const auto res = client_->PutBlockUcx(block_key, usrc.remote_addr(),
                                            usrc.packed_rkey(), usrc.client_ucx_addr(),
                                            0, req.object_size());
-  if (result.ret_code != 0) {
-    LOG_ERROR(rid, "ufile-ac failed: {}", result.error);
-    return result.ret_code;
+  if (res.ret_code != 0) {
+    LOG_ERROR(rid, "ufile-ac failed: {}", res.error);
+    return res.ret_code;
   }
   LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}",
-            block_key, result.crc32c, result.bytes_written);
+            block_key, res.crc32c, res.bytes_written);
 
-  // ③ 写对象索引 + 填充输出
+  // 写对象索引 + 填充输出
   WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
-                   req.object_size(), result.crc32c, out);
+                   req.object_size(), res.crc32c, out);
   return 0;
 }
 
@@ -126,18 +126,10 @@ void SinglePut::WriteObjectIndex(
     const std::string& bucket, const std::string& key,
     const std::string& obj_id, std::uint64_t object_size,
     std::uint32_t crc32c, PutOutput& out) {
-  // 单块：hash == etag == crc 十六进制（等价 CombineBlockCRC32s 单元素分支，
-  // 与原单步 etag 行为一致；非 s3proxy SHA1，proxy 零拷贝拿不到原始数据）
   out.etag          = utils::Crc32cToETag(crc32c);
   out.crc32c        = crc32c;
   out.bytes_written = object_size;
 
-  // fileidx 占位（对齐 s3proxy 字段，格式同 multipart CompleteUpload）：
-  //   first_object = obj_id       → block key 前缀
-  //   block_size   = object_size  → 单块，s3proxy 读时 blockNum = offset/block_size = 0
-  //   filesize     = object_size
-  //   hash         = etag（单块 crc）
-  // 当前阶段：内存构造 + 日志占位，不写真实 DB（TODO: 对接 MongoDB fileidx 表）。
   LOG_INFO(request_id, "fileidx(compat s3proxy): bucket={} key={} "
            "first_object={} block_size={} filesize={} etag={} hash={}",
            bucket, key, obj_id, object_size, object_size, out.etag, out.etag);
