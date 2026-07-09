@@ -17,47 +17,35 @@ namespace us3_turbo::proxy {
 
 namespace {
 
-// block 大小：4MB（与 s3proxy 对齐；单 part 超此则拆多块串行写）。
-constexpr std::uint64_t kBlockSize = 4ULL * 1024 * 1024;
+/* block 大小 4MB（与 s3proxy 对齐），part 固定 16MB = 4 blocks */
+constexpr std::uint64_t kBlockSize     = 4ULL * 1024 * 1024;   // 4MB
+constexpr std::uint64_t kPartSize      = 16ULL * 1024 * 1024;  // 16MB
+constexpr std::uint32_t kBlocksPerPart = 4;                    // 16MB / 4MB
 
-// 去除 UUID 连字符（36 → 32 字节），压缩 block key 以符合 backend KEY_MAX_LENGTH(48)。
-std::string StripUuidDashes(const std::string& upload_id) {
-  std::string result;
-  result.reserve(32);
-  for (char c : upload_id) {
-    if (c != '-') result.push_back(c);
-  }
-  return result;
+/*
+ * 生成 block key：{obj_id}_{全局块号}
+ * 对齐 s3proxy（parseOnePart 里 FileID + "_" + blkNum），
+ * 使数据可被 s3proxy 直接读取。
+ */
+std::string GenerateBlockKey(const std::string& obj_id,
+                             std::uint32_t global_block_index) {
+  return obj_id + "_" + std::to_string(global_block_index);
 }
 
-// 生成紧凑 block key：mp/{uuid32}/p{part:04u}b{block:02u}
-// 长度 = 3 + 32 + 1 + 5 + 6 = 47 ≤ KEY_MAX_LENGTH(48) ✓
-std::string GenerateBlockKey(const std::string& upload_id,
-                             std::uint32_t part_number,
-                             std::uint32_t block_no) {
-  const std::string uuid_nodash = StripUuidDashes(upload_id);
-  char buf[64];
-  std::snprintf(buf, sizeof(buf), "mp/%s/p%04ub%02u",
-                uuid_nodash.c_str(), part_number, block_no);
-  return buf;
-}
-
-// 子阶段4：尽力清理已写入的 blocks（写中途失败时调用，避免孤儿数据）。
-// 逐块 DeleteBlock，忽略任何失败（连接全坏 / key 不存在均无害）。
+/*
+ * 尽力清理已写入的 blocks（写中途失败时调用，避免孤儿数据）。
+ * 逐块 DeleteBlock，忽略失败（ufile-ac TTL 兜底）。
+ */
 void CleanupWrittenBlocks(const std::string& request_id,
-                          const std::string& upload_id,
-                          std::uint32_t part_number,
                           UfileAcClient* client,
                           const std::vector<std::string>& written_keys) {
   if (written_keys.empty()) return;
-  LOG_WARN(request_id, "upload={} part={} cleaning {} written blocks after failure",
-           upload_id, part_number, written_keys.size());
+  LOG_WARN(request_id, "cleaning {} written blocks after failure",
+           written_keys.size());
   for (const std::string& key : written_keys) {
     const BlockResult del = client->DeleteBlock(key);
     if (del.ret_code != 0) {
-      // 尽力清理：失败只记录，不中断（ufile-ac TTL 兜底）。
-      LOG_DEBUG(request_id, "upload={} part={} cleanup skip key={} err={}",
-                upload_id, part_number, key, del.error);
+      LOG_DEBUG(request_id, "cleanup skip key={} err={}", key, del.error);
     }
   }
 }
@@ -93,20 +81,28 @@ int Multipart::UploadPartGds(
     std::uint32_t part_number, std::uint64_t part_size,
     const std::string& rdma_token,
     UploadPartOutput& out) {
-  UploadRecord rec;
-  if (!index_->Get(upload_id, rec)) {
+  /* 1. 读取 upload 元信息（需要 obj_id） */
+  UploadRecord upload;
+  if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "UploadPartGds upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (rec.path != PATH_GDS) {
+  if (upload.path != PATH_GDS) {
     LOG_WARN(request_id, "UploadPartGds session path={} != PATH_GDS upload={}",
-             static_cast<int>(rec.path), upload_id);
+             static_cast<int>(upload.path), upload_id);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
+
+  /* 2. 基础校验（part_size 上限 16MB，是否最后 part 留到 Complete 判断） */
   if (part_number == 0 || part_size == 0) {
     LOG_WARN(request_id, "UploadPartGds upload={} part={} part_size={} zero",
              upload_id, part_number, part_size);
     return PROXY_ERR_INVALID_PARAM;
+  }
+  if (part_size > kPartSize) {
+    LOG_WARN(request_id, "UploadPartGds upload={} part={} size={} > max {}",
+             upload_id, part_number, part_size, kPartSize);
+    return PROXY_ERR_INVALID_PART_SIZE;
   }
   if (rdma_token.empty()) {
     LOG_WARN(request_id, "UploadPartGds upload={} part={} rdma_token empty",
@@ -114,68 +110,85 @@ int Multipart::UploadPartGds(
     return PROXY_ERR_MISSING_SOURCE;
   }
 
-  // 阶段二：part → blocks 串行写 ufile-ac，每块独立 key + crc32c，记录 BlockInfo。
+  /* 3. 计算全局 block 起点 + 文件偏移（16MB 对齐 → part_number 直接算） */
+  const std::uint32_t global_block_start = (part_number - 1) * kBlocksPerPart;
+  const std::uint64_t file_offset =
+      static_cast<std::uint64_t>(part_number - 1) * kPartSize;
   const std::uint64_t block_count = (part_size + kBlockSize - 1) / kBlockSize;
-  LOG_INFO(request_id, "upload={} part={} size={} blocks={}",
-           upload_id, part_number, part_size, block_count);
 
-  std::vector<BlockInfo> block_infos;
-  block_infos.reserve(block_count);
+  LOG_INFO(request_id, "upload={} part={} size={} blocks={} offset={}",
+           upload_id, part_number, part_size, block_count, file_offset);
+
+  /* 4. 串行写 blocks，每块成功后立即写索引 */
   std::vector<std::uint32_t> crcs;
   crcs.reserve(block_count);
-  std::vector<std::string> written_keys;  // 子阶段4：记录已写 block key，失败时清理
+  std::vector<std::string> written_keys;
   written_keys.reserve(block_count);
 
   for (std::uint64_t i = 0; i < block_count; ++i) {
     const std::uint64_t offset = i * kBlockSize;
     const std::uint64_t len = std::min(kBlockSize, part_size - offset);
     const std::string block_key = GenerateBlockKey(
-        upload_id, part_number, static_cast<std::uint32_t>(i));
+        upload.obj_id, global_block_start + static_cast<std::uint32_t>(i));
 
-    // 子阶段3：block_key 长度守卫（移自 UfileAcClient；GenerateBlockKey 恒 ≤47，兜底）。
+    /* block_key 长度守卫（兜底，正常 obj_id_块号 恒 ≤48） */
     if (block_key.size() > KEY_MAX_LENGTH) {
       LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
                 upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
-      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      CleanupWrittenBlocks(request_id, client_, written_keys);
       return PROXY_ERR_INVALID_PARAM;
     }
 
-    auto result = client_->PutBlockGds(block_key, rdma_token, offset, len);
+    const auto result = client_->PutBlockGds(block_key, rdma_token, offset, len);
     if (result.ret_code != 0) {
       LOG_ERROR(request_id, "upload={} part={} block {} failed: {}",
                 upload_id, part_number, i, result.error);
-      // 子阶段4：清理本 part 已写入的 blocks，避免孤儿数据（ufile-ac TTL 兜底）
-      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      CleanupWrittenBlocks(request_id, client_, written_keys);
       return result.ret_code;
     }
 
-    written_keys.push_back(block_key);  // 写成功后才记入待清理列表
-    BlockInfo info;
-    info.key    = block_key;
-    info.offset = offset;
-    info.size   = len;
-    info.crc32c = result.crc32c;
-    block_infos.push_back(std::move(info));
+    written_keys.push_back(block_key);
     crcs.push_back(result.crc32c);
+
+    /* 增量写索引（崩溃恢复点） */
+    if (!index_->AddBlockCrc(upload_id, result.crc32c)) {
+      LOG_ERROR(request_id, "upload={} part={} AddBlockCrc failed",
+                upload_id, part_number);
+      CleanupWrittenBlocks(request_id, client_, written_keys);
+      return PROXY_ERR_INTERNAL;
+    }
+
     LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
               upload_id, part_number, i, block_key, result.crc32c);
   }
 
+  /* 5. 计算 part etag */
   const std::string part_etag = utils::CombineBlockCRC32s(crcs);
 
+  /* 6. 写 part 索引（对齐 s3proxy 字段） */
   PartRecord part;
   part.part_number    = part_number;
   part.part_size      = part_size;
   part.etag           = part_etag;
   part.upload_time_ms = utils::NowMs();
-  part.blocks         = std::move(block_infos);
-  index_->AddPart(upload_id, part);
+  part.file_offset    = file_offset;  // s3proxy 对齐
+  part.valid          = true;         // s3proxy 对齐
+  part.unmerge_size   = 0;            // s3proxy 对齐（全合并）
+  if (!index_->AddPart(upload_id, part)) {
+    LOG_ERROR(request_id, "upload={} part={} AddPart failed", upload_id, part_number);
+    CleanupWrittenBlocks(request_id, client_, written_keys);
+    return PROXY_ERR_INTERNAL;
+  }
+
+  /* 7. 更新 upload 级合并进度（对齐 s3proxy） */
+  index_->UpdateMergedSize(upload_id, file_offset + part_size);
+  index_->UpdateLastMergedPart(upload_id, static_cast<std::int32_t>(part_number));
 
   out.etag          = part_etag;
-  out.crc32c        = crcs[0];
+  out.crc32c        = crcs.empty() ? 0 : crcs[0];
   out.bytes_written = part_size;
   LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}",
-           upload_id, part_number, out.etag, part.blocks.size());
+           upload_id, part_number, out.etag, crcs.size());
   return 0;
 }
 
@@ -185,20 +198,28 @@ int Multipart::UploadPartUcx(
     std::uint64_t remote_addr, const std::string& packed_rkey,
     const std::string& client_ucx_addr,
     UploadPartOutput& out) {
-  UploadRecord rec;
-  if (!index_->Get(upload_id, rec)) {
+  /* 1. 读取 upload 元信息（需要 obj_id） */
+  UploadRecord upload;
+  if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "UploadPartUcx upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (rec.path != PATH_UCX) {
+  if (upload.path != PATH_UCX) {
     LOG_WARN(request_id, "UploadPartUcx session path={} != PATH_UCX upload={}",
-             static_cast<int>(rec.path), upload_id);
+             static_cast<int>(upload.path), upload_id);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
+
+  /* 2. 基础校验（part_size 上限 16MB，是否最后 part 留到 Complete 判断） */
   if (part_number == 0 || part_size == 0) {
     LOG_WARN(request_id, "UploadPartUcx upload={} part={} part_size={} zero",
              upload_id, part_number, part_size);
     return PROXY_ERR_INVALID_PARAM;
+  }
+  if (part_size > kPartSize) {
+    LOG_WARN(request_id, "UploadPartUcx upload={} part={} size={} > max {}",
+             upload_id, part_number, part_size, kPartSize);
+    return PROXY_ERR_INVALID_PART_SIZE;
   }
   if (remote_addr == 0 || packed_rkey.empty() || client_ucx_addr.empty()) {
     LOG_WARN(request_id, "UploadPartUcx upload={} part={} ucx source fields incomplete",
@@ -206,69 +227,86 @@ int Multipart::UploadPartUcx(
     return PROXY_ERR_MISSING_SOURCE;
   }
 
-  // 阶段二：part → blocks 串行写 ufile-ac（UCX：remote_addr 基址 + source_offset 偏移）。
+  /* 3. 计算全局 block 起点 + 文件偏移（16MB 对齐 → part_number 直接算） */
+  const std::uint32_t global_block_start = (part_number - 1) * kBlocksPerPart;
+  const std::uint64_t file_offset =
+      static_cast<std::uint64_t>(part_number - 1) * kPartSize;
   const std::uint64_t block_count = (part_size + kBlockSize - 1) / kBlockSize;
-  LOG_INFO(request_id, "upload={} part={} size={} blocks={}",
-           upload_id, part_number, part_size, block_count);
 
-  std::vector<BlockInfo> block_infos;
-  block_infos.reserve(block_count);
+  LOG_INFO(request_id, "upload={} part={} size={} blocks={} offset={}",
+           upload_id, part_number, part_size, block_count, file_offset);
+
+  /* 4. 串行写 blocks（UCX：remote_addr 基址 + source_offset 偏移），每块成功后立即写索引 */
   std::vector<std::uint32_t> crcs;
   crcs.reserve(block_count);
-  std::vector<std::string> written_keys;  // 子阶段4：记录已写 block key，失败时清理
+  std::vector<std::string> written_keys;
   written_keys.reserve(block_count);
 
   for (std::uint64_t i = 0; i < block_count; ++i) {
     const std::uint64_t offset = i * kBlockSize;
     const std::uint64_t len = std::min(kBlockSize, part_size - offset);
     const std::string block_key = GenerateBlockKey(
-        upload_id, part_number, static_cast<std::uint32_t>(i));
+        upload.obj_id, global_block_start + static_cast<std::uint32_t>(i));
 
-    // 子阶段3：block_key 长度守卫（移自 UfileAcClient）。
+    /* block_key 长度守卫（兜底） */
     if (block_key.size() > KEY_MAX_LENGTH) {
       LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
                 upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
-      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      CleanupWrittenBlocks(request_id, client_, written_keys);
       return PROXY_ERR_INVALID_PARAM;
     }
 
-    auto result = client_->PutBlockUcx(block_key, remote_addr, packed_rkey,
-                                      client_ucx_addr, offset, len);
+    const auto result = client_->PutBlockUcx(block_key, remote_addr, packed_rkey,
+                                             client_ucx_addr, offset, len);
     if (result.ret_code != 0) {
       LOG_ERROR(request_id, "upload={} part={} block {} failed: {}",
                 upload_id, part_number, i, result.error);
-      // 子阶段4：清理本 part 已写入的 blocks，避免孤儿数据（ufile-ac TTL 兜底）
-      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      CleanupWrittenBlocks(request_id, client_, written_keys);
       return result.ret_code;
     }
 
-    written_keys.push_back(block_key);  // 写成功后才记入待清理列表
-    BlockInfo info;
-    info.key    = block_key;
-    info.offset = offset;
-    info.size   = len;
-    info.crc32c = result.crc32c;
-    block_infos.push_back(std::move(info));
+    written_keys.push_back(block_key);
     crcs.push_back(result.crc32c);
+
+    /* 增量写索引（崩溃恢复点） */
+    if (!index_->AddBlockCrc(upload_id, result.crc32c)) {
+      LOG_ERROR(request_id, "upload={} part={} AddBlockCrc failed",
+                upload_id, part_number);
+      CleanupWrittenBlocks(request_id, client_, written_keys);
+      return PROXY_ERR_INTERNAL;
+    }
+
     LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
               upload_id, part_number, i, block_key, result.crc32c);
   }
 
+  /* 5. 计算 part etag */
   const std::string part_etag = utils::CombineBlockCRC32s(crcs);
 
+  /* 6. 写 part 索引（对齐 s3proxy 字段） */
   PartRecord part;
   part.part_number    = part_number;
   part.part_size      = part_size;
   part.etag           = part_etag;
   part.upload_time_ms = utils::NowMs();
-  part.blocks         = std::move(block_infos);
-  index_->AddPart(upload_id, part);
+  part.file_offset    = file_offset;  // s3proxy 对齐
+  part.valid          = true;         // s3proxy 对齐
+  part.unmerge_size   = 0;            // s3proxy 对齐（全合并）
+  if (!index_->AddPart(upload_id, part)) {
+    LOG_ERROR(request_id, "upload={} part={} AddPart failed", upload_id, part_number);
+    CleanupWrittenBlocks(request_id, client_, written_keys);
+    return PROXY_ERR_INTERNAL;
+  }
+
+  /* 7. 更新 upload 级合并进度（对齐 s3proxy） */
+  index_->UpdateMergedSize(upload_id, file_offset + part_size);
+  index_->UpdateLastMergedPart(upload_id, static_cast<std::int32_t>(part_number));
 
   out.etag          = part_etag;
-  out.crc32c        = crcs[0];
+  out.crc32c        = crcs.empty() ? 0 : crcs[0];
   out.bytes_written = part_size;
   LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}",
-           upload_id, part_number, out.etag, part.blocks.size());
+           upload_id, part_number, out.etag, crcs.size());
   return 0;
 }
 
@@ -277,8 +315,9 @@ int Multipart::CompleteUpload(
     const std::string& upload_id,
     const std::vector<CompleteMultipartUploadRequest_PartInfo>& client_parts,
     CompleteOutput& out) {
-  UploadRecord rec;
-  if (!index_->Get(upload_id, rec)) {
+  /* 1. 读取 upload 元信息 */
+  UploadRecord upload;
+  if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "upload_id not found upload={}", upload_id);
     return PROXY_ERR_INVALID_PARAM;
   }
@@ -286,17 +325,29 @@ int Multipart::CompleteUpload(
   std::vector<PartRecord> parts;
   index_->ListParts(upload_id, parts);
 
-  // 1. 按 part_number 排序（parts 在索引层未排序）。
+  /* 2. 按 part_number 升序排序 */
   std::sort(parts.begin(), parts.end(),
             [](const PartRecord& a, const PartRecord& b) {
               return a.part_number < b.part_number;
             });
 
-  // 2. 升序无重复校验（s3 语义：允许间隙如 1,3,5）。
+  /* 3. 校验升序无重复（允许间隙如 1,3,5） */
   int ret = ValidateParts(request_id, parts);
   if (ret != 0) return ret;
 
-  // 3. client 提供 part 列表时校验 etag 匹配。
+  /* 4. 校验所有 part valid（阶段二写入时置 true，兜底） */
+  for (const auto& p : parts) {
+    if (!p.valid) {
+      LOG_WARN(request_id, "upload={} part {} not valid", upload_id, p.part_number);
+      return PROXY_ERR_INVALID_PART;
+    }
+  }
+
+  /* 5. 16MB 对齐校验（除最后一个外必须 16MB） */
+  ret = ValidatePartSizes(request_id, parts);
+  if (ret != 0) return ret;
+
+  /* 6. client 提供 part 列表时校验 etag 匹配 */
   if (!client_parts.empty()) {
     if (client_parts.size() != parts.size()) {
       LOG_WARN(request_id, "upload={} client parts={} != actual={}",
@@ -313,16 +364,39 @@ int Multipart::CompleteUpload(
     }
   }
 
-  // 4. 生成最终 object_id / etag / size。
-  std::uint64_t size = 0;
-  for (const auto& p : parts) size += p.part_size;
+  /* 7. 计算总大小 */
+  std::uint64_t total_size = 0;
+  for (const auto& p : parts) total_size += p.part_size;
 
-  out.object_id   = rec.bucket + "/" + rec.key;
-  out.etag        = ComputeFinalETag(parts);
-  out.object_size = size;
-  index_->Remove(upload_id);  // 成功后清理
-  LOG_INFO(request_id, "completed object_id={} size={} etag={}",
-           out.object_id, out.object_size, out.etag);
+  /*
+   * 8. 零数据操作完成。
+   * 数据已在 ufile-ac，key = {obj_id}_{全局块号}，全局连续。
+   * 只需生成兼容 s3proxy 的对象元数据（fileidx）。
+   * 当前阶段：内存构造 + 日志占位，不写真实 DB（TODO: 对接 MongoDB fileidx 表）。
+   * fileidx 关键字段（s3proxy GetObject 依赖）：
+   *   first_object = obj_id  → block key 前缀
+   *   block_size   = 4MB
+   *   filesize     = total_size
+   * s3proxy 读取时：block key = first_object + "_" + (offset/block_size)
+   */
+  const std::string final_etag = ComputeFinalETag(parts);
+
+  LOG_INFO(request_id, "fileidx(compat s3proxy): bucket={} key={} "
+           "first_object={} block_size={} filesize={} etag={}",
+           upload.bucket, upload.key, upload.obj_id,
+           upload.block_size, total_size, final_etag);
+  // TODO(stage-db): object_index_->InsertFileIdx({bucket, key, obj_id,
+  //                 block_size, total_size, final_etag});
+
+  out.object_id   = upload.bucket + "/" + upload.key;
+  out.etag        = final_etag;
+  out.object_size = total_size;
+
+  /* 9. 清理 upload 索引（成功后） */
+  index_->Remove(upload_id);
+
+  LOG_INFO(request_id, "completed object_id={} size={} etag={} parts={}",
+           out.object_id, out.object_size, out.etag, parts.size());
   return 0;
 }
 
@@ -346,6 +420,30 @@ int Multipart::ValidateParts(const std::string& request_id,
       LOG_WARN(request_id, "part {} not strictly ascending at index {}",
                parts[i].part_number, i);
       return PROXY_ERR_INVALID_PARAM;
+    }
+  }
+  return 0;
+}
+
+/*
+ * 16MB 对齐校验：parts 已按 part_number 升序排列。
+ * 规则：除最后一个（最大 part_number）外，所有 part 必须 == 16MB；
+ *       最后一个可以 ≤ 16MB（允许不足一个 part）。
+ * 这是保证 block key 全局连续、s3proxy 可读的前提。
+ */
+int Multipart::ValidatePartSizes(const std::string& request_id,
+                                 const std::vector<PartRecord>& parts) {
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    const bool is_last = (i == parts.size() - 1);
+    if (!is_last && parts[i].part_size != kPartSize) {
+      LOG_WARN(request_id, "part {} size {} != required {} (only last part may differ)",
+               parts[i].part_number, parts[i].part_size, kPartSize);
+      return PROXY_ERR_INVALID_PART_SIZE;
+    }
+    if (is_last && parts[i].part_size > kPartSize) {
+      LOG_WARN(request_id, "last part {} size {} > {}",
+               parts[i].part_number, parts[i].part_size, kPartSize);
+      return PROXY_ERR_INVALID_PART_SIZE;
     }
   }
   return 0;

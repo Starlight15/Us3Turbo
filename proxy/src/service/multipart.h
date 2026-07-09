@@ -66,6 +66,9 @@ class Multipart {
   // part 校验：失败先 LOG_WARN，返回非 0 错误码；成功返回 0。
   [[nodiscard]] int ValidateParts(const std::string& request_id,
                                    const std::vector<PartRecord>& parts);
+  /* 16MB 对齐校验：除最后一个 part 外必须 == 16MB */
+  [[nodiscard]] int ValidatePartSizes(const std::string& request_id,
+                                       const std::vector<PartRecord>& parts);
   std::string ComputeFinalETag(const std::vector<PartRecord>& parts);
 
   IUploadIndex*  index_;
