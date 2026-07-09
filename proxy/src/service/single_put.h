@@ -24,8 +24,6 @@ struct PutOutput {
  */
 class SinglePut {
  public:
-  explicit SinglePut(UfileAcClient* client);
-
   explicit SinglePut(UfileAcClient* client) : client_(client) {}
 
   [[nodiscard]] int PutGds(const ClientProxyPutRequest& request,
@@ -34,6 +32,17 @@ class SinglePut {
                            PutOutput& out);
 
  private:
+  // 阶段①：参数校验
+  [[nodiscard]] int ValidateGdsRequest(const ClientProxyPutRequest& req);
+  [[nodiscard]] int ValidateUcxRequest(const ClientProxyPutRequest& req);
+
+  // 阶段③：构造对象索引 fileidx + 填充输出（GDS/UCX 共用）
+  void WriteObjectIndex(
+      const std::string& request_id,
+      const std::string& bucket, const std::string& key,
+      const std::string& obj_id, std::uint64_t object_size,
+      std::uint32_t crc32c, PutOutput& out);
+
   UfileAcClient* client_;
 };
 
