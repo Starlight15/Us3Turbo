@@ -24,8 +24,6 @@ constexpr std::uint32_t kBlocksPerPart = 4;                    // 16MB / 4MB
 
 /*
  * 生成 block key：{obj_id}_{全局块号}
- * 对齐 s3proxy（parseOnePart 里 FileID + "_" + blkNum），
- * 使数据可被 s3proxy 直接读取。
  */
 std::string GenerateBlockKey(const std::string& obj_id,
                              std::uint32_t global_block_index) {

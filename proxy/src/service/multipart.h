@@ -10,9 +10,11 @@
 
 namespace us3_turbo::proxy {
 
-class UfileAcClient;  // 前向声明，定义见 storage/ufile_ac_client.h
+class UfileAcClient;
 
-// 分段上传输出：成功时由服务层填充，接口层据此回填 response。
+/**
+ * @brief 分段上传输出
+ */
 struct UploadPartOutput {
   std::string   etag;
   std::uint32_t crc32c{0};
@@ -25,13 +27,12 @@ struct CompleteOutput {
   std::uint64_t object_size{0};
 };
 
-// 分段上传服务：编排 Create/UploadPart/Complete/Abort，业务规则（part 校验 /
-// final etag / client etag 比对）在本类。GDS/UCX 各自独立方法。依赖
-// IUploadIndex*（mock/Mongo 无差别替换）+ UfileAcClient*（block 切分转发）。
-// 成功返回 0，失败先 spdlog 再 return 错误码。AbortUpload 幂等保持 bool。
+/**
+ * @brief 分段上传逻辑层，编排 Create/UploadPart/Complete/Abort
+ */
 class Multipart {
  public:
-  // 直接持有 UfileAcClient*（main 装配注入，本类不拥有）；替代旧 BlockStorage* 透传层。
+
   Multipart(IUploadIndex* index, UfileAcClient* client);
 
   [[nodiscard]] int CreateUpload(
@@ -63,7 +64,7 @@ class Multipart {
                                  const std::string& upload_id);  // 幂等，恒 true
 
  private:
-  // part 校验：失败先 LOG_WARN，返回非 0 错误码；成功返回 0。
+
   [[nodiscard]] int ValidateParts(const std::string& request_id,
                                    const std::vector<PartRecord>& parts);
   /* 16MB 对齐校验：除最后一个 part 外必须 == 16MB */
