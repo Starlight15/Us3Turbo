@@ -12,49 +12,45 @@
 
 namespace us3_turbo::proxy {
 
-SinglePut::SinglePut(UfileAcClient* client) : client_(client) {}
+int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
+  const std::string& rid = req.request_id();
 
-int SinglePut::PutGds(
-    const ClientProxyPutRequest& request,
-    PutOutput& out) {
-  const std::string& rid = request.request_id();
-
-  if (request.bucket().empty() || request.key().empty()) {
+  if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}",
-             request.bucket(), request.key());
+             req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.object_size() == 0 ||
-      request.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
+  if (req.object_size() == 0 ||
+      req.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
     LOG_WARN(rid, "object_size={} out of range [1, {}] bucket={}/{}",
-             request.object_size(), FLAGS_max_single_put_bytes,
-             request.bucket(), request.key());
+             req.object_size(), FLAGS_max_single_put_bytes,
+             req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.path() != PATH_GDS) {
-    LOG_WARN(rid, "path={} != PATH_GDS", static_cast<int>(request.path()));
+  if (req.path() != PATH_GDS) {
+    LOG_WARN(rid, "path={} != PATH_GDS", static_cast<int>(req.path()));
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
-  if (!request.has_gds_source()) {
-    LOG_WARN(rid, "gds_source missing bucket={}/{}", request.bucket(), request.key());
+  if (!req.has_gds_source()) {
+    LOG_WARN(rid, "gds_source missing bucket={}/{}", req.bucket(), req.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
-  const auto& gsrc = request.gds_source();
+  const auto& gsrc = req.gds_source();
   if (gsrc.rdma_token().empty()) {
-    LOG_WARN(rid, "gds rdma_token empty bucket={}/{}", request.bucket(), request.key());
+    LOG_WARN(rid, "gds rdma_token empty bucket={}/{}", req.bucket(), req.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
   LOG_DEBUG(rid, "validated bucket={}/{} size={} path=GDS",
-            request.bucket(), request.key(), request.object_size());
+            req.bucket(), req.key(), req.object_size());
   // key 由 proxy 生成（block 级存储标识）；单步上传 gpu_offset=0
-  const std::string key = request.bucket() + "/" + request.key();
+  const std::string key = req.bucket() + "/" + req.key();
   // 子阶段3：key 长度守卫（移自 UfileAcClient；backend KEY_MAX_LENGTH=48）
   if (key.size() > KEY_MAX_LENGTH) {
     LOG_WARN(rid, "key too long: {} > {} bucket={}/{}",
-             key.size(), KEY_MAX_LENGTH, request.bucket(), request.key());
+             key.size(), KEY_MAX_LENGTH, req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  auto result = client_->PutBlockGds(key, gsrc.rdma_token(), 0, request.object_size());
+  auto result = client_->PutBlockGds(key, gsrc.rdma_token(), 0, req.object_size());
   if (result.ret_code != 0) {
     LOG_ERROR(rid, "ufile-ac failed: {}", result.error);
     return result.ret_code;
@@ -69,50 +65,50 @@ int SinglePut::PutGds(
 }
 
 int SinglePut::PutUcx(
-    const ClientProxyPutRequest& request,
+    const ClientProxyPutRequest& req,
     PutOutput& out) {
-  const std::string& rid = request.request_id();
+  const std::string& rid = req.request_id();
 
-  if (request.bucket().empty() || request.key().empty()) {
+  if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}",
-             request.bucket(), request.key());
+             req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.object_size() == 0 ||
-      request.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
+  if (req.object_size() == 0 ||
+      req.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
     LOG_WARN(rid, "object_size={} out of range [1, {}] bucket={}/{}",
-             request.object_size(), FLAGS_max_single_put_bytes,
-             request.bucket(), request.key());
+             req.object_size(), FLAGS_max_single_put_bytes,
+             req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.path() != PATH_UCX) {
-    LOG_WARN(rid, "path={} != PATH_UCX", static_cast<int>(request.path()));
+  if (req.path() != PATH_UCX) {
+    LOG_WARN(rid, "path={} != PATH_UCX", static_cast<int>(req.path()));
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
-  if (!request.has_ucx_source()) {
-    LOG_WARN(rid, "ucx_source missing bucket={}/{}", request.bucket(), request.key());
+  if (!req.has_ucx_source()) {
+    LOG_WARN(rid, "ucx_source missing bucket={}/{}", req.bucket(), req.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
-  const auto& usrc = request.ucx_source();
+  const auto& usrc = req.ucx_source();
   if (usrc.remote_addr() == 0 || usrc.packed_rkey().empty() ||
       usrc.client_ucx_addr().empty()) {
     LOG_WARN(rid, "ucx source fields incomplete bucket={}/{}",
-             request.bucket(), request.key());
+             req.bucket(), req.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
   LOG_DEBUG(rid, "validated bucket={}/{} size={} path=UCX",
-            request.bucket(), request.key(), request.object_size());
+            req.bucket(), req.key(), req.object_size());
   // key 由 proxy 生成；单步上传 source_offset=0
-  const std::string key = request.bucket() + "/" + request.key();
+  const std::string key = req.bucket() + "/" + req.key();
   // 子阶段3：key 长度守卫（移自 UfileAcClient）
   if (key.size() > KEY_MAX_LENGTH) {
     LOG_WARN(rid, "key too long: {} > {} bucket={}/{}",
-             key.size(), KEY_MAX_LENGTH, request.bucket(), request.key());
+             key.size(), KEY_MAX_LENGTH, req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
   auto result = client_->PutBlockUcx(
       key, usrc.remote_addr(), usrc.packed_rkey(), usrc.client_ucx_addr(),
-      0, request.object_size());
+      0, req.object_size());
   if (result.ret_code != 0) {
     LOG_ERROR(rid, "ufile-ac failed: {}", result.error);
     return result.ret_code;
