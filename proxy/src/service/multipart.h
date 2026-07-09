@@ -7,9 +7,10 @@
 #include "control_plane.pb.h"
 #include "proxy/src/common/errors.h"
 #include "proxy/src/index/upload_index.h"
-#include "proxy/src/storage/block_storage.h"
 
 namespace us3_turbo::proxy {
+
+class UfileAcClient;  // 前向声明，定义见 storage/ufile_ac_client.h
 
 // 分段上传输出：成功时由服务层填充，接口层据此回填 response。
 struct UploadPartOutput {
@@ -26,11 +27,12 @@ struct CompleteOutput {
 
 // 分段上传服务：编排 Create/UploadPart/Complete/Abort，业务规则（part 校验 /
 // final etag / client etag 比对）在本类。GDS/UCX 各自独立方法。依赖
-// IUploadIndex*（mock/Mongo 无差别替换）+ BlockStorage*（block 切分转发）。
+// IUploadIndex*（mock/Mongo 无差别替换）+ UfileAcClient*（block 切分转发）。
 // 成功返回 0，失败先 spdlog 再 return 错误码。AbortUpload 幂等保持 bool。
 class Multipart {
  public:
-  Multipart(IUploadIndex* index, BlockStorage* block_storage);
+  // 直接持有 UfileAcClient*（main 装配注入，本类不拥有）；替代旧 BlockStorage* 透传层。
+  Multipart(IUploadIndex* index, UfileAcClient* client);
 
   [[nodiscard]] int CreateUpload(
       const std::string& request_id,
@@ -66,8 +68,8 @@ class Multipart {
                                    const std::vector<PartRecord>& parts);
   std::string ComputeFinalETag(const std::vector<PartRecord>& parts);
 
-  IUploadIndex* index_;
-  BlockStorage* block_storage_;
+  IUploadIndex*  index_;
+  UfileAcClient* client_;
 };
 
 }  // namespace us3_turbo::proxy

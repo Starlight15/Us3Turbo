@@ -10,9 +10,8 @@ add_executable(us3_turbo_proxy
   src/service/multipart.cpp
   src/index/in_memory_upload_index.cpp
   src/storage/tcp_connection.cpp
-  src/storage/protocol_codec.cpp
-  src/storage/ufile_ac_client.cpp
-  src/storage/block_storage.cpp)
+  src/storage/ufile_ac_protocol.cpp
+  src/storage/ufile_ac_client.cpp)
 
 add_dependencies(us3_turbo_proxy
   us3_turbo_control_plane_proto)

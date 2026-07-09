@@ -16,7 +16,8 @@
 namespace us3_turbo::proxy {
 
 // block 级写入结果。ret_code 为 PROXY_ERR_* 错误码（0=成功），调用方据此
-// 上报；error 为失败上下文（成功时为空）。crc32c/bytes_written 仅成功时有意义。
+// 上报；error 为失败上下文（成功时为空）。crc32c/bytes_written 仅 PUT 成功时有意义
+// （DeleteBlock 仅用 ret_code/error）。
 struct BlockResult {
   int           ret_code{0};
   std::uint32_t crc32c{0};
@@ -25,7 +26,7 @@ struct BlockResult {
 };
 
 // block 级存储客户端：自持到 backend (ufile-ac) 的 TCP 连接池（轮询 + 惰性重连，
-// 方案 A），走自定义二进制协议（编解码见 protocol_codec.h）。接口收原始参数
+// 方案 A），走自定义二进制协议（编解码见 ufile_ac_protocol.h）。接口收原始参数
 // （key/rdma_token/gpu_offset/data_len 等），不依赖 protobuf，可被单步上传与
 // 分段上传的 block 拆分复用；key 由 proxy 生成（结构化 block 标识）。
 //
@@ -33,8 +34,9 @@ struct BlockResult {
 // 序列化请求-响应对，保证不串包；next_idx_ atomic 轮询分配。连接断开 set_dead，
 // AcquireConn 跳过并当场重连一次，全坏返回 nullptr → ret_code=PROXY_ERR_BACKEND_UNAVAILABLE。
 //
-// 本层为存储边界，做 key 长度 / data_len 范围等存储入参守卫（非请求级校验，
-// 请求级校验仍在 SinglePut）。日志走 LOG_SYS_*（无 rid，rid 在服务层）。
+// 职责（子阶段3）：仅"调度 + 收发"——取连接、编码、发送、接收、解码、上报 backend
+// 返回码。存储入参守卫（key 长度 / token 非空 / data_len 范围）已移到调用方
+// （SinglePut / Multipart），本层不做。日志走 LOG_SYS_*（无 rid，rid 在服务层）。
 class UfileAcClient {
  public:
   UfileAcClient(const std::string& backend_endpoint, int timeout_ms);
@@ -55,10 +57,14 @@ class UfileAcClient {
       std::uint64_t source_offset,
       std::uint64_t data_len);
 
+  // 子阶段4：删除一个 block（尽力清理用）。key=block 标识。ret_code/error 反映结果，
+  // 调用方通常忽略失败（ufile-ac TTL 兜底）。KEY_NOT_FOUND 视为可接受的清理结果。
+  [[nodiscard]] BlockResult DeleteBlock(const std::string& key);
+
  private:
   // 拆分 "host:port" → host + port；失败返回 false。
   static bool ParseEndpoint(const std::string& endpoint,
-                            std::string& host, int& port);
+                            std::string& host, int port);
   // 方案 A 惰性取连接：轮询最多 pool_size 次，跳过/重连坏连接。
   // 返回 {idx, conn*}；全坏返回 {npos, nullptr}。
   std::pair<std::size_t, TcpConnection*> AcquireConn();

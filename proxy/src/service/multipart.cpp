@@ -11,6 +11,7 @@
 #include "proxy/src/common/utils.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/ufile_ac_client.h"
+#include "proxy/src/storage/ufile_ac_protocol.h"
 
 namespace us3_turbo::proxy {
 
@@ -41,10 +42,30 @@ std::string GenerateBlockKey(const std::string& upload_id,
   return buf;
 }
 
+// 子阶段4：尽力清理已写入的 blocks（写中途失败时调用，避免孤儿数据）。
+// 逐块 DeleteBlock，忽略任何失败（连接全坏 / key 不存在均无害）。
+void CleanupWrittenBlocks(const std::string& request_id,
+                          const std::string& upload_id,
+                          std::uint32_t part_number,
+                          UfileAcClient* client,
+                          const std::vector<std::string>& written_keys) {
+  if (written_keys.empty()) return;
+  LOG_WARN(request_id, "upload={} part={} cleaning {} written blocks after failure",
+           upload_id, part_number, written_keys.size());
+  for (const std::string& key : written_keys) {
+    const BlockResult del = client->DeleteBlock(key);
+    if (del.ret_code != 0) {
+      // 尽力清理：失败只记录，不中断（ufile-ac TTL 兜底）。
+      LOG_DEBUG(request_id, "upload={} part={} cleanup skip key={} err={}",
+                upload_id, part_number, key, del.error);
+    }
+  }
+}
+
 }  // namespace
 
-Multipart::Multipart(IUploadIndex* index, BlockStorage* block_storage)
-    : index_(index), block_storage_(block_storage) {}
+Multipart::Multipart(IUploadIndex* index, UfileAcClient* client)
+    : index_(index), client_(client) {}
 
 int Multipart::CreateUpload(
     const std::string& request_id,
@@ -94,13 +115,6 @@ int Multipart::UploadPartGds(
   }
 
   // 阶段二：part → blocks 串行写 ufile-ac，每块独立 key + crc32c，记录 BlockInfo。
-  UfileAcClient* client = block_storage_->GetUfileAcClient();
-  if (client == nullptr) {
-    LOG_WARN(request_id, "upload={} part={} ufile-ac client unavailable",
-             upload_id, part_number);
-    return PROXY_ERR_BACKEND_UNAVAILABLE;
-  }
-
   const std::uint64_t block_count = (part_size + kBlockSize - 1) / kBlockSize;
   LOG_INFO(request_id, "upload={} part={} size={} blocks={}",
            upload_id, part_number, part_size, block_count);
@@ -109,6 +123,8 @@ int Multipart::UploadPartGds(
   block_infos.reserve(block_count);
   std::vector<std::uint32_t> crcs;
   crcs.reserve(block_count);
+  std::vector<std::string> written_keys;  // 子阶段4：记录已写 block key，失败时清理
+  written_keys.reserve(block_count);
 
   for (std::uint64_t i = 0; i < block_count; ++i) {
     const std::uint64_t offset = i * kBlockSize;
@@ -116,13 +132,24 @@ int Multipart::UploadPartGds(
     const std::string block_key = GenerateBlockKey(
         upload_id, part_number, static_cast<std::uint32_t>(i));
 
-    auto result = client->PutBlockGds(block_key, rdma_token, offset, len);
+    // 子阶段3：block_key 长度守卫（移自 UfileAcClient；GenerateBlockKey 恒 ≤47，兜底）。
+    if (block_key.size() > KEY_MAX_LENGTH) {
+      LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
+                upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
+      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      return PROXY_ERR_INVALID_PARAM;
+    }
+
+    auto result = client_->PutBlockGds(block_key, rdma_token, offset, len);
     if (result.ret_code != 0) {
       LOG_ERROR(request_id, "upload={} part={} block {} failed: {}",
                 upload_id, part_number, i, result.error);
-      return result.ret_code;  // 已写 block 留 ufile-ac TTL 清理
+      // 子阶段4：清理本 part 已写入的 blocks，避免孤儿数据（ufile-ac TTL 兜底）
+      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      return result.ret_code;
     }
 
+    written_keys.push_back(block_key);  // 写成功后才记入待清理列表
     BlockInfo info;
     info.key    = block_key;
     info.offset = offset;
@@ -180,13 +207,6 @@ int Multipart::UploadPartUcx(
   }
 
   // 阶段二：part → blocks 串行写 ufile-ac（UCX：remote_addr 基址 + source_offset 偏移）。
-  UfileAcClient* client = block_storage_->GetUfileAcClient();
-  if (client == nullptr) {
-    LOG_WARN(request_id, "upload={} part={} ufile-ac client unavailable",
-             upload_id, part_number);
-    return PROXY_ERR_BACKEND_UNAVAILABLE;
-  }
-
   const std::uint64_t block_count = (part_size + kBlockSize - 1) / kBlockSize;
   LOG_INFO(request_id, "upload={} part={} size={} blocks={}",
            upload_id, part_number, part_size, block_count);
@@ -195,6 +215,8 @@ int Multipart::UploadPartUcx(
   block_infos.reserve(block_count);
   std::vector<std::uint32_t> crcs;
   crcs.reserve(block_count);
+  std::vector<std::string> written_keys;  // 子阶段4：记录已写 block key，失败时清理
+  written_keys.reserve(block_count);
 
   for (std::uint64_t i = 0; i < block_count; ++i) {
     const std::uint64_t offset = i * kBlockSize;
@@ -202,14 +224,25 @@ int Multipart::UploadPartUcx(
     const std::string block_key = GenerateBlockKey(
         upload_id, part_number, static_cast<std::uint32_t>(i));
 
-    auto result = client->PutBlockUcx(block_key, remote_addr, packed_rkey,
+    // 子阶段3：block_key 长度守卫（移自 UfileAcClient）。
+    if (block_key.size() > KEY_MAX_LENGTH) {
+      LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
+                upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
+      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      return PROXY_ERR_INVALID_PARAM;
+    }
+
+    auto result = client_->PutBlockUcx(block_key, remote_addr, packed_rkey,
                                       client_ucx_addr, offset, len);
     if (result.ret_code != 0) {
       LOG_ERROR(request_id, "upload={} part={} block {} failed: {}",
                 upload_id, part_number, i, result.error);
-      return result.ret_code;  // 已写 block 留 ufile-ac TTL 清理
+      // 子阶段4：清理本 part 已写入的 blocks，避免孤儿数据（ufile-ac TTL 兜底）
+      CleanupWrittenBlocks(request_id, upload_id, part_number, client_, written_keys);
+      return result.ret_code;
     }
 
+    written_keys.push_back(block_key);  // 写成功后才记入待清理列表
     BlockInfo info;
     info.key    = block_key;
     info.offset = offset;

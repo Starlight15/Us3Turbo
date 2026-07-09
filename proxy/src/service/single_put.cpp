@@ -7,6 +7,7 @@
 #include "proxy/src/common/utils.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/ufile_ac_client.h"
+#include "proxy/src/storage/ufile_ac_protocol.h"
 
 namespace us3_turbo::proxy {
 
@@ -43,12 +44,22 @@ int SinglePut::PutGds(
     LOG_WARN(rid, "gds_source missing bucket={}/{}", request.bucket(), request.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
+  const auto& gsrc = request.gds_source();
+  if (gsrc.rdma_token().empty()) {
+    LOG_WARN(rid, "gds rdma_token empty bucket={}/{}", request.bucket(), request.key());
+    return PROXY_ERR_MISSING_SOURCE;
+  }
   LOG_DEBUG(rid, "validated bucket={}/{} size={} path=GDS",
             request.bucket(), request.key(), request.object_size());
   // key 由 proxy 生成（block 级存储标识）；单步上传 gpu_offset=0
   const std::string key = request.bucket() + "/" + request.key();
-  auto result = client_->PutBlockGds(
-      key, request.gds_source().rdma_token(), 0, request.object_size());
+  // 子阶段3：key 长度守卫（移自 UfileAcClient；backend KEY_MAX_LENGTH=48）
+  if (key.size() > KEY_MAX_LENGTH) {
+    LOG_WARN(rid, "key too long: {} > {} bucket={}/{}",
+             key.size(), KEY_MAX_LENGTH, request.bucket(), request.key());
+    return PROXY_ERR_INVALID_PARAM;
+  }
+  auto result = client_->PutBlockGds(key, gsrc.rdma_token(), 0, request.object_size());
   if (result.ret_code != 0) {
     LOG_ERROR(rid, "ufile-ac failed: {}", result.error);
     return result.ret_code;
@@ -85,13 +96,25 @@ int SinglePut::PutUcx(
     LOG_WARN(rid, "ucx_source missing bucket={}/{}", request.bucket(), request.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
+  const auto& usrc = request.ucx_source();
+  if (usrc.remote_addr() == 0 || usrc.packed_rkey().empty() ||
+      usrc.client_ucx_addr().empty()) {
+    LOG_WARN(rid, "ucx source fields incomplete bucket={}/{}",
+             request.bucket(), request.key());
+    return PROXY_ERR_MISSING_SOURCE;
+  }
   LOG_DEBUG(rid, "validated bucket={}/{} size={} path=UCX",
             request.bucket(), request.key(), request.object_size());
   // key 由 proxy 生成；单步上传 source_offset=0
   const std::string key = request.bucket() + "/" + request.key();
-  const auto& src = request.ucx_source();
+  // 子阶段3：key 长度守卫（移自 UfileAcClient）
+  if (key.size() > KEY_MAX_LENGTH) {
+    LOG_WARN(rid, "key too long: {} > {} bucket={}/{}",
+             key.size(), KEY_MAX_LENGTH, request.bucket(), request.key());
+    return PROXY_ERR_INVALID_PARAM;
+  }
   auto result = client_->PutBlockUcx(
-      key, src.remote_addr(), src.packed_rkey(), src.client_ucx_addr(),
+      key, usrc.remote_addr(), usrc.packed_rkey(), usrc.client_ucx_addr(),
       0, request.object_size());
   if (result.ret_code != 0) {
     LOG_ERROR(rid, "ufile-ac failed: {}", result.error);

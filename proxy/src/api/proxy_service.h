@@ -20,7 +20,7 @@ namespace us3_turbo::proxy {
  *
  * 职责仅：ClosureGuard、proto↔域对象、服务层 int 返回值 → cntl/response、
  * Access 日志记录。不做参数校验、不编排——全在 SinglePut / Multipart；
- * 不持 brpc channel——下沉到 UfileAcClient / BlockStorage（main 装配注入）。
+ * 不持 brpc channel——下沉到 UfileAcClient（main 装配注入）。
  *
  * 因 brpc 一个 proto service 只能注册一个 C++ 实例（按 service descriptor
  * full_name 去重），GdsPut/UcxPut/分段 7 个 RPC 必须共处本类；GDS/UCX

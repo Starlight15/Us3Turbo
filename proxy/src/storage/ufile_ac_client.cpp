@@ -7,13 +7,12 @@
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
 #include "proxy/src/logging/logger.h"
-#include "proxy/src/storage/protocol_codec.h"
 #include "proxy/src/storage/ufile_ac_protocol.h"
 
 namespace us3_turbo::proxy {
 
 bool UfileAcClient::ParseEndpoint(const std::string& endpoint,
-                                  std::string& host, int& port) {
+                                  std::string& host, int port) {
   const auto pos = endpoint.rfind(':');
   if (pos == std::string::npos) return false;
   host = endpoint.substr(0, pos);
@@ -83,21 +82,7 @@ BlockResult UfileAcClient::PutBlockGds(
     std::uint64_t data_len) {
   BlockResult result;
 
-  // 1. 存储入参守卫（key 长度 / token / data_len 范围；backend 亦强制 KEY_MAX_LENGTH）
-  if (key.empty() || key.size() > KEY_MAX_LENGTH) {
-    result.ret_code = PROXY_ERR_INVALID_PARAM;
-    result.error = "invalid key length";
-    LOG_SYS_ERROR("PutBlockGds: key.size()={} exceed limit {}", key.size(), KEY_MAX_LENGTH);
-    return result;
-  }
-  if (rdma_token.empty() || data_len == 0 || data_len > MAX_VALUE_LENGTH) {
-    result.ret_code = PROXY_ERR_INVALID_PARAM;
-    result.error = "invalid token or data_len";
-    LOG_SYS_ERROR("PutBlockGds: token.empty={} data_len={}", rdma_token.empty(), data_len);
-    return result;
-  }
-
-  // 2. 获取连接
+  // 1. 获取连接（入参守卫已在调用方 SinglePut/Multipart 完成，子阶段3）
   auto [idx, conn] = AcquireConn();
   if (conn == nullptr) {
     result.ret_code = PROXY_ERR_BACKEND_UNAVAILABLE;
@@ -107,15 +92,15 @@ BlockResult UfileAcClient::PutBlockGds(
   }
   std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
 
-  // 3. 编码请求（gpu_offset 由参数传入，支持 block 偏移）
+  // 2. 编码请求（gpu_offset 由参数传入，支持 block 偏移）
   std::vector<char> req_buf;
-  codec::EncodeGdsPutRequest(
+  EncodeGdsPutRequest(
       key, rdma_token, gpu_offset, data_len, setid_,
       session_seq_.fetch_add(1, std::memory_order_relaxed), req_buf);
 
   LOG_SYS_DEBUG("PutBlockGds: key={} offset={} len={}", key, gpu_offset, data_len);
 
-  // 4. 发送请求
+  // 3. 发送请求
   if (conn->SendAll(req_buf.data(), req_buf.size()) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
     result.error = "send request failed";
@@ -123,7 +108,7 @@ BlockResult UfileAcClient::PutBlockGds(
     return result;
   }
 
-  // 5. 接收响应头（Message 52B）
+  // 4. 接收响应头（Message 52B）
   Message rmsg{};
   if (conn->RecvAll(&rmsg, MESSAGE_HEAD_SIZE) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
@@ -148,7 +133,7 @@ BlockResult UfileAcClient::PutBlockGds(
     return result;
   }
 
-  // 6. 接收响应体
+  // 5. 接收响应体
   std::vector<char> rbuf(rbody);
   if (conn->RecvAll(rbuf.data(), rbody) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
@@ -157,17 +142,17 @@ BlockResult UfileAcClient::PutBlockGds(
     return result;
   }
 
-  // 7. 解码响应
+  // 6. 解码响应
   GdsPutRsp rsp{};
   std::string errmsg;
-  if (codec::DecodeGdsPutResponse(rbuf.data(), rbody, rsp, errmsg) != 0) {
+  if (DecodeGdsPutResponse(rbuf.data(), rbody, rsp, errmsg) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
     result.error = "decode response failed: " + errmsg;
     LOG_SYS_ERROR("PutBlockGds: decode failed key={}", key);
     return result;
   }
 
-  // 8. 检查 backend 返回码
+  // 7. 检查 backend 返回码
   const std::int32_t rsp_ret = rsp.retcode_;
   if (rsp_ret != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
@@ -176,7 +161,7 @@ BlockResult UfileAcClient::PutBlockGds(
     return result;
   }
 
-  // 9. 成功
+  // 8. 成功
   result.ret_code      = 0;
   result.crc32c        = rsp.crc32c_;
   result.bytes_written = rsp.bytesWritten_;
@@ -197,23 +182,7 @@ BlockResult UfileAcClient::PutBlockUcx(
     std::uint64_t data_len) {
   BlockResult result;
 
-  // 1. 存储入参守卫
-  if (key.empty() || key.size() > KEY_MAX_LENGTH) {
-    result.ret_code = PROXY_ERR_INVALID_PARAM;
-    result.error = "invalid key length";
-    LOG_SYS_ERROR("PutBlockUcx: key.size()={} exceed limit {}", key.size(), KEY_MAX_LENGTH);
-    return result;
-  }
-  if (remote_addr == 0 || packed_rkey.empty() || client_ucx_addr.empty() ||
-      data_len == 0 || data_len > MAX_VALUE_LENGTH) {
-    result.ret_code = PROXY_ERR_INVALID_PARAM;
-    result.error = "invalid ucx params";
-    LOG_SYS_ERROR("PutBlockUcx: remote_addr={} rkey.empty={} addr.empty={} data_len={}",
-                  remote_addr, packed_rkey.empty(), client_ucx_addr.empty(), data_len);
-    return result;
-  }
-
-  // 2. 获取连接
+  // 1. 获取连接（入参守卫已在调用方完成，子阶段3）
   auto [idx, conn] = AcquireConn();
   if (conn == nullptr) {
     result.ret_code = PROXY_ERR_BACKEND_UNAVAILABLE;
@@ -223,16 +192,16 @@ BlockResult UfileAcClient::PutBlockUcx(
   }
   std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
 
-  // 3. 编码请求（source_offset 由参数传入，支持 block 偏移）
+  // 2. 编码请求（source_offset 由参数传入，支持 block 偏移）
   std::vector<char> req_buf;
-  codec::EncodeUcxPutRequest(
+  EncodeUcxPutRequest(
       key, remote_addr, packed_rkey, client_ucx_addr,
       source_offset, data_len, setid_,
       session_seq_.fetch_add(1, std::memory_order_relaxed), req_buf);
 
   LOG_SYS_DEBUG("PutBlockUcx: key={} offset={} len={}", key, source_offset, data_len);
 
-  // 4. 发送请求
+  // 3. 发送请求
   if (conn->SendAll(req_buf.data(), req_buf.size()) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
     result.error = "send request failed";
@@ -240,7 +209,7 @@ BlockResult UfileAcClient::PutBlockUcx(
     return result;
   }
 
-  // 5. 接收响应头
+  // 4. 接收响应头
   Message rmsg{};
   if (conn->RecvAll(&rmsg, MESSAGE_HEAD_SIZE) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
@@ -264,7 +233,7 @@ BlockResult UfileAcClient::PutBlockUcx(
     return result;
   }
 
-  // 6. 接收响应体
+  // 5. 接收响应体
   std::vector<char> rbuf(rbody);
   if (conn->RecvAll(rbuf.data(), rbody) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
@@ -273,17 +242,17 @@ BlockResult UfileAcClient::PutBlockUcx(
     return result;
   }
 
-  // 7. 解码响应
+  // 6. 解码响应
   UcxPutRsp rsp{};
   std::string errmsg;
-  if (codec::DecodeUcxPutResponse(rbuf.data(), rbody, rsp, errmsg) != 0) {
+  if (DecodeUcxPutResponse(rbuf.data(), rbody, rsp, errmsg) != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
     result.error = "decode response failed: " + errmsg;
     LOG_SYS_ERROR("PutBlockUcx: decode failed key={}", key);
     return result;
   }
 
-  // 8. 检查 backend 返回码
+  // 7. 检查 backend 返回码
   const std::int32_t rsp_ret = rsp.retcode_;
   if (rsp_ret != 0) {
     result.ret_code = PROXY_ERR_BACKEND_RPC;
@@ -292,13 +261,101 @@ BlockResult UfileAcClient::PutBlockUcx(
     return result;
   }
 
-  // 9. 成功
+  // 8. 成功
   result.ret_code      = 0;
   result.crc32c        = rsp.crc32c_;
   result.bytes_written = rsp.bytesWritten_;
   result.error.clear();
   LOG_SYS_DEBUG("PutBlockUcx: ok key={} crc32c={:#x} bytes={}",
                 key, result.crc32c, result.bytes_written);
+  return result;
+}
+
+// ============================ DEL（子阶段4：尽力清理）============================
+
+BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
+  BlockResult result;
+
+  // 1. 获取连接
+  auto [idx, conn] = AcquireConn();
+  if (conn == nullptr) {
+    result.ret_code = PROXY_ERR_BACKEND_UNAVAILABLE;
+    result.error = "backend pool all dead";
+    LOG_SYS_WARN("DeleteBlock: no available connection key={}", key);
+    return result;
+  }
+  std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
+
+  // 2. 编码 DEL 请求
+  std::vector<char> req_buf;
+  EncodeDelRequest(key, setid_,
+                   session_seq_.fetch_add(1, std::memory_order_relaxed), req_buf);
+  LOG_SYS_DEBUG("DeleteBlock: key={}", key);
+
+  // 3. 发送请求
+  if (conn->SendAll(req_buf.data(), req_buf.size()) != 0) {
+    result.ret_code = PROXY_ERR_BACKEND_RPC;
+    result.error = "send request failed";
+    LOG_SYS_ERROR("DeleteBlock: send failed key={}", key);
+    return result;
+  }
+
+  // 4. 接收响应头
+  Message rmsg{};
+  if (conn->RecvAll(&rmsg, MESSAGE_HEAD_SIZE) != 0) {
+    result.ret_code = PROXY_ERR_BACKEND_RPC;
+    result.error = "recv header failed";
+    LOG_SYS_ERROR("DeleteBlock: recv header failed key={}", key);
+    return result;
+  }
+  const std::uint32_t rsp_magic = rmsg.magic_;
+  const std::uint32_t rsp_type  = rmsg.type_;
+  if (rsp_magic != MESSAGE_MAGIC_NUMBER || rsp_type != OSD_DEL_RSP) {
+    result.ret_code = PROXY_ERR_BACKEND_RPC;
+    result.error = "bad response header";
+    LOG_SYS_ERROR("DeleteBlock: bad rsp magic={:#x} type={}", rsp_magic, rsp_type);
+    return result;
+  }
+  const std::uint32_t rbody = rmsg.bodyLen_;
+  if (rbody < DEL_RSP_SIZE) {
+    result.ret_code = PROXY_ERR_BACKEND_RPC;
+    result.error = "response body too short";
+    LOG_SYS_ERROR("DeleteBlock: body_len={} < {}", rbody, DEL_RSP_SIZE);
+    return result;
+  }
+
+  // 5. 接收响应体
+  std::vector<char> rbuf(rbody);
+  if (conn->RecvAll(rbuf.data(), rbody) != 0) {
+    result.ret_code = PROXY_ERR_BACKEND_RPC;
+    result.error = "recv body failed";
+    LOG_SYS_ERROR("DeleteBlock: recv body failed key={}", key);
+    return result;
+  }
+
+  // 6. 解码响应
+  DelRsp rsp{};
+  std::string errmsg;
+  if (DecodeDelResponse(rbuf.data(), rbody, rsp, errmsg) != 0) {
+    result.ret_code = PROXY_ERR_BACKEND_RPC;
+    result.error = "decode response failed: " + errmsg;
+    LOG_SYS_ERROR("DeleteBlock: decode failed key={}", key);
+    return result;
+  }
+
+  // 7. 检查 backend 返回码（清理场景：KEY_NOT_FOUND 等非 0 均可接受，仅 WARN）
+  const std::int32_t rsp_ret = rsp.retcode_;
+  if (rsp_ret != 0) {
+    result.ret_code = PROXY_ERR_BACKEND_RPC;
+    result.error = "backend retcode=" + std::to_string(rsp_ret) + " msg=" + errmsg;
+    LOG_SYS_WARN("DeleteBlock: backend ret={} msg={} key={}", rsp_ret, errmsg, key);
+    return result;
+  }
+
+  // 8. 成功
+  result.ret_code = 0;
+  result.error.clear();
+  LOG_SYS_DEBUG("DeleteBlock: ok key={}", key);
   return result;
 }
 

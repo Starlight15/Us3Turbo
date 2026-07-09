@@ -1,11 +1,11 @@
-#include "proxy/src/storage/protocol_codec.h"
+#include "proxy/src/storage/ufile_ac_protocol.h"
 
 #include <arpa/inet.h>  // htonl
 
 #include <cstring>   // std::memcpy
 #include <string>
 
-namespace us3_turbo::proxy::codec {
+namespace us3_turbo::proxy {
 
 // ============================ GDS PUT ============================
 
@@ -172,4 +172,70 @@ int DecodeUcxPutResponse(
   return 0;
 }
 
-}  // namespace us3_turbo::proxy::codec
+// ============================ DEL ============================
+
+std::size_t EncodeDelRequest(
+    const std::string& key,
+    std::uint32_t setid,
+    std::uint64_t session_id,
+    std::vector<char>& out_buffer) {
+  const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(DEL_REQ_SIZE + key_len);
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len -
+                                 sizeof(std::uint32_t));
+  const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
+
+  out_buffer.resize(total);
+  char* p = out_buffer.data();
+
+  // 请求头（仅 msgSize_ 大端，其余主机序，F2）
+  Message msg{};
+  msg.msgSize_       = htonl(msg_size_field);
+  msg.magic_         = MESSAGE_MAGIC_NUMBER;
+  msg.version_       = MESSAGE_VERSION_NUMBER;
+  msg.type_          = OSD_DEL_REQ;
+  msg.flowno_        = 0;
+  msg.sessionIdLow_  = session_id;
+  msg.sessionIdHigh_ = 0;
+  msg.setid_         = setid;
+  msg.payload_       = 0;
+  msg.bodyLen_       = body_len;
+  std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
+  p += MESSAGE_HEAD_SIZE;
+
+  // DelReq（reserve_ 保留填 0）
+  DelReq req{};
+  req.keyLen_  = key_len;
+  req.reserve_ = 0;
+  std::memcpy(p, &req, DEL_REQ_SIZE);
+  p += DEL_REQ_SIZE;
+
+  // 变长数据：key
+  std::memcpy(p, key.data(), key.size());
+  return total;
+}
+
+int DecodeDelResponse(
+    const char* buffer,
+    std::size_t len,
+    DelRsp& out_rsp,
+    std::string& out_err) {
+  if (len < DEL_RSP_SIZE) {
+    out_err = "Del rsp body too short len=" + std::to_string(len);
+    return -1;
+  }
+  std::memcpy(&out_rsp, buffer, DEL_RSP_SIZE);
+  const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
+  const std::size_t var_len = len - DEL_RSP_SIZE;
+  if (static_cast<std::size_t>(errmsg_len) > var_len) {
+    out_err = "Del rsp var overflow errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
+    return -1;
+  }
+  out_err.assign(buffer + DEL_RSP_SIZE, errmsg_len);
+  return 0;
+}
+
+}  // namespace us3_turbo::proxy
