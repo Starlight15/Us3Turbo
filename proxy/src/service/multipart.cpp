@@ -150,14 +150,6 @@ int Multipart::UploadPartGds(
     written_keys.push_back(block_key);
     crcs.push_back(result.crc32c);
 
-    /* 增量写索引（崩溃恢复点） */
-    if (!index_->AddBlockCrc(upload_id, result.crc32c)) {
-      LOG_ERROR(request_id, "upload={} part={} AddBlockCrc failed",
-                upload_id, part_number);
-      CleanupWrittenBlocks(request_id, client_, written_keys);
-      return PROXY_ERR_INTERNAL;
-    }
-
     LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
               upload_id, part_number, i, block_key, result.crc32c);
   }
@@ -165,7 +157,7 @@ int Multipart::UploadPartGds(
   /* 5. 计算 part etag */
   const std::string part_etag = utils::CombineBlockCRC32s(crcs);
 
-  /* 6. 写 part 索引（对齐 s3proxy 字段） */
+  /* 6. 写 part 索引（对齐 s3proxy 字段，含 block_crcs 用于对象内容哈希） */
   PartRecord part;
   part.part_number    = part_number;
   part.part_size      = part_size;
@@ -174,6 +166,7 @@ int Multipart::UploadPartGds(
   part.file_offset    = file_offset;  // s3proxy 对齐
   part.valid          = true;         // s3proxy 对齐
   part.unmerge_size   = 0;            // s3proxy 对齐（全合并）
+  part.block_crcs     = crcs;         // 有序 block crcs，CompleteUpload 拼接算对象哈希
   if (!index_->AddPart(upload_id, part)) {
     LOG_ERROR(request_id, "upload={} part={} AddPart failed", upload_id, part_number);
     CleanupWrittenBlocks(request_id, client_, written_keys);
@@ -268,14 +261,6 @@ int Multipart::UploadPartUcx(
     written_keys.push_back(block_key);
     crcs.push_back(result.crc32c);
 
-    /* 增量写索引（崩溃恢复点） */
-    if (!index_->AddBlockCrc(upload_id, result.crc32c)) {
-      LOG_ERROR(request_id, "upload={} part={} AddBlockCrc failed",
-                upload_id, part_number);
-      CleanupWrittenBlocks(request_id, client_, written_keys);
-      return PROXY_ERR_INTERNAL;
-    }
-
     LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
               upload_id, part_number, i, block_key, result.crc32c);
   }
@@ -283,7 +268,7 @@ int Multipart::UploadPartUcx(
   /* 5. 计算 part etag */
   const std::string part_etag = utils::CombineBlockCRC32s(crcs);
 
-  /* 6. 写 part 索引（对齐 s3proxy 字段） */
+  /* 6. 写 part 索引（对齐 s3proxy 字段，含 block_crcs 用于对象内容哈希） */
   PartRecord part;
   part.part_number    = part_number;
   part.part_size      = part_size;
@@ -292,6 +277,7 @@ int Multipart::UploadPartUcx(
   part.file_offset    = file_offset;  // s3proxy 对齐
   part.valid          = true;         // s3proxy 对齐
   part.unmerge_size   = 0;            // s3proxy 对齐（全合并）
+  part.block_crcs     = crcs;         // 有序 block crcs，CompleteUpload 拼接算对象哈希
   if (!index_->AddPart(upload_id, part)) {
     LOG_ERROR(request_id, "upload={} part={} AddPart failed", upload_id, part_number);
     CleanupWrittenBlocks(request_id, client_, written_keys);
@@ -364,12 +350,32 @@ int Multipart::CompleteUpload(
     }
   }
 
-  /* 7. 计算总大小 */
-  std::uint64_t total_size = 0;
-  for (const auto& p : parts) total_size += p.part_size;
+  /*
+   * 7. 使用索引累积的总大小（upload.merged_size 在每个 UploadPart 成功后更新），
+   * 并与 parts 求和交叉校验，确保增量索引与 part 记录一致。
+   */
+  std::uint64_t parts_sum = 0;
+  for (const auto& p : parts) parts_sum += p.part_size;
+  if (upload.merged_size != parts_sum) {
+    LOG_WARN(request_id, "upload={} merged_size={} != parts_sum={} (index inconsistent)",
+             upload_id, upload.merged_size, parts_sum);
+    return PROXY_ERR_INTERNAL;
+  }
+  const std::uint64_t total_size = upload.merged_size;
 
   /*
-   * 8. 零数据操作完成。
+   * 8. 从已排序的 parts 重建全局有序的 block crcs（= s3proxy US3Etags）。
+   * 每个 part 的 block_crcs 写入时即有序，parts 已按 part_number 排序，
+   * 故顺序拼接即得全局块号连续的 crc 列表，用于对象内容哈希。
+   */
+  std::vector<std::uint32_t> object_crcs;
+  for (const auto& p : parts) {
+    object_crcs.insert(object_crcs.end(), p.block_crcs.begin(), p.block_crcs.end());
+  }
+  const std::string object_hash = utils::CombineBlockCRC32s(object_crcs);
+
+  /*
+   * 9. 零数据操作完成。
    * 数据已在 ufile-ac，key = {obj_id}_{全局块号}，全局连续。
    * 只需生成兼容 s3proxy 的对象元数据（fileidx）。
    * 当前阶段：内存构造 + 日志占位，不写真实 DB（TODO: 对接 MongoDB fileidx 表）。
@@ -377,16 +383,17 @@ int Multipart::CompleteUpload(
    *   first_object = obj_id  → block key 前缀
    *   block_size   = 4MB
    *   filesize     = total_size
+   *   hash         = object_hash（US3Etags 组合，s3proxy fileidx.Hash）
    * s3proxy 读取时：block key = first_object + "_" + (offset/block_size)
    */
   const std::string final_etag = ComputeFinalETag(parts);
 
   LOG_INFO(request_id, "fileidx(compat s3proxy): bucket={} key={} "
-           "first_object={} block_size={} filesize={} etag={}",
+           "first_object={} block_size={} filesize={} etag={} hash={}",
            upload.bucket, upload.key, upload.obj_id,
-           upload.block_size, total_size, final_etag);
+           upload.block_size, total_size, final_etag, object_hash);
   // TODO(stage-db): object_index_->InsertFileIdx({bucket, key, obj_id,
-  //                 block_size, total_size, final_etag});
+  //                 block_size, total_size, final_etag, object_hash});
 
   out.object_id   = upload.bucket + "/" + upload.key;
   out.etag        = final_etag;

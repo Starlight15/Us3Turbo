@@ -24,7 +24,6 @@ std::string InMemoryUploadIndex::Create(
   entry->record.block_size       = 4ULL * 1024 * 1024;  // 4MB 固定
   entry->record.merged_size      = 0;
   entry->record.last_merged_part = 0;
-  entry->record.us3_etags.clear();
   entry->record.status           = 0;  // 0=进行中
 
   const std::string upload_id = entry->record.upload_id;
@@ -40,7 +39,7 @@ bool InMemoryUploadIndex::Get(const std::string& upload_id,
   std::shared_lock lock(sessions_mu_);
   auto it = sessions_.find(upload_id);
   if (it == sessions_.end()) return false;
-  // parts_mu 兼作 record 写入锁（见 AddBlockCrc 等），拷贝时加锁防撕裂读。
+  // parts_mu 兼作 record 写入锁（见 UpdateMergedSize 等），拷贝时加锁防撕裂读。
   std::lock_guard plk(it->second->parts_mu);
   out = it->second->record;
   return true;
@@ -98,18 +97,6 @@ void InMemoryUploadIndex::RemoveExpired(std::int64_t ttl_ms) {
       ++it;
     }
   }
-}
-
-bool InMemoryUploadIndex::AddBlockCrc(const std::string& upload_id,
-                                      std::uint32_t crc32c) {
-  std::shared_lock lock(sessions_mu_);
-  auto it = sessions_.find(upload_id);
-  if (it == sessions_.end()) return false;
-
-  // parts_mu 兼作 record 写入锁：并发 UploadPart 会同时追加 us3_etags。
-  std::lock_guard plk(it->second->parts_mu);
-  it->second->record.us3_etags.push_back(crc32c);
-  return true;
 }
 
 bool InMemoryUploadIndex::UpdateMergedSize(const std::string& upload_id,

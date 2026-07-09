@@ -9,6 +9,7 @@ DECLARE_int32(backend_timeout_ms);
 DECLARE_int32(backend_setid);
 DECLARE_int64(upload_ttl_ms);
 DECLARE_int64(upload_ttl_scan_interval_ms);
+DECLARE_int64(max_single_put_bytes);
 DECLARE_string(log_level);
 DECLARE_int32(log_max_size_mb);
 DECLARE_int32(log_max_files);

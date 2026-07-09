@@ -86,19 +86,6 @@ class UfileAcClient {
                   std::vector<char>& out_body,
                   BlockResult& out_result);
 
-  // RPC 骨架（替代原 DoRpc 模板，具体实现，消除 lambda 嵌套）
-  BlockResult DoRpcPutGds(const std::string& key,
-                          const std::string& rdma_token,
-                          std::uint64_t gpu_offset,
-                          std::uint64_t data_len);
-  BlockResult DoRpcPutUcx(const std::string& key,
-                          std::uint64_t remote_addr,
-                          const std::string& packed_rkey,
-                          const std::string& client_ucx_addr,
-                          std::uint64_t source_offset,
-                          std::uint64_t data_len);
-  BlockResult DoRpcDelete(const std::string& key);
-
   // 解码响应辅助（从 lambda 提取，返回填充好的 BlockResult）
   static BlockResult DecodeGdsPutRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);

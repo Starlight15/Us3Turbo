@@ -40,8 +40,6 @@ class InMemoryUploadIndex final : public IUploadIndex {
   void RemoveExpired(std::int64_t ttl_ms) override;
 
   // ✅ 新增接口（增量写索引）
-  [[nodiscard]] bool AddBlockCrc(
-      const std::string& upload_id, std::uint32_t crc32c) override;
   [[nodiscard]] bool UpdateMergedSize(
       const std::string& upload_id, std::uint64_t merged_size) override;
   [[nodiscard]] bool UpdateLastMergedPart(

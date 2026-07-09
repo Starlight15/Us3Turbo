@@ -16,6 +16,9 @@ DEFINE_int64(upload_ttl_ms, 3LL * 24 * 3600 * 1000,
              "by the background cleanup thread");
 DEFINE_int64(upload_ttl_scan_interval_ms, 3600 * 1000,
              "interval (ms) between multipart TTL cleanup scans");
+DEFINE_int64(max_single_put_bytes, 16LL * 1024 * 1024,
+             "max object size (bytes) for single-step GdsPut/UcxPut; larger "
+             "objects must use multipart");
 DEFINE_string(log_level, "info",
               "app log level: debug/info/warn/error");
 DEFINE_int32(log_max_size_mb, 50,

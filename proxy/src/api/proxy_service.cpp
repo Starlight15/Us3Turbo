@@ -16,12 +16,8 @@
 
 namespace us3_turbo::proxy {
 
-namespace {
-
 // bucket/key 在 multipart part/complete/abort 请求里没有，Access 日志用占位。
-constexpr const char* kDash = "-";
-
-}  // namespace
+static constexpr const char* kDash = "-";
 
 ProxyService::ProxyService(
     std::unique_ptr<SinglePut> single_put,

@@ -87,7 +87,23 @@ BlockResult UfileAcClient::PutBlockGds(
     std::uint64_t gpu_offset,
     std::uint64_t data_len) {
   LOG_SYS_DEBUG("PutBlockGds: key={} offset={} len={}", key, gpu_offset, data_len);
-  return DoRpcPutGds(key, rdma_token, gpu_offset, data_len);
+
+  // 编码
+  std::vector<char> req;
+  EncodeGdsPutRequest(key, rdma_token, gpu_offset, data_len, setid_,
+                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+
+  // 收发
+  std::vector<char> rsp_body;
+  BlockResult result;
+  if (SendAndRecv("PutBlockGds", OSD_GDS_PUT_RSP, GDS_PUT_RSP_SIZE,
+                  req, rsp_body, result) != 0) {
+    return result;  // 已填错误
+  }
+
+  // 解码
+  return DecodeGdsPutRsp(rsp_body.data(),
+                         static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
 // ============================ UCX PUT ============================
@@ -100,15 +116,47 @@ BlockResult UfileAcClient::PutBlockUcx(
     std::uint64_t source_offset,
     std::uint64_t data_len) {
   LOG_SYS_DEBUG("PutBlockUcx: key={} offset={} len={}", key, source_offset, data_len);
-  return DoRpcPutUcx(key, remote_addr, packed_rkey, client_ucx_addr,
-                     source_offset, data_len);
+
+  // 编码
+  std::vector<char> req;
+  EncodeUcxPutRequest(key, remote_addr, packed_rkey, client_ucx_addr,
+                      source_offset, data_len, setid_,
+                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+
+  // 收发
+  std::vector<char> rsp_body;
+  BlockResult result;
+  if (SendAndRecv("PutBlockUcx", OSD_UCX_PUT_RSP, UCX_PUT_RSP_SIZE,
+                  req, rsp_body, result) != 0) {
+    return result;
+  }
+
+  // 解码
+  return DecodeUcxPutRsp(rsp_body.data(),
+                         static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
 // ============================ DEL（尽力清理）============================
 
 BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
   LOG_SYS_DEBUG("DeleteBlock: key={}", key);
-  return DoRpcDelete(key);
+
+  // 编码
+  std::vector<char> req;
+  EncodeDelRequest(key, setid_,
+                   session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+
+  // 收发
+  std::vector<char> rsp_body;
+  BlockResult result;
+  if (SendAndRecv("DeleteBlock", OSD_DEL_RSP, DEL_RSP_SIZE,
+                  req, rsp_body, result) != 0) {
+    return result;
+  }
+
+  // 解码
+  return DecodeDelRsp(rsp_body.data(),
+                      static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
 // ============================ 通用收发骨架 ============================
@@ -175,76 +223,6 @@ int UfileAcClient::SendAndRecv(const char* op_name,
   }
 
   return 0;
-}
-
-// ============================ RPC 骨架（无 lambda）============================
-
-BlockResult UfileAcClient::DoRpcPutGds(
-    const std::string& key,
-    const std::string& rdma_token,
-    std::uint64_t gpu_offset,
-    std::uint64_t data_len) {
-  // 编码
-  std::vector<char> req;
-  EncodeGdsPutRequest(key, rdma_token, gpu_offset, data_len, setid_,
-                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
-
-  // 收发
-  std::vector<char> rsp_body;
-  BlockResult result;
-  if (SendAndRecv("PutBlockGds", OSD_GDS_PUT_RSP, GDS_PUT_RSP_SIZE,
-                  req, rsp_body, result) != 0) {
-    return result;  // 已填错误
-  }
-
-  // 解码
-  return DecodeGdsPutRsp(rsp_body.data(),
-                         static_cast<std::uint32_t>(rsp_body.size()), key);
-}
-
-BlockResult UfileAcClient::DoRpcPutUcx(
-    const std::string& key,
-    std::uint64_t remote_addr,
-    const std::string& packed_rkey,
-    const std::string& client_ucx_addr,
-    std::uint64_t source_offset,
-    std::uint64_t data_len) {
-  // 编码
-  std::vector<char> req;
-  EncodeUcxPutRequest(key, remote_addr, packed_rkey, client_ucx_addr,
-                      source_offset, data_len, setid_,
-                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
-
-  // 收发
-  std::vector<char> rsp_body;
-  BlockResult result;
-  if (SendAndRecv("PutBlockUcx", OSD_UCX_PUT_RSP, UCX_PUT_RSP_SIZE,
-                  req, rsp_body, result) != 0) {
-    return result;
-  }
-
-  // 解码
-  return DecodeUcxPutRsp(rsp_body.data(),
-                         static_cast<std::uint32_t>(rsp_body.size()), key);
-}
-
-BlockResult UfileAcClient::DoRpcDelete(const std::string& key) {
-  // 编码
-  std::vector<char> req;
-  EncodeDelRequest(key, setid_,
-                   session_seq_.fetch_add(1, std::memory_order_relaxed), req);
-
-  // 收发
-  std::vector<char> rsp_body;
-  BlockResult result;
-  if (SendAndRecv("DeleteBlock", OSD_DEL_RSP, DEL_RSP_SIZE,
-                  req, rsp_body, result) != 0) {
-    return result;
-  }
-
-  // 解码
-  return DecodeDelRsp(rsp_body.data(),
-                      static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
 // ============================ 解码辅助（从 lambda 提取）============================

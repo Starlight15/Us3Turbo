@@ -4,20 +4,13 @@
 #include <string>
 
 #include "proxy/src/common/errors.h"
+#include "proxy/src/common/flags.h"
 #include "proxy/src/common/utils.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/ufile_ac_client.h"
 #include "proxy/src/storage/ufile_ac_protocol.h"
 
 namespace us3_turbo::proxy {
-
-namespace {
-
-// 单步 PUT 对象上限：16 MiB。超出应走分段上传。
-// 各模块内各自定义同名常量（client/proxy/backend），不跨模块共享头。
-constexpr std::uint64_t kMaxUploadBytes = 16ULL * 1024 * 1024;
-
-}  // namespace
 
 SinglePut::SinglePut(UfileAcClient* client) : client_(client) {}
 
@@ -31,9 +24,11 @@ int SinglePut::PutGds(
              request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.object_size() == 0 || request.object_size() > kMaxUploadBytes) {
-    LOG_WARN(rid, "object_size={} out of range [1, 16MiB] bucket={}/{}",
-             request.object_size(), request.bucket(), request.key());
+  if (request.object_size() == 0 ||
+      request.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
+    LOG_WARN(rid, "object_size={} out of range [1, {}] bucket={}/{}",
+             request.object_size(), FLAGS_max_single_put_bytes,
+             request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
   if (request.path() != PATH_GDS) {
@@ -83,9 +78,11 @@ int SinglePut::PutUcx(
              request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (request.object_size() == 0 || request.object_size() > kMaxUploadBytes) {
-    LOG_WARN(rid, "object_size={} out of range [1, 16MiB] bucket={}/{}",
-             request.object_size(), request.bucket(), request.key());
+  if (request.object_size() == 0 ||
+      request.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
+    LOG_WARN(rid, "object_size={} out of range [1, {}] bucket={}/{}",
+             request.object_size(), FLAGS_max_single_put_bytes,
+             request.bucket(), request.key());
     return PROXY_ERR_INVALID_PARAM;
   }
   if (request.path() != PATH_UCX) {

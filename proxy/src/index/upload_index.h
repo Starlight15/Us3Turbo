@@ -32,9 +32,12 @@ struct PartRecord {
   bool          valid{false};     // 是否完整上传
   std::uint64_t unmerge_size{0};  // 未合并大小（Us3Turbo 恒为 0）
 
-  // 该 part 拆分的所有 block（含 key，供 Complete 后 Get/Delete 定位）。
-  // 注：16MB 对齐后可从 obj_id 直接算出，后续阶段可能删除
-  std::vector<BlockInfo> blocks;
+  /*
+   * 该 part 的所有 block crcs（用于对象内容哈希 = s3proxy US3Etags）。
+   * 16MB 对齐后每 part 固定 4 blocks（除末 part），写入时按块号顺序存储。
+   * CompleteUpload 时从已排序 parts 顺序拼接得全局有序 crcs。
+   */
+  std::vector<std::uint32_t> block_crcs;
 };
 
 /*
@@ -51,10 +54,10 @@ struct UploadRecord {
   // ✅ 新增字段（对齐 s3proxy）
   std::string   obj_id;              // 最终对象 ID（= s3proxy ObjId）
   std::uint64_t block_size{4194304}; // 4MB 固定
-  std::uint64_t merged_size{0};      // 已合并字节数（累加更新）
-  std::int32_t  last_merged_part{0}; // 最后合并到的 part_number
-  std::vector<std::uint32_t> us3_etags; // 每个 block 的 crc32c（= s3proxy US3Etags）
+  std::uint64_t merged_size{0};      // 已合并字节数（每 UploadPart 累加，Complete 用作总大小）
+  std::int32_t  last_merged_part{0}; // 最后合并到的 part_number（对齐 s3proxy，供未来续传/持久化）
   std::int32_t  status{0};           // 0=进行中, 1=完成, 2=中止
+  // 注：per-block crcs 存 PartRecord.block_crcs（有序），不在此处平铺累积。
 };
 
 // 纯被动元数据存储接口。内存 mock 与后续 MongoDB 实现同一接口，可无差别替换。
@@ -87,14 +90,6 @@ class IUploadIndex {
   virtual void RemoveExpired(std::int64_t ttl_ms) = 0;
 
   // ✅ 新增接口（增量写索引）
-
-  /*
-   * 增量追加 block crc32c（每 block 成功后立即调用，崩溃恢复点）
-   * 用于：1. 计算最终 etag  2. 崩溃后精确知道已写入的 blocks
-   */
-  [[nodiscard]] virtual bool AddBlockCrc(
-      const std::string& upload_id,
-      std::uint32_t crc32c) = 0;
 
   /*
    * 更新已合并大小（每 part 完成后调用）
