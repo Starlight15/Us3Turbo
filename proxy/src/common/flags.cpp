@@ -19,6 +19,12 @@ DEFINE_int64(upload_ttl_scan_interval_ms, 3600 * 1000,
 DEFINE_int64(max_single_put_bytes, 16LL * 1024 * 1024,
              "max object size (bytes) for single-step GdsPut/UcxPut; larger "
              "objects must use multipart");
+DEFINE_int64(multipart_block_size, 4LL * 1024 * 1024,
+             "block size (bytes) for multipart upload, must align with s3proxy (default 4MB)");
+DEFINE_int64(multipart_part_size, 16LL * 1024 * 1024,
+             "part size (bytes) for multipart upload, must be block_size * blocks_per_part (default 16MB)");
+DEFINE_int32(multipart_blocks_per_part, 4,
+             "number of blocks per part, must equal part_size / block_size (default 4)");
 DEFINE_string(log_level, "info",
               "app log level: debug/info/warn/error");
 DEFINE_int32(log_max_size_mb, 50,

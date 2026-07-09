@@ -64,6 +64,34 @@ class Multipart {
                                  const std::string& upload_id);  // 幂等，恒 true
 
  private:
+  // 工具：生成 block key（{obj_id}_{global_block_index}）
+  [[nodiscard]] std::string GenerateBlockKey(
+      const std::string& obj_id, std::uint32_t global_block_index) const;
+
+  // 工具：清理已写 blocks（写中途失败回滚）
+  void CleanupWrittenBlocks(
+      const std::string& request_id,
+      const std::vector<std::string>& written_keys) const;
+
+  // UploadPartGds 子阶段：校验 upload 会话 + part 参数
+  [[nodiscard]] int ValidateUploadPartGds(
+      const std::string& request_id, const std::string& upload_id,
+      std::uint32_t part_number, std::uint64_t part_size,
+      const std::string& rdma_token, UploadRecord& out_upload);
+
+  // UploadPartUcx 子阶段：校验 upload 会话 + part 参数
+  [[nodiscard]] int ValidateUploadPartUcx(
+      const std::string& request_id, const std::string& upload_id,
+      std::uint32_t part_number, std::uint64_t part_size,
+      std::uint64_t remote_addr, const std::string& packed_rkey,
+      const std::string& client_ucx_addr, UploadRecord& out_upload);
+
+  // 公共子阶段：写 part 索引 + 更新 upload 进度 + 填充输出
+  void WritePartIndex(
+      const std::string& request_id, const std::string& upload_id,
+      std::uint32_t part_number, std::uint64_t part_size,
+      std::uint64_t file_offset, const std::vector<std::uint32_t>& block_crcs,
+      UploadPartOutput& out);
 
   [[nodiscard]] int ValidateParts(const std::string& request_id,
                                    const std::vector<PartRecord>& parts);
