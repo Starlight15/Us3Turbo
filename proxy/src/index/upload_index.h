@@ -120,8 +120,7 @@ class IUploadIndex {
       const std::string& first_object,
       std::uint64_t block_size,
       std::uint64_t filesize,
-      const std::string& hash,
-      const std::string& etag) = 0;
+      const std::string& hash) = 0;
 };
 
 }  // namespace us3_turbo::proxy

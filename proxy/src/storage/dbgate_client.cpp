@@ -226,8 +226,7 @@ int DBGateClient::UpsertFileIdx(
     const std::string& first_object,
     std::uint64_t block_size,
     std::uint64_t filesize,
-    const std::string& hash,
-    const std::string& /*etag*/) {
+    const std::string& hash) {
 
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   mgo_req.set_db("fileidx_db");

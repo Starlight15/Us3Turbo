@@ -47,8 +47,7 @@ class MongoUploadIndex final : public IUploadIndex {
       const std::string& first_object,
       std::uint64_t block_size,
       std::uint64_t filesize,
-      const std::string& hash,
-      const std::string& etag) override;
+      const std::string& hash) override;
 
  private:
   DBGateClient* client_;  // 不拥有所有权，由外部管理生命周期

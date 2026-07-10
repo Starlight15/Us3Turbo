@@ -153,16 +153,14 @@ bool MongoUploadIndex::InsertFileIdx(
     const std::string& first_object,
     std::uint64_t block_size,
     std::uint64_t filesize,
-    const std::string& hash,
-    const std::string& etag) {
+    const std::string& hash) {
   int ret = client_->UpsertFileIdx(
       static_cast<std::uint32_t>(FLAGS_bucket_id),
       key,
       first_object,
       block_size,
       filesize,
-      hash,
-      etag);
+      hash);
   return ret == 0;
 }
 

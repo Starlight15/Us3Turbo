@@ -400,8 +400,7 @@ int Multipart::CompleteUpload(
       upload.obj_id,
       upload.block_size,  // 固定 4MB（FLAGS_multipart_block_size）
       total_size,
-      object_hash,
-      final_etag);
+      object_hash);
 
   if (!success) {
     LOG_ERROR(request_id, "Failed to write fileidx for upload={}", upload_id);

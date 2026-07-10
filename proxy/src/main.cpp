@@ -9,7 +9,6 @@
 
 #include "proxy/src/api/proxy_service.h"
 #include "proxy/src/common/flags.h"
-#include "proxy/src/index/in_memory_upload_index.h"
 #include "proxy/src/index/mongo_upload_index.h"
 #include "proxy/src/logging/access_logger.h"
 #include "proxy/src/logging/logger.h"

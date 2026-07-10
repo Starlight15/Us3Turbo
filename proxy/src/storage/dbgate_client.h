@@ -36,8 +36,7 @@ class DBGateClient {
       const std::string& first_object,
       std::uint64_t block_size,
       std::uint64_t filesize,
-      const std::string& hash,
-      const std::string& etag);
+      const std::string& hash);
 
   // ========== minit_col ==========
 

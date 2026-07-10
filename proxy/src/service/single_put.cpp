@@ -150,8 +150,7 @@ void SinglePut::WriteObjectIndex(
       bucket, key, obj_id,
       object_size,  // block_size = 对象大小（单块）
       object_size,  // filesize
-      hash,
-      out.etag);
+      hash);
 
   if (!success) {
     LOG_ERROR(request_id, "Failed to write fileidx for key={}, rolling back block={}",
