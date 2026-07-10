@@ -128,6 +128,24 @@ class ProxyRpc {
       const std::string& upload_id,
       std::string& out_error) const;
 
+  // ===== GET 接口（client → proxy）=====
+
+  /** @brief 查对象布局。 */
+  [[nodiscard]] bool StatObject(std::string_view request_id,
+                                const std::string& bucket,
+                                const std::string& key,
+                                std::uint64_t& out_object_size,
+                                std::string& out_error) const;
+
+  /** @brief GDS 通路 GET：cuObj RDMA token(CUOBJ_GET) 随 RPC 透传，
+   * backend RDMA_WRITE 推数据到 client。 */
+  [[nodiscard]] bool GdsGet(std::string_view request_id,
+                            const std::string& bucket,
+                            const std::string& key,
+                            std::uint64_t object_size,
+                            const GdsDataSource& gds_source,
+                            GetPathResult& result) const;
+
  private:
   void ApplyTimeout(brpc::Controller& controller) const {
     controller.set_timeout_ms(static_cast<int>(default_timeout_.count()));

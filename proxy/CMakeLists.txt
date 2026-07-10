@@ -9,6 +9,7 @@ add_executable(us3_turbo_proxy
   src/api/proxy_service.cpp
   src/service/single_put.cpp
   src/service/multipart.cpp
+  src/service/get_object.cpp
   src/index/mongo_upload_index.cpp
   src/storage/tcp_connection.cpp
   src/storage/ufile_ac_protocol.cpp

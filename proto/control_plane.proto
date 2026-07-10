@@ -156,6 +156,47 @@ message AbortMultipartUploadResponse {
   string error_message = 2;
 }
 
+// ========== GET（GDS）控制面消息 ==========
+// 两段式：StatObject 查对象布局（client 据此分配显存）+ GdsGet 拉数据。
+// GET 时 backend 走 RDMA-WRITE 推数据到 client 注册的 GPU buffer（与 PUT 的
+// RDMA-READ 方向相反），故 client 须传 rdma_token + gpu_offset。
+
+// 查对象布局（client GetObject 第一步，用于分配显存 buffer）。
+message StatObjectRequest {
+  string request_id  = 1;
+  string bucket      = 2;
+  string key         = 3;
+}
+
+message StatObjectResponse {
+  bool   ok            = 1;
+  string error_message = 2;
+  uint64 object_size   = 3;  // filesize，client 据此 cudaMalloc
+  uint64 block_size    = 4;  // 仅日志/调试用
+  string hash          = 5;  // fileidx 存的 hash，client 可选比对
+}
+
+// client → proxy GDS GET 请求。object_size 须与 StatObject 返回一致
+// （proxy 据此校验，防止 client 拿旧布局注册了错误大小的 buffer）。
+message ClientProxyGetRequest {
+  string        request_id  = 1;
+  string        bucket      = 2;
+  string        key         = 3;
+  uint64        object_size = 4;
+  GdsDataSource gds_source  = 10;
+}
+
+// GET 执行结果。crc32c/hash 为 proxy 按块重组后的校验值，与 fileidx.hash
+// 不一致时 ok=false（数据损坏，不返回不可信数据）。
+message GetPathResult {
+  bool   ok            = 1;
+  int32  error_code    = 2;
+  string error_message = 3;
+  uint32 crc32c        = 4;
+  uint64 bytes_read    = 5;
+  string hash          = 6;
+}
+
 // ========== Proxy → Backend 数据面消息（block 级，带 offset）==========
 // GDS block 数据源：source_offset 为相对 token 注册 region 的偏移，backend
 // 据此从 client 显存子区间反向 RDMA-READ（cuObjServer handlePutObject 的
@@ -209,6 +250,10 @@ service Control {
       returns (CompleteMultipartUploadResponse);
   rpc AbortMultipartUpload(AbortMultipartUploadRequest)
       returns (AbortMultipartUploadResponse);
+
+  // ===== GET 接口（client → proxy） =====
+  rpc StatObject(StatObjectRequest) returns (StatObjectResponse);
+  rpc GdsGet(ClientProxyGetRequest) returns (GetPathResult);
 }
 
 // Backend 数据面 block 级服务（proxy → backend）。与 Control 同进程注册：

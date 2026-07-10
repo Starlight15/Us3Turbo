@@ -161,4 +161,26 @@ bool MongoUploadIndex::InsertFileIdx(
   return ret == 0;
 }
 
+bool MongoUploadIndex::GetFileIdx(
+    const std::string& /*bucket*/,
+    const std::string& key,
+    FileIdxRecord& out) {
+  std::string doc_json;
+  int ret = client_->QueryFileIdx(
+      static_cast<std::uint32_t>(FLAGS_bucket_id), key, doc_json);
+  if (ret != 0) return false;  // 未找到或查询失败，统一按 404 处理
+
+  try {
+    auto doc = nlohmann::json::parse(doc_json);
+    out.first_object = doc["first_object"].get<std::string>();
+    out.block_size   = doc["blocksize"].get<std::uint64_t>();  // 注意：无下划线
+    out.filesize     = doc["filesize"].get<std::uint64_t>();
+    out.hash         = doc.value("hash", "");
+    return true;
+  } catch (const std::exception& e) {
+    LOG_SYS_ERROR("Failed to parse fileidx doc: {}", e.what());
+    return false;
+  }
+}
+
 }  // namespace us3_turbo::proxy

@@ -63,4 +63,23 @@ struct ClientProxyPutResponse {
   std::optional<PutPathResult>       ucx_result;
 };
 
+// ========== GET（GDS）控制面消息 ==========
+
+/** @brief StatObject 输出：对象布局，供 client 分配 buffer。 */
+struct StatObjectOutput {
+  std::uint64_t object_size{0};
+  std::uint64_t block_size{0};
+  std::string   hash;
+};
+
+/** @brief GET 执行结果：按块读取 + crc 重组校验后的结果。 */
+struct GetPathResult {
+  bool          ok{false};
+  std::int32_t  error_code{0};
+  std::string   error_message;
+  std::uint32_t crc32c{0};
+  std::uint64_t bytes_read{0};
+  std::string   hash;
+};
+
 }  // namespace us3_turbo::client

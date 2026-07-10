@@ -65,6 +65,15 @@ class UfileAcClient {
   // 失败（ufile-ac TTL 兜底）。KEY_NOT_FOUND 视为可接受的清理结果。
   [[nodiscard]] BlockResult DeleteBlock(const std::string& key);
 
+  // GDS：读一个 block。key=block 标识，gpu_offset=写入 client GPU buffer 偏移，
+  // read_offset=对象内读偏移（本阶段固定传 0），data_len=读取长度。
+  [[nodiscard]] BlockResult GetBlockGds(
+      const std::string& key,
+      const std::string& rdma_token,
+      std::uint64_t gpu_offset,
+      std::uint64_t read_offset,
+      std::uint64_t data_len);
+
  private:
   // 拆分 "host:port" → host + port；失败返回 false。
   static bool ParseEndpoint(const std::string& endpoint,
@@ -93,6 +102,8 @@ class UfileAcClient {
                                      const std::string& key);
   static BlockResult DecodeDelRsp(const char* body, std::uint32_t body_len,
                                   const std::string& key);
+  static BlockResult DecodeGdsGetRsp(const char* body, std::uint32_t body_len,
+                                     const std::string& key);
 
   int      timeout_ms_;
   std::uint32_t setid_;

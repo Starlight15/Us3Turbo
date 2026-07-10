@@ -12,6 +12,7 @@
 #include "proxy/src/index/mongo_upload_index.h"
 #include "proxy/src/logging/access_logger.h"
 #include "proxy/src/logging/logger.h"
+#include "proxy/src/service/get_object.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
 #include "proxy/src/storage/dbgate_client.h"
@@ -54,8 +55,10 @@ std::unique_ptr<AssembledStack> AssembleServices() {
       stack->index.get(), stack->ufile_ac.get());
   auto multipart = std::make_unique<us3_turbo::proxy::Multipart>(
       stack->index.get(), stack->ufile_ac.get());
+  auto get_object = std::make_unique<us3_turbo::proxy::GetObject>(
+      stack->index.get(), stack->ufile_ac.get());
   stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(
-      std::move(single_put), std::move(multipart), stack->index.get());
+      std::move(single_put), std::move(multipart), std::move(get_object), stack->index.get());
   return stack;
 }
 

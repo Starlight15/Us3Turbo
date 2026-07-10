@@ -22,9 +22,11 @@ static constexpr const char* kDash = "-";
 ProxyService::ProxyService(
     std::unique_ptr<SinglePut> single_put,
     std::unique_ptr<Multipart> multipart,
+    std::unique_ptr<GetObject> get_object,
     IUploadIndex* index_for_cleanup)
     : single_put_(std::move(single_put)),
       multipart_(std::move(multipart)),
+      get_object_(std::move(get_object)),
       index_(index_for_cleanup) {
   // 后台 TTL 清理：周期扫描删除过期会话；析构经 condition_variable 唤醒 join。
   cleanup_thread_ = std::thread([this]() { CleanupThreadMain(); });
@@ -312,6 +314,84 @@ void ProxyService::AbortMultipartUpload(
   LOG_INFO(rid, "done upload={}", request->upload_id());
   AccessLogger::Instance().LogRequest(
       "AbortMultipartUpload", rid, kDash, kDash, 0, 0, latency);
+}
+
+// ===========================================================================
+// GET（StatObject / GdsGet）：薄委托服务层，ret != 0 → SetFailed。
+// ===========================================================================
+
+void ProxyService::StatObject(
+    google::protobuf::RpcController* cntl_base,
+    const StatObjectRequest* request,
+    StatObjectResponse* response,
+    google::protobuf::Closure* done) {
+  brpc::ClosureGuard done_guard(done);
+  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
+
+  const std::string& rid = request->request_id();
+  const auto start = std::chrono::steady_clock::now();
+  LOG_INFO(rid, "start bucket={}/{}", request->bucket(), request->key());
+
+  StatObjectOutput out;
+  int ret = get_object_->StatObject(*request, out);
+  const auto latency = utils::ElapsedMs(start);
+
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "failed code={}", ret);
+    response->set_ok(false);
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "%s", msg);
+    AccessLogger::Instance().LogRequest(
+        "StatObject", rid, request->bucket(), request->key(), ret, 0, latency);
+    return;
+  }
+  response->set_ok(true);
+  response->set_object_size(out.object_size);
+  response->set_block_size(out.block_size);
+  response->set_hash(out.hash);
+  LOG_INFO(rid, "success size={} block_size={}", out.object_size, out.block_size);
+  AccessLogger::Instance().LogRequest(
+      "StatObject", rid, request->bucket(), request->key(),
+      0, out.object_size, latency);
+}
+
+void ProxyService::GdsGet(
+    google::protobuf::RpcController* cntl_base,
+    const ClientProxyGetRequest* request,
+    GetPathResult* response,
+    google::protobuf::Closure* done) {
+  brpc::ClosureGuard done_guard(done);
+  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
+
+  const std::string& rid = request->request_id();
+  const auto start = std::chrono::steady_clock::now();
+  LOG_INFO(rid, "start bucket={}/{} size={}",
+           request->bucket(), request->key(), request->object_size());
+
+  GetOutput out;
+  int ret = get_object_->GetGds(*request, out);
+  const auto latency = utils::ElapsedMs(start);
+
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "failed code={}", ret);
+    response->set_ok(false);
+    response->set_error_code(ret);
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "%s", msg);
+    AccessLogger::Instance().LogRequest(
+        "GdsGet", rid, request->bucket(), request->key(), ret, 0, latency);
+    return;
+  }
+  response->set_ok(true);
+  response->set_crc32c(out.crc32c);
+  response->set_bytes_read(out.bytes_read);
+  response->set_hash(out.hash);
+  LOG_INFO(rid, "success bytes={} hash={}", out.bytes_read, out.hash);
+  AccessLogger::Instance().LogRequest(
+      "GdsGet", rid, request->bucket(), request->key(),
+      0, out.bytes_read, latency);
 }
 
 }  // namespace us3_turbo::proxy

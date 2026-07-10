@@ -10,6 +10,7 @@
 
 #include "control_plane.pb.h"
 #include "proxy/src/index/upload_index.h"
+#include "proxy/src/service/get_object.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
 
@@ -36,6 +37,7 @@ class ProxyService final
   ProxyService(
       std::unique_ptr<SinglePut> single_put,
       std::unique_ptr<Multipart> multipart,
+      std::unique_ptr<GetObject> get_object,
       IUploadIndex* index_for_cleanup);
   ~ProxyService() override;
 
@@ -82,6 +84,19 @@ class ProxyService final
       AbortMultipartUploadResponse* response,
       google::protobuf::Closure* done) override;
 
+  // ===== GET 接口（client → proxy） =====
+  void StatObject(
+      google::protobuf::RpcController* cntl,
+      const StatObjectRequest* request,
+      StatObjectResponse* response,
+      google::protobuf::Closure* done) override;
+
+  void GdsGet(
+      google::protobuf::RpcController* cntl,
+      const ClientProxyGetRequest* request,
+      GetPathResult* response,
+      google::protobuf::Closure* done) override;
+
  private:
   // TTL 清理线程主函数（后台周期扫描，删除过期 multipart 会话）。
   void CleanupThreadMain();
@@ -89,6 +104,7 @@ class ProxyService final
   // 服务层（main 注入，拥有下层）。
   std::unique_ptr<SinglePut>  single_put_;
   std::unique_ptr<Multipart>  multipart_;
+  std::unique_ptr<GetObject>  get_object_;
 
   // 索引层裸指针（main 持有，TTL 清理线程定时 RemoveExpired）。
   IUploadIndex* index_;

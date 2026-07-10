@@ -18,6 +18,7 @@
 #include "client/src/rpc/proxy_rpc.h"
 #include "client/src/memory_manager/ucx_memory_manager.h"
 #include "client/src/transport/gds_put_channel.h"
+#include "client/src/transport/gds_get_channel.h"
 #include "client/src/transport/put_channel.h"
 #include "client/src/transport/ucx_put_channel.h"
 
@@ -90,10 +91,12 @@ bool Client::Initialize() {
   GdsMemoryManager* gds_mgr = nullptr;
   if (GdsMemoryManager::Instance(gds_mgr)) {
     gds_channel_ = std::make_unique<GdsPutChannel>(options_, *proxy_, gds_mgr);
+    gds_get_channel_ = std::make_unique<GdsGetChannel>(options_, *proxy_, gds_mgr);
   } else {
     spdlog::warn("Client::Initialize: GDS manager unavailable, "
                  "path=kGds will fail");
     gds_channel_.reset();
+    gds_get_channel_.reset();
   }
 
   // UCX 同构,Start 失败不致命。
@@ -112,6 +115,7 @@ bool Client::Initialize() {
 
 void Client::Shutdown() {
   ucx_channel_.reset();
+  gds_get_channel_.reset();
   gds_channel_.reset();
   proxy_.reset();
   initialized_ = false;
@@ -234,11 +238,13 @@ bool Client::UploadPartGds(
     return false;
   }
 
-  // 分段 part 上限：16 MiB（与单步对象上限对齐）。超出拒绝。
-  constexpr std::uint64_t kMaxPartBytes = 16ULL * 1024 * 1024;
-  if (buffer.size > kMaxPartBytes) {
+  // 分段 part 上限：须 ≤ multipart_part_size（默认 16MiB，与 proxy 对齐）。
+  // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
+  // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
+  if (buffer.size > options_.multipart_part_size) {
     out_error = "part size " + std::to_string(buffer.size) +
-                " exceeds 16MiB per-part limit";
+                " exceeds multipart_part_size (" +
+                std::to_string(options_.multipart_part_size) + ")";
     return false;
   }
 
@@ -291,11 +297,13 @@ bool Client::UploadPartUcx(
     return false;
   }
 
-  // 分段 part 上限：16 MiB（与单步对象上限对齐）。超出拒绝。
-  constexpr std::uint64_t kMaxPartBytes = 16ULL * 1024 * 1024;
-  if (buffer.size > kMaxPartBytes) {
+  // 分段 part 上限：须 ≤ multipart_part_size（默认 16MiB，与 proxy 对齐）。
+  // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
+  // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
+  if (buffer.size > options_.multipart_part_size) {
     out_error = "part size " + std::to_string(buffer.size) +
-                " exceeds 16MiB per-part limit";
+                " exceeds multipart_part_size (" +
+                std::to_string(options_.multipart_part_size) + ")";
     return false;
   }
 
@@ -361,6 +369,40 @@ bool Client::AbortMultipartUpload(
   }
   const std::string request_id = detail::MakeRequestId();
   return proxy_->AbortMultipartUpload(request_id, upload_id, out_error);
+}
+
+// ===========================================================================
+// GET（StatObject / GetObjectGds）
+// ===========================================================================
+
+bool Client::StatObject(const std::string& bucket,
+                        const std::string& key,
+                        std::uint64_t& out_object_size,
+                        std::string& out_error) const {
+  if (!initialized_) {
+    out_error = "Client not initialized";
+    return false;
+  }
+  if (gds_get_channel_ == nullptr) {
+    out_error = "GDS get channel not initialized";
+    return false;
+  }
+  return gds_get_channel_->StatObject(bucket, key, out_object_size, out_error);
+}
+
+bool Client::GetObjectGds(const std::string& bucket,
+                          const std::string& key,
+                          MutableBufferView buffer,
+                          GetPathResult& result) const {
+  if (!initialized_) {
+    spdlog::error("GetObjectGds: Client not initialized");
+    return false;
+  }
+  if (gds_get_channel_ == nullptr) {
+    spdlog::error("GetObjectGds: GDS get channel not initialized");
+    return false;
+  }
+  return gds_get_channel_->GetOnce(bucket, key, buffer, result);
 }
 
 }  // namespace us3_turbo::client

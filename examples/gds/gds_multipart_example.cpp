@@ -8,7 +8,10 @@
 // 用法：
 //   us3_turbo_gds_multipart_example \
 //     --proxy 192.168.1.198:9100 \
-//     --part-size 5M --num-parts 4 [--verify-crc32c]
+//     --part-size 16M --num-parts 4 [--verify-crc32c]
+//
+// 注意：非 last part 必须恰好等于 proxy 的 multipart_part_size（默认 16MB），
+// 仅 last part 可小于此值。违反将在 Complete 时被 proxy 拒绝。
 //
 // 模型：进程内共享一个 Client；单个 GPU buffer 复用上传 num-parts 次。
 
@@ -75,7 +78,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t part_size = 5ULL * 1024 * 1024;
+  std::uint64_t part_size = 16ULL * 1024 * 1024;
   std::uint32_t num_parts = 4;
   bool verify = false;
 

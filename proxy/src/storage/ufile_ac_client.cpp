@@ -314,4 +314,64 @@ BlockResult UfileAcClient::DecodeDelRsp(const char* body,
   return BlockResult{};  // 默认全 0，成功
 }
 
+// ============================ GDS GET ============================
+
+BlockResult UfileAcClient::GetBlockGds(
+    const std::string& key,
+    const std::string& rdma_token,
+    std::uint64_t gpu_offset,
+    std::uint64_t read_offset,
+    std::uint64_t data_len) {
+  LOG_SYS_DEBUG("GetBlockGds: key={} gpu_offset={} read_offset={} len={}",
+                key, gpu_offset, read_offset, data_len);
+
+  // 编码
+  std::vector<char> req;
+  EncodeGdsGetRequest(key, rdma_token, read_offset, gpu_offset, data_len, setid_,
+                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+
+  // 收发
+  std::vector<char> rsp_body;
+  BlockResult result;
+  if (SendAndRecv("GetBlockGds", OSD_GDS_GET_RSP, GDS_GET_RSP_SIZE,
+                  req, rsp_body, result) != 0) {
+    return result;  // 已填错误
+  }
+
+  // 解码
+  return DecodeGdsGetRsp(rsp_body.data(),
+                         static_cast<std::uint32_t>(rsp_body.size()), key);
+}
+
+BlockResult UfileAcClient::DecodeGdsGetRsp(const char* body,
+                                           std::uint32_t body_len,
+                                           const std::string& key) {
+  GdsGetRsp rsp{};
+  std::string errmsg;
+  if (DecodeGdsGetResponse(body, body_len, rsp, errmsg) != 0) {
+    LOG_SYS_ERROR("GetBlockGds: decode failed key={}", key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "decode response failed: " + errmsg;
+    return r;
+  }
+  if (rsp.retcode_ != 0) {
+    const std::int32_t ret = rsp.retcode_;
+    LOG_SYS_ERROR("GetBlockGds: backend ret={} msg={} key={}", ret, errmsg, key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "backend retcode=" + std::to_string(ret) + " msg=" + errmsg;
+    return r;
+  }
+  // packed 字段先拷贝到临时变量，避免绑定引用错误
+  const std::uint32_t crc = rsp.crc32c_;
+  const std::uint64_t read = rsp.bytesRead_;
+  LOG_SYS_DEBUG("GetBlockGds: ok key={} crc32c={:#x} bytes={}", key, crc, read);
+  BlockResult r;
+  r.ret_code = 0;
+  r.crc32c = crc;
+  r.bytes_written = read;  // GET 语义下复用字段 = bytes_read
+  return r;
+}
+
 }  // namespace us3_turbo::proxy

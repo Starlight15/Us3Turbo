@@ -254,6 +254,32 @@ int DBGateClient::UpsertFileIdx(
   return ExecuteMgoHelper(*this, mgo_req, rsp);
 }
 
+int DBGateClient::QueryFileIdx(
+    std::uint32_t bucket_id,
+    const std::string& key,
+    std::string& out_doc) {
+
+  ucloud::umgogate::ExecuteMgoRequest mgo_req;
+  mgo_req.set_db("fileidx_db");
+  mgo_req.set_collection("fileidx_col");
+  mgo_req.set_optype(ucloud::umgogate::OP_FIND);
+
+  std::string selector = fmt::format(
+      R"({{"bucket_id":{}, "key":"{}"}})", bucket_id, key);
+  mgo_req.mutable_op_find_req()->set_selector(selector);
+
+  ucloud::umgogate::ExecuteMgoResponse rsp;
+  int ret = ExecuteMgoHelper(*this, mgo_req, rsp);
+  if (ret != 0) return ret;
+
+  if (!rsp.has_op_find_rsp() || rsp.op_find_rsp().results_size() == 0) {
+    return -1;  // 未找到
+  }
+
+  out_doc = rsp.op_find_rsp().results(0);
+  return 0;
+}
+
 // ========== minit_col ==========
 
 int DBGateClient::InsertMinit(

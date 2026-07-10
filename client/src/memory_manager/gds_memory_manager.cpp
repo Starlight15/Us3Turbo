@@ -87,7 +87,8 @@ bool GdsMemoryManager::UnregisterBuffer(void* ptr) {
 }
 
 bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
-                                   std::size_t offset, Token& out) {
+                                   std::size_t offset, Token& out,
+                                   cuObjOpType_t operation) {
   if (!ptr || size == 0U) {
     spdlog::warn("AcquireToken: requires non-null ptr and positive size (ptr={} size={})",
                  ptr, size);
@@ -97,26 +98,39 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
   void* mut_ptr = const_cast<void*>(ptr);
 
   // 单次加锁完成幂等注册检查,DoRegister 失败则回滚占位。
+  // 若同一地址已注册但覆盖范围不足（cudaFree+cudaMalloc 地址复用），
+  // 先注销旧描述符再重新注册。
   {
     std::lock_guard<std::mutex> lk(mu_);
+    const std::size_t needed = size + offset;
     if (registered_.count(mut_ptr)) {
-      // 已注册,无需再 pin。
-    } else if (!DoRegister(mut_ptr, size + offset, registered_[mut_ptr])) {
+      if (registered_[mut_ptr] < needed) {
+        // 旧注册范围不够（地址被 CUDA 复用于更大的 buffer），
+        // 先注销再重新注册以覆盖新大小。
+        spdlog::info("AcquireToken: re-register ptr={} old_size={} new_size={}",
+                     mut_ptr, registered_[mut_ptr], needed);
+        DoUnregister(mut_ptr, registered_[mut_ptr]);
+        if (!DoRegister(mut_ptr, needed, registered_[mut_ptr])) {
+          registered_.erase(mut_ptr);
+          return false;
+        }
+      }
+      // 已注册且范围足够，无需再 pin。
+    } else if (!DoRegister(mut_ptr, needed, registered_[mut_ptr])) {
       registered_.erase(mut_ptr);  // DoRegister 失败:回滚占位
       return false;
     }
   }
   // cuMemObjGetRDMAToken 可能耗时较长,锁外执行以提高并发性。
   char* tok = nullptr;
-  const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, CUOBJ_PUT, &tok);
+  const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, operation, &tok);
   if (rc != CU_OBJ_SUCCESS || !tok) {
-    spdlog::error("AcquireToken: cuMemObjGetRDMAToken failed (ptr={} size={} offset={} rc={})",
-                  ptr, size, offset, rc);
+    spdlog::error("AcquireToken: cuMemObjGetRDMAToken failed (ptr={} size={} offset={} op={} rc={})",
+                  ptr, size, offset, static_cast<int>(operation), rc);
     return false;
   }
-  // 打印 backend 用以 RDMA-READ 的 token("hexaddr:rkey"),跨机调试核对可达性。
-  spdlog::info("AcquireToken: ptr={} size={} offset={} rdma_token={}",
-               ptr, size, offset, tok);
+  spdlog::info("AcquireToken: ptr={} size={} offset={} op={} rdma_token={}",
+               ptr, size, offset, static_cast<int>(operation), tok);
   out = Token(impl_->client.get(), tok);
   return true;
 }

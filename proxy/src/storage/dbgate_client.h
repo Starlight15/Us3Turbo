@@ -41,6 +41,12 @@ class DBGateClient {
       std::uint64_t filesize,
       const std::string& hash);
 
+  /** @brief Query fileidx_col 文档（GetObject 第一步）. Returns 0=ok, -1=not found, other=error */
+  [[nodiscard]] int QueryFileIdx(
+      std::uint32_t bucket_id,
+      const std::string& key,
+      std::string& out_doc);
+
   // ========== minit_col ==========
 
   /** @brief Insert minit_col 文档（CreateUpload） */

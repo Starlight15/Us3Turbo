@@ -17,6 +17,14 @@ struct BlockInfo {
   std::uint32_t crc32c{0};      // block 数据 CRC32C（ufile-ac 返回）
 };
 
+// GET 用对象布局（对齐 fileidx_col schema：first_object/blocksize/filesize/hash）。
+struct FileIdxRecord {
+  std::string   first_object;   // block key 前缀
+  std::uint64_t block_size{0};
+  std::uint64_t filesize{0};
+  std::string   hash;
+};
+
 /*
  * part 元数据（对齐 s3proxy S3PartInfo）
  * 当前阶段：内存实现，字段语义对齐 s3proxy，为后续 MongoDB 持久化做准备
@@ -121,6 +129,15 @@ class IUploadIndex {
       std::uint64_t block_size,
       std::uint64_t filesize,
       const std::string& hash) = 0;
+
+  /**
+   * @brief 读 fileidx_col（对象元数据），GetObject 第一步调用。
+   * @return true=找到，false=未找到或查询失败（调用方按 404 处理，不区分）
+   */
+  [[nodiscard]] virtual bool GetFileIdx(
+      const std::string& bucket,
+      const std::string& key,
+      FileIdxRecord& out) = 0;
 };
 
 }  // namespace us3_turbo::proxy

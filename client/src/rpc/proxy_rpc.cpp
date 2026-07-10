@@ -297,4 +297,89 @@ bool ProxyRpc::AbortMultipartUpload(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// GET（StatObject / GdsGet）
+// ---------------------------------------------------------------------------
+
+bool ProxyRpc::StatObject(std::string_view request_id,
+                          const std::string& bucket,
+                          const std::string& key,
+                          std::uint64_t& out_object_size,
+                          std::string& out_error) const {
+  if (!ok()) {
+    out_error = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  ::us3_turbo::proxy::StatObjectRequest req;
+  req.set_request_id(std::string(request_id));
+  req.set_bucket(bucket);
+  req.set_key(key);
+
+  ::us3_turbo::proxy::StatObjectResponse resp;
+  stub()->StatObject(&controller, &req, &resp, nullptr);
+  if (controller.Failed()) {
+    out_error = controller.ErrorText();
+    spdlog::error("StatObject (req={}): rpc failed: {}",
+                  request_id, controller.ErrorText());
+    return false;
+  }
+  if (!resp.ok()) {
+    out_error = resp.error_message();
+    return false;
+  }
+  out_object_size = resp.object_size();
+  return true;
+}
+
+bool ProxyRpc::GdsGet(std::string_view request_id,
+                      const std::string& bucket,
+                      const std::string& key,
+                      std::uint64_t object_size,
+                      const GdsDataSource& gds_source,
+                      GetPathResult& result) const {
+  if (!ok()) {
+    spdlog::error("GdsGet (req={}): proxy channel not ready: {}",
+                  request_id, init_error());
+    result.ok = false;
+    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  us3_turbo::proxy::ClientProxyGetRequest rpc_request;
+  rpc_request.set_request_id(std::string(request_id));
+  rpc_request.set_bucket(bucket);
+  rpc_request.set_key(key);
+  rpc_request.set_object_size(object_size);
+  rpc_request.mutable_gds_source()->set_rdma_token(gds_source.rdma_token);
+
+  us3_turbo::proxy::GetPathResult resp;
+  stub()->GdsGet(&controller, &rpc_request, &resp, nullptr);
+
+  if (controller.Failed()) {
+    const bool is_timeout =
+        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) ||
+        (controller.ErrorCode() == ETIMEDOUT);
+    result.ok = false;
+    result.error_message = controller.ErrorText();
+    spdlog::error("{} (req={}): failed to execute GdsGet RPC: {}",
+                  is_timeout ? "timeout" : "data-plane",
+                  request_id, controller.ErrorText());
+    return false;
+  }
+
+  result.ok           = resp.ok();
+  result.error_code   = resp.error_code();
+  result.error_message = resp.error_message();
+  result.crc32c       = resp.crc32c();
+  result.bytes_read   = resp.bytes_read();
+  result.hash         = resp.hash();
+  return resp.ok();
+}
+
 }  // namespace us3_turbo::client

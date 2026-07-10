@@ -20,6 +20,7 @@ add_library(us3_turbo_client
   src/memory_manager/gds_memory_manager.cpp
   src/memory_manager/ucx_memory_manager.cpp
   src/transport/gds_put_channel.cpp
+  src/transport/gds_get_channel.cpp
   src/transport/ucx_put_channel.cpp)
 
 add_dependencies(us3_turbo_client
