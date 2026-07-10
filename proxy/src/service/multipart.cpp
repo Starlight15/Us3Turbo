@@ -377,6 +377,11 @@ int Multipart::CompleteUpload(
    */
   std::vector<std::uint32_t> object_crcs;
   for (const auto& p : parts) {
+    if (p.block_crcs.empty()) {
+      LOG_ERROR(request_id, "upload={} part={} block_crcs empty, index corrupted",
+                upload_id, p.part_number);
+      return PROXY_ERR_INTERNAL;
+    }
     object_crcs.insert(object_crcs.end(), p.block_crcs.begin(), p.block_crcs.end());
   }
   const std::string object_hash = utils::CombineBlockCRC32s(object_crcs);
