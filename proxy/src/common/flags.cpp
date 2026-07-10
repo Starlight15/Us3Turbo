@@ -34,3 +34,13 @@ DEFINE_int32(log_max_files, 10,
 DEFINE_int32(backend_conn_pool_size, 8,
              "backend connection pool size (recommend: ≈ num_threads for best "
              "throughput)");
+DEFINE_string(dbgate_endpoint, "192.168.1.100:20165",
+              "DBGate proxy endpoint for MongoDB operations");
+DEFINE_int32(dbgate_timeout_ms, 5000,
+             "DBGate request timeout in milliseconds");
+DEFINE_int32(dbgate_conn_pool_size, 4,
+             "DBGate connection pool size (recommend: match num_threads)");
+DEFINE_int32(bucket_id, 1,
+             "Bucket ID for index operations (temporary hardcoded, Phase 5 will query bucketidx_col)");
+DEFINE_string(mongo_db_name, "s3proxy",
+              "MongoDB database name for fileidx/minit/part collections");

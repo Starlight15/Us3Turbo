@@ -106,6 +106,22 @@ class IUploadIndex {
   [[nodiscard]] virtual bool UpdateLastMergedPart(
       const std::string& upload_id,
       std::int32_t part_number) = 0;
+
+  /**
+   * @brief 写 fileidx_col（对象元数据）
+   *
+   * single_put 和 multipart Complete 调用，写入对象索引供 s3proxy 读取
+   *
+   * @return true=成功，false=失败
+   */
+  [[nodiscard]] virtual bool InsertFileIdx(
+      const std::string& bucket,
+      const std::string& key,
+      const std::string& first_object,
+      std::uint64_t block_size,
+      std::uint64_t filesize,
+      const std::string& hash,
+      const std::string& etag) = 0;
 };
 
 }  // namespace us3_turbo::proxy

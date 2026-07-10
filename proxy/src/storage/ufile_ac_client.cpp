@@ -13,7 +13,7 @@ namespace us3_turbo::proxy {
 
 /* 拆分 "host:port" → host + port；失败返回 false。 */
 bool UfileAcClient::ParseEndpoint(const std::string& endpoint,
-                                  std::string& host, int port) {
+                                  std::string& host, int& port) {
   const auto pos = endpoint.rfind(':');
   if (pos == std::string::npos) return false;
   host = endpoint.substr(0, pos);

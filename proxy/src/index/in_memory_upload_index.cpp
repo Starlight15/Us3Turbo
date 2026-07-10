@@ -121,4 +121,11 @@ bool InMemoryUploadIndex::UpdateLastMergedPart(const std::string& upload_id,
   return true;
 }
 
+bool InMemoryUploadIndex::InsertFileIdx(
+    const std::string&, const std::string&, const std::string&,
+    std::uint64_t, std::uint64_t, const std::string&, const std::string&) {
+  // 内存版不持久化 fileidx
+  return true;
+}
+
 }  // namespace us3_turbo::proxy

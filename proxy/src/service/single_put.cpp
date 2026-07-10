@@ -5,6 +5,7 @@
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
 #include "proxy/src/common/utils.h"
+#include "proxy/src/index/upload_index.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/ufile_ac_client.h"
 
@@ -91,6 +92,10 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
   // 写对象索引 + 填充输出
   WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
                    req.object_size(), res.crc32c, out);
+  if (out.etag.empty()) {
+    LOG_ERROR(rid, "WriteObjectIndex failed for key={}", req.key());
+    return PROXY_ERR_INDEX_FAILED;
+  }
   return 0;
 }
 
@@ -118,6 +123,10 @@ int SinglePut::PutUcx(const ClientProxyPutRequest& req, PutOutput& out) {
   // 写对象索引 + 填充输出
   WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
                    req.object_size(), res.crc32c, out);
+  if (out.etag.empty()) {
+    LOG_ERROR(rid, "WriteObjectIndex failed for key={}", req.key());
+    return PROXY_ERR_INDEX_FAILED;
+  }
   return 0;
 }
 
@@ -130,12 +139,32 @@ void SinglePut::WriteObjectIndex(
   out.crc32c        = crc32c;
   out.bytes_written = object_size;
 
+  const std::string hash = utils::CombineBlockCRC32s({crc32c});  // single block
+
   LOG_INFO(request_id, "fileidx(compat s3proxy): bucket={} key={} "
            "first_object={} block_size={} filesize={} etag={} hash={}",
-           bucket, key, obj_id, object_size, object_size, out.etag, out.etag);
-  // TODO(stage-db): object_index_->InsertFileIdx({bucket, key, obj_id,
-  //                 object_size, object_size, out.etag});
-  //                 落库失败时需 client_->DeleteBlock(obj_id + "_0") 回滚已写块。
+           bucket, key, obj_id, object_size, object_size, out.etag, hash);
+
+  // 写 fileidx_col
+  bool success = index_->InsertFileIdx(
+      bucket, key, obj_id,
+      object_size,  // block_size = 对象大小（单块）
+      object_size,  // filesize
+      hash,
+      out.etag);
+
+  if (!success) {
+    LOG_ERROR(request_id, "Failed to write fileidx for key={}, rolling back block={}",
+              key, obj_id + "_0");
+    // 回滚：删除已写块（尽力而为，失败由 ufile-ac TTL 兜底）
+    const std::string block_key = obj_id + "_0";
+    auto result = client_->DeleteBlock(block_key);
+    if (result.ret_code != 0) {
+      LOG_WARN(request_id, "DeleteBlock failed during rollback: key={} error={}",
+               block_key, result.error);
+    }
+    out.etag.clear();  // 标记失败
+  }
 }
 
 }  // namespace us3_turbo::proxy

@@ -173,6 +173,35 @@ add_custom_command(
 add_custom_target(us3_turbo_control_plane_proto
   DEPENDS ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS} ${US3_TURBO_ACCESS_CONTROL_PROTO_HDRS})
 
+# ============== us3_message proto 生成 ==============
+set(US3_MESSAGE_PROTO_DIR ${CMAKE_CURRENT_SOURCE_DIR}/proto/us3_message)
+set(US3_MESSAGE_GENERATED_DIR ${CMAKE_BINARY_DIR}/generated/us3_message)
+
+file(MAKE_DIRECTORY ${US3_MESSAGE_GENERATED_DIR})
+
+set(US3_MESSAGE_PROTO_FILES
+  ${US3_MESSAGE_PROTO_DIR}/ucloud.proto
+  ${US3_MESSAGE_PROTO_DIR}/umgogate.proto)
+
+set(US3_MESSAGE_PROTO_SRCS "")
+foreach(proto_file ${US3_MESSAGE_PROTO_FILES})
+  get_filename_component(proto_name ${proto_file} NAME_WE)
+  list(APPEND US3_MESSAGE_PROTO_SRCS
+    ${US3_MESSAGE_GENERATED_DIR}/${proto_name}.pb.cc)
+endforeach()
+
+add_custom_command(
+  OUTPUT ${US3_MESSAGE_PROTO_SRCS}
+  COMMAND protobuf::protoc
+    --cpp_out=${US3_MESSAGE_GENERATED_DIR}
+    --proto_path=${US3_MESSAGE_PROTO_DIR}
+    ${US3_MESSAGE_PROTO_FILES}
+  DEPENDS ${US3_MESSAGE_PROTO_FILES}
+  COMMENT "Generating us3_message protobuf files")
+
+add_custom_target(us3_message_proto
+  DEPENDS ${US3_MESSAGE_PROTO_SRCS})
+
 add_subdirectory(client)
 add_subdirectory(proxy)
 

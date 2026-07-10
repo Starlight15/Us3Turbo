@@ -225,6 +225,12 @@ int Multipart::UploadPartGds(
   /* ④ 写索引 + 填输出 */
   WritePartIndex(request_id, upload_id, part_number, part_size,
                  file_offset, crcs, out);
+  if (out.etag.empty()) {
+    LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
+              upload_id, part_number);
+    CleanupWrittenBlocks(request_id, written_keys);
+    return PROXY_ERR_INDEX_FAILED;
+  }
   return 0;
 }
 
@@ -289,6 +295,12 @@ int Multipart::UploadPartUcx(
   /* ④ 写索引 + 填输出 */
   WritePartIndex(request_id, upload_id, part_number, part_size,
                  file_offset, crcs, out);
+  if (out.etag.empty()) {
+    LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
+              upload_id, part_number);
+    CleanupWrittenBlocks(request_id, written_keys);
+    return PROXY_ERR_INDEX_FAILED;
+  }
   return 0;
 }
 
@@ -371,16 +383,9 @@ int Multipart::CompleteUpload(
   const std::string object_hash = utils::CombineBlockCRC32s(object_crcs);
 
   /*
-   * 9. 零数据操作完成。
-   * 数据已在 ufile-ac，key = {obj_id}_{全局块号}，全局连续。
-   * 只需生成兼容 s3proxy 的对象元数据（fileidx）。
-   * 当前阶段：内存构造 + 日志占位，不写真实 DB（TODO: 对接 MongoDB fileidx 表）。
-   * fileidx 关键字段（s3proxy GetObject 依赖）：
-   *   first_object = obj_id  → block key 前缀
-   *   block_size   = 4MB
-   *   filesize     = total_size
-   *   hash         = object_hash（US3Etags 组合，s3proxy fileidx.Hash）
-   * s3proxy 读取时：block key = first_object + "_" + (offset/block_size)
+   * 9. 写 fileidx_col（对象元数据，供 s3proxy 读取）
+   * block_size = FLAGS_multipart_block_size（4MB 固定，与 single_put 不同）
+   * hash = 组合所有 part 的 block CRCs
    */
   const std::string final_etag = ComputeFinalETag(parts);
 
@@ -388,14 +393,26 @@ int Multipart::CompleteUpload(
            "first_object={} block_size={} filesize={} etag={} hash={}",
            upload.bucket, upload.key, upload.obj_id,
            upload.block_size, total_size, final_etag, object_hash);
-  // TODO(stage-db): object_index_->InsertFileIdx({bucket, key, obj_id,
-  //                 block_size, total_size, final_etag, object_hash});
+
+  bool success = index_->InsertFileIdx(
+      upload.bucket,
+      upload.key,
+      upload.obj_id,
+      upload.block_size,  // 固定 4MB（FLAGS_multipart_block_size）
+      total_size,
+      object_hash,
+      final_etag);
+
+  if (!success) {
+    LOG_ERROR(request_id, "Failed to write fileidx for upload={}", upload_id);
+    return PROXY_ERR_INDEX_FAILED;
+  }
 
   out.object_id   = upload.bucket + "/" + upload.key;
   out.etag        = final_etag;
   out.object_size = total_size;
 
-  /* 9. 清理 upload 索引（成功后） */
+  /* 10. 清理 upload 索引（成功后删 minit + parts） */
   index_->Remove(upload_id);
 
   LOG_INFO(request_id, "completed object_id={} size={} etag={} parts={}",

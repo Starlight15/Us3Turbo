@@ -1,27 +1,24 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
-#include <shared_mutex>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
-#include "control_plane.pb.h"
 #include "proxy/src/index/upload_index.h"
+#include "proxy/src/storage/dbgate_client.h"
 
 namespace us3_turbo::proxy {
 
-// 纯内存 mock 实现 IUploadIndex。沿用旧 SessionManager 的并发模型：
-// sessions_ 用 shared_mutex（读多写少），单 session 的 parts 用 parts_mu。
-// 只做元数据 CRUD，无校验 / etag / client 比对（业务规则在服务层）。
-class InMemoryUploadIndex final : public IUploadIndex {
+/**
+ * @brief MongoDB 持久化索引实现
+ *
+ * 通过 DBGateClient 操作三张表：
+ * - minit_col: multipart 会话
+ * - part_col: 分段记录
+ * - fileidx_col: 对象元数据
+ */
+class MongoUploadIndex final : public IUploadIndex {
  public:
-  InMemoryUploadIndex() = default;
-  ~InMemoryUploadIndex() override = default;
-
-  InMemoryUploadIndex(const InMemoryUploadIndex&)            = delete;
-  InMemoryUploadIndex& operator=(const InMemoryUploadIndex&) = delete;
+  explicit MongoUploadIndex(DBGateClient* client);
 
   [[nodiscard]] std::string Create(
       const std::string& bucket, const std::string& key,
@@ -39,7 +36,6 @@ class InMemoryUploadIndex final : public IUploadIndex {
   void Remove(const std::string& upload_id) override;
   void RemoveExpired(std::int64_t ttl_ms) override;
 
-  // ✅ 新增接口（增量写索引）
   [[nodiscard]] bool UpdateMergedSize(
       const std::string& upload_id, std::uint64_t merged_size) override;
   [[nodiscard]] bool UpdateLastMergedPart(
@@ -55,14 +51,7 @@ class InMemoryUploadIndex final : public IUploadIndex {
       const std::string& etag) override;
 
  private:
-  struct Entry {
-    UploadRecord            record;
-    std::vector<PartRecord> parts;
-    mutable std::mutex      parts_mu;
-  };
-
-  std::unordered_map<std::string, std::unique_ptr<Entry>> sessions_;
-  std::shared_mutex                                        sessions_mu_;
+  DBGateClient* client_;  // 不拥有所有权，由外部管理生命周期
 };
 
 }  // namespace us3_turbo::proxy

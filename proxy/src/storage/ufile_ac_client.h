@@ -68,7 +68,7 @@ class UfileAcClient {
  private:
   // 拆分 "host:port" → host + port；失败返回 false。
   static bool ParseEndpoint(const std::string& endpoint,
-                            std::string& host, int port);
+                            std::string& host, int& port);
   // 方案 A 惰性取连接：轮询最多 pool_size 次，跳过/重连坏连接。
   // 返回 {idx, conn*}；全坏返回 {npos, nullptr}。
   std::pair<std::size_t, TcpConnection*> AcquireConn();

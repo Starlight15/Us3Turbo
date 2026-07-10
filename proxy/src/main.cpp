@@ -10,10 +10,12 @@
 #include "proxy/src/api/proxy_service.h"
 #include "proxy/src/common/flags.h"
 #include "proxy/src/index/in_memory_upload_index.h"
+#include "proxy/src/index/mongo_upload_index.h"
 #include "proxy/src/logging/access_logger.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
+#include "proxy/src/storage/dbgate_client.h"
 #include "proxy/src/storage/ufile_ac_client.h"
 
 namespace {
@@ -35,7 +37,8 @@ void InitLogging() {
 // 成员析构逆序 = service→index→ufile_ac，保证 service 的 TTL 清理
 struct AssembledStack {
   std::unique_ptr<us3_turbo::proxy::UfileAcClient>       ufile_ac;
-  std::unique_ptr<us3_turbo::proxy::InMemoryUploadIndex> index;
+  std::unique_ptr<us3_turbo::proxy::DBGateClient>        dbgate;
+  std::unique_ptr<us3_turbo::proxy::IUploadIndex>        index;
   std::unique_ptr<us3_turbo::proxy::ProxyService>        service;
 };
 
@@ -44,9 +47,12 @@ std::unique_ptr<AssembledStack> AssembleServices() {
   auto stack = std::make_unique<AssembledStack>();
   stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
-  stack->index = std::make_unique<us3_turbo::proxy::InMemoryUploadIndex>();
+  stack->dbgate = std::make_unique<us3_turbo::proxy::DBGateClient>(
+      FLAGS_dbgate_endpoint, FLAGS_dbgate_timeout_ms, FLAGS_dbgate_conn_pool_size);
+  stack->index = std::make_unique<us3_turbo::proxy::MongoUploadIndex>(
+      stack->dbgate.get());
   auto single_put = std::make_unique<us3_turbo::proxy::SinglePut>(
-      stack->ufile_ac.get());
+      stack->index.get(), stack->ufile_ac.get());
   auto multipart = std::make_unique<us3_turbo::proxy::Multipart>(
       stack->index.get(), stack->ufile_ac.get());
   stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(

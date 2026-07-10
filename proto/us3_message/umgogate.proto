@@ -1,0 +1,131 @@
+package ucloud.umgogate;
+
+import "ucloud.proto";
+
+enum MessageType {
+	option allow_alias = true;
+	BEGINNING_ID = 150000;
+
+	EXECUTE_MGO_REQUEST = 150000;
+	EXECUTE_MGO_RESPONSE = 150001;
+
+	ENDING_ID = 151000;
+};
+
+extend ucloud.Body {
+	optional ExecuteMgoRequest execute_mgo_request = 150000;
+	optional ExecuteMgoResponse execute_mgo_response = 150001;
+};
+
+
+message ExecuteMgoRequest {
+    required string db = 10;
+	required string collection = 20;
+	required OpType optype = 30;
+
+	optional OpDeleteReq op_delete_req = 40;
+	optional OpExecCmdReq op_exec_cmd_req = 50;
+	optional OpFindReq op_find_req = 60;
+	optional OpInsertReq op_insert_req = 70;
+	optional OpUpdateReq op_update_req = 80;
+    
+    optional bool is_slave = 90 [default = false];
+};
+
+message ExecuteMgoResponse {
+	required ResponseCode rc = 10;
+	required OpType optype = 20;
+
+	optional OpDeleteRsp op_delete_rsp = 30;
+	optional OpExecCmdRsp op_exec_cmd_rsp = 40;
+	optional OpFindRsp op_find_rsp = 50;
+	optional OpInsertRsp op_insert_rsp = 60;
+	optional OpUpdateRsp op_update_rsp = 70;
+};
+
+//---------------------------------
+enum OpType {
+	OP_DELETE = 0;
+	OP_EXEC_CMD = 1;
+	OP_FIND = 2;
+	OP_INSERT = 3;
+	OP_UPDATE = 4;
+	OP_NONE = 5;
+};
+
+enum RetCode {
+    MONGO_OPERATION_EMPTY = 1;
+    MONGO_OP_SUCC = 0;
+    MONGO_CLIENT_FAIL = -1;
+    MONGO_COLLECTION_FAIL = -2;
+    MONGO_REQ_NON_EXIST = -3;
+    MONGO_OPERATE_FAIL = -4; 
+    MONGO_OPTION_NON_EXIST = -5; 
+    MONGO_REQ_JSON_FAIL = -6; 
+}
+
+message OpDeleteReq {
+	required bytes selector = 10;
+	optional bool  return_content = 20 [default = false ];
+};
+message OpDeleteRsp {
+	repeated bytes contents = 10;
+};
+
+message OpExecCmdReq {
+	required bytes command = 10;
+};
+message OpExecCmdRsp {
+	optional bytes results = 10;
+};
+
+message OpFindReq {
+	required bytes selector = 10;
+	optional bytes fields = 20;
+	optional uint32 skip = 30;
+	optional uint32 limit = 40;
+	optional uint64 count = 50;
+};
+message OpFindRsp {
+	optional bool  eof = 10;
+	repeated bytes results = 20;
+	optional bool  notfound = 30;
+	optional int64 count = 40;
+};
+
+message OpInsertReq {
+	repeated bytes doc = 10;
+};
+message OpInsertRsp {
+	repeated bytes fails = 10;
+	optional bool  dumpkey = 20 [default = false];
+    repeated uint32 fail_idxs = 30;
+};
+
+message UpdatePair {
+	required bytes  selector = 10;
+	required bytes  doc = 20;
+	optional bool   upsert = 30;
+	//return new content
+	optional bool   newly = 40 [default = false];
+	//用于读取回应时可以相匹配
+	optional uint32 id = 50;
+    //return old content
+    optional bool   oldly = 60 [default = false];
+    optional bool multi_update = 70 [default = false];
+};
+
+message UpdateRspPair {
+	optional uint32 id = 10;
+	optional bytes  old_doc = 20;
+    optional bytes  new_doc = 30;
+    optional bool   notfound = 40;
+};
+
+message OpUpdateReq {
+	repeated UpdatePair pairs = 10;
+};
+message OpUpdateRsp {
+	repeated UpdateRspPair rsp = 10;
+	optional int32         update_n = 20;
+};

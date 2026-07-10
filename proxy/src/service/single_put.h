@@ -8,6 +8,7 @@
 
 namespace us3_turbo::proxy {
 
+class IUploadIndex;
 class UfileAcClient;
 
 /**
@@ -24,7 +25,8 @@ struct PutOutput {
  */
 class SinglePut {
  public:
-  explicit SinglePut(UfileAcClient* client) : client_(client) {}
+  explicit SinglePut(IUploadIndex* index, UfileAcClient* client)
+      : index_(index), client_(client) {}
 
   [[nodiscard]] int PutGds(const ClientProxyPutRequest& request,
                            PutOutput& out);
@@ -41,6 +43,7 @@ class SinglePut {
       const std::string& obj_id, std::uint64_t object_size,
       std::uint32_t crc32c, PutOutput& out);
 
+  IUploadIndex*  index_;
   UfileAcClient* client_;
 };
 
