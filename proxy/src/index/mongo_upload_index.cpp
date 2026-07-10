@@ -17,15 +17,12 @@ std::string MongoUploadIndex::Create(
   const std::string upload_id = utils::GenUuid();
   const std::string obj_id = utils::GenUuid();
 
-  // path → 字符串
-  std::string path_str = std::to_string(static_cast<int>(path));
-
   int ret = client_->InsertMinit(
       upload_id,
       static_cast<std::uint32_t>(FLAGS_bucket_id),
       key,
       obj_id,
-      path_str);
+      static_cast<int>(path));
   if (ret != 0) {
     LOG_SYS_ERROR("InsertMinit failed: upload_id={} ret={}", upload_id, ret);
     return {};

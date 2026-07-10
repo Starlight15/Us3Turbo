@@ -49,7 +49,7 @@ bool DBGateClient::ParseEndpoint(const std::string& endpoint,
 }
 
 std::pair<std::size_t, TcpConnection*> DBGateClient::AcquireConn() {
-  if (conns_.empty()) return {std::string::npos, nullptr};
+  if (conns_.empty()) return {kInvalidConnIndex, nullptr};
 
   std::size_t start = next_idx_.fetch_add(1, std::memory_order_relaxed) % conns_.size();
   for (std::size_t i = 0; i < conns_.size(); ++i) {
@@ -58,7 +58,7 @@ std::pair<std::size_t, TcpConnection*> DBGateClient::AcquireConn() {
     if (conn->alive()) return {idx, conn};
     if (conn->Connect()) return {idx, conn};
   }
-  return {std::string::npos, nullptr};
+  return {kInvalidConnIndex, nullptr};
 }
 
 int DBGateClient::SendAndRecv(const std::vector<char>& req_buf,
@@ -261,7 +261,7 @@ int DBGateClient::InsertMinit(
     std::uint32_t bucket_id,
     const std::string& key,
     const std::string& first_object,
-    const std::string& path_str) {
+    int path) {
 
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   mgo_req.set_db("mupload_db");
@@ -271,7 +271,7 @@ int DBGateClient::InsertMinit(
   std::string doc = fmt::format(
       R"({{"uploadid":"{}", "bucket_id":{}, "key":"{}", "first_object":"{}", )"
       R"("path":{}, "block_size":4194304, "merged_size":0, "last_merged_part":0, "status":0}})",
-      upload_id, bucket_id, key, first_object, static_cast<int>(std::stoi(path_str)));
+      upload_id, bucket_id, key, first_object, path);
 
   mgo_req.mutable_op_insert_req()->add_doc(doc);
 

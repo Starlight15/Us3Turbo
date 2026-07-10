@@ -37,7 +37,7 @@ class SinglePut {
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyPutRequest& req);
   [[nodiscard]] int ValidateUcxRequest(const ClientProxyPutRequest& req);
 
-  void WriteObjectIndex(
+  [[nodiscard]] bool WriteObjectIndex(
       const std::string& request_id,
       const std::string& bucket, const std::string& key,
       const std::string& obj_id, std::uint64_t object_size,

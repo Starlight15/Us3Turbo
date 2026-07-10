@@ -108,7 +108,7 @@ int Multipart::ValidateUploadPartUcx(
   return 0;
 }
 
-void Multipart::WritePartIndex(
+bool Multipart::WritePartIndex(
     const std::string& request_id, const std::string& upload_id,
     std::uint32_t part_number, std::uint64_t part_size,
     std::uint64_t file_offset, const std::vector<std::uint32_t>& block_crcs,
@@ -129,7 +129,7 @@ void Multipart::WritePartIndex(
   if (!index_->AddPart(upload_id, part)) {
     LOG_ERROR(request_id, "upload={} part={} AddPart failed", upload_id, part_number);
     // 注：此处不清理 blocks（caller 负责，若 WritePartIndex 失败会走 cleanup）
-    return;
+    return false;
   }
 
   /* 3. 更新 upload 级合并进度（对齐 s3proxy） */
@@ -142,6 +142,7 @@ void Multipart::WritePartIndex(
   out.bytes_written = part_size;
   LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}",
            upload_id, part_number, out.etag, block_crcs.size());
+  return true;
 }
 
 Multipart::Multipart(IUploadIndex* index, UfileAcClient* client)
@@ -223,9 +224,8 @@ int Multipart::UploadPartGds(
   }
 
   /* ④ 写索引 + 填输出 */
-  WritePartIndex(request_id, upload_id, part_number, part_size,
-                 file_offset, crcs, out);
-  if (out.etag.empty()) {
+  if (!WritePartIndex(request_id, upload_id, part_number, part_size,
+                      file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
               upload_id, part_number);
     CleanupWrittenBlocks(request_id, written_keys);
@@ -293,9 +293,8 @@ int Multipart::UploadPartUcx(
   }
 
   /* ④ 写索引 + 填输出 */
-  WritePartIndex(request_id, upload_id, part_number, part_size,
-                 file_offset, crcs, out);
-  if (out.etag.empty()) {
+  if (!WritePartIndex(request_id, upload_id, part_number, part_size,
+                      file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
               upload_id, part_number);
     CleanupWrittenBlocks(request_id, written_keys);

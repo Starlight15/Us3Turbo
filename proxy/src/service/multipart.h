@@ -87,7 +87,7 @@ class Multipart {
       const std::string& client_ucx_addr, UploadRecord& out_upload);
 
   // 公共子阶段：写 part 索引 + 更新 upload 进度 + 填充输出
-  void WritePartIndex(
+  [[nodiscard]] bool WritePartIndex(
       const std::string& request_id, const std::string& upload_id,
       std::uint32_t part_number, std::uint64_t part_size,
       std::uint64_t file_offset, const std::vector<std::uint32_t>& block_crcs,

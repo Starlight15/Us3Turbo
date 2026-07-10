@@ -90,9 +90,8 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
             block_key, res.crc32c, res.bytes_written);
 
   // 写对象索引 + 填充输出
-  WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
-                   req.object_size(), res.crc32c, out);
-  if (out.etag.empty()) {
+  if (!WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
+                        req.object_size(), res.crc32c, out)) {
     LOG_ERROR(rid, "WriteObjectIndex failed for key={}", req.key());
     return PROXY_ERR_INDEX_FAILED;
   }
@@ -121,16 +120,15 @@ int SinglePut::PutUcx(const ClientProxyPutRequest& req, PutOutput& out) {
             block_key, res.crc32c, res.bytes_written);
 
   // 写对象索引 + 填充输出
-  WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
-                   req.object_size(), res.crc32c, out);
-  if (out.etag.empty()) {
+  if (!WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
+                        req.object_size(), res.crc32c, out)) {
     LOG_ERROR(rid, "WriteObjectIndex failed for key={}", req.key());
     return PROXY_ERR_INDEX_FAILED;
   }
   return 0;
 }
 
-void SinglePut::WriteObjectIndex(
+bool SinglePut::WriteObjectIndex(
     const std::string& request_id,
     const std::string& bucket, const std::string& key,
     const std::string& obj_id, std::uint64_t object_size,
@@ -163,7 +161,9 @@ void SinglePut::WriteObjectIndex(
                block_key, result.error);
     }
     out.etag.clear();  // 标记失败
+    return false;
   }
+  return true;
 }
 
 }  // namespace us3_turbo::proxy

@@ -25,6 +25,9 @@ namespace us3_turbo::proxy {
  */
 class DBGateClient {
  public:
+  // AcquireConn 无可用连接时返回的哨兵索引（区别于合法下标）
+  static constexpr std::size_t kInvalidConnIndex = static_cast<std::size_t>(-1);
+
   DBGateClient(const std::string& endpoint, int timeout_ms, int pool_size);
 
   // ========== fileidx_col ==========
@@ -46,7 +49,7 @@ class DBGateClient {
       std::uint32_t bucket_id,
       const std::string& key,
       const std::string& first_object,
-      const std::string& path_str);
+      int path);
 
   /** @brief Query minit_col 文档（GetUpload）. Returns 0=ok, -1=not found, other=error */
   [[nodiscard]] int QueryMinit(
