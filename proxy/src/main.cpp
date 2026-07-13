@@ -15,7 +15,7 @@
 #include "proxy/src/service/get_object.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
-#include "proxy/src/storage/dbgate_client.h"
+#include "proxy/src/index/dbgate_client.h"
 #include "proxy/src/storage/ufile_ac_client.h"
 
 namespace {

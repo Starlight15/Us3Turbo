@@ -4,7 +4,7 @@
 #include <string>
 
 #include "proxy/src/index/upload_index.h"
-#include "proxy/src/storage/dbgate_client.h"
+#include "proxy/src/index/dbgate_client.h"
 
 namespace us3_turbo::proxy {
 

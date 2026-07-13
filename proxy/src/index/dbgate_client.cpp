@@ -1,4 +1,4 @@
-#include "proxy/src/storage/dbgate_client.h"
+#include "proxy/src/index/dbgate_client.h"
 
 #include <arpa/inet.h>
 #include <cstring>
