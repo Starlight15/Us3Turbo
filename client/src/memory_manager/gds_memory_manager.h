@@ -27,15 +27,16 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
     ~Token();
 
     [[nodiscard]] std::string_view str() const noexcept;
-    [[nodiscard]] bool             valid() const noexcept { return tok_ != nullptr; }
+    [[nodiscard]] bool valid() const noexcept { return tok_ != nullptr; }
 
    private:
     friend class GdsMemoryManager;
-    Token(cuObjClient* client, char* tok) noexcept : client_(client), tok_(tok) {}
+    Token(cuObjClient* client, char* tok) noexcept
+        : client_(client), tok_(tok) {}
     void Reset() noexcept;
 
     cuObjClient* client_{nullptr};
-    char*        tok_{nullptr};
+    char* tok_{nullptr};
   };
 
   /** @brief 获取进程唯一实例,失败返回 false。 */
@@ -50,11 +51,11 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
   /** @brief 获取 RDMA token(RAII 析构自动释放)。未注册的 ptr 会 lazy register。
    *  operation: CUOBJ_PUT(默认，写场景 backend RDMA_READ) 或
    *  CUOBJ_GET(读场景 backend RDMA_WRITE)。 */
-  [[nodiscard]] bool AcquireToken(const void* ptr, std::size_t size,
-                                       std::size_t offset, Token& out,
-                                       cuObjOpType_t operation = static_cast<cuObjOpType_t>(0));
+  [[nodiscard]] bool AcquireToken(
+      const void* ptr, std::size_t size, std::size_t offset, Token& out,
+      cuObjOpType_t operation = static_cast<cuObjOpType_t>(0));
 
-  GdsMemoryManager(const GdsMemoryManager&)            = delete;
+  GdsMemoryManager(const GdsMemoryManager&) = delete;
   GdsMemoryManager& operator=(const GdsMemoryManager&) = delete;
 
  private:
@@ -69,7 +70,7 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
 
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  bool                  connected_{false};
+  bool connected_{false};
 };
 
 }  // namespace us3_turbo::client

@@ -28,7 +28,7 @@ constexpr auto kTable = MakeTable();
 std::uint32_t Crc32cInit() noexcept { return 0xFFFFFFFFu; }
 
 std::uint32_t Crc32cUpdate(std::uint32_t state, const void* data,
-                            std::size_t n) noexcept {
+                           std::size_t n) noexcept {
   const auto* p = static_cast<const std::uint8_t*>(data);
   for (std::size_t i = 0; i < n; ++i) {
     state = (state >> 8) ^ kTable[(state ^ p[i]) & 0xFFu];
@@ -41,13 +41,11 @@ std::uint32_t Crc32cFinalize(std::uint32_t state) noexcept {
 }
 
 std::uint32_t Crc32c(std::span<const std::byte> data) noexcept {
-  return Crc32cFinalize(
-      Crc32cUpdate(Crc32cInit(), data.data(), data.size()));
+  return Crc32cFinalize(Crc32cUpdate(Crc32cInit(), data.data(), data.size()));
 }
 
 std::uint32_t Crc32c(std::string_view data) noexcept {
-  return Crc32cFinalize(
-      Crc32cUpdate(Crc32cInit(), data.data(), data.size()));
+  return Crc32cFinalize(Crc32cUpdate(Crc32cInit(), data.data(), data.size()));
 }
 
 }  // namespace us3_turbo::client

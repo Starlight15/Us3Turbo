@@ -1,10 +1,12 @@
 // ucx_put_example.cpp — UCX PUT 端到端验证。
 //
-// 与 gds_put_example 对应：用 host 内存（非 device 显存）走 UCX 链路（底层 RDMA）。
-// client → proxy → backend（backend ucp_get_nbx 反向拉 client host 内存）。
+// 与 gds_put_example 对应：用 host 内存（非 device 显存）走 UCX 链路（底层
+// RDMA）。 client → proxy → backend（backend ucp_get_nbx 反向拉 client host
+// 内存）。
 //
 // 用法：
-//   us3_turbo_ucx_put_example --proxy 192.168.1.198:9100 [--size 100M] [--verify-crc32c]
+//   us3_turbo_ucx_put_example --proxy 192.168.1.198:9100 [--size 100M]
+//   [--verify-crc32c]
 
 #include <algorithm>
 #include <cstdint>
@@ -14,9 +16,8 @@
 #include <string>
 #include <vector>
 
-#include "us3_turbo/client/client.h"
-
 #include "client/src/common/request.h"
+#include "us3_turbo/client/client.h"
 
 namespace {
 
@@ -32,11 +33,20 @@ bool ParseSize(const std::string& s, std::uint64_t& out) {
   if (i < s.size()) {
     if (i + 1 != s.size()) return false;
     switch (std::tolower(static_cast<unsigned char>(s[i]))) {
-      case 'b': mul = 1ULL; break;
-      case 'k': mul = 1024ULL; break;
-      case 'm': mul = 1024ULL * 1024; break;
-      case 'g': mul = 1024ULL * 1024 * 1024; break;
-      default: return false;
+      case 'b':
+        mul = 1ULL;
+        break;
+      case 'k':
+        mul = 1024ULL;
+        break;
+      case 'm':
+        mul = 1024ULL * 1024;
+        break;
+      case 'g':
+        mul = 1024ULL * 1024 * 1024;
+        break;
+      default:
+        return false;
     }
   }
   out = num * mul;
@@ -55,26 +65,42 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     auto need = [&](std::string& v) -> bool {
-      if (i + 1 >= argc) { std::cerr << "missing value for " << arg << "\n"; return false; }
-      v = argv[++i]; return true;
+      if (i + 1 >= argc) {
+        std::cerr << "missing value for " << arg << "\n";
+        return false;
+      }
+      v = argv[++i];
+      return true;
     };
-    if (arg == "--proxy") { if (!need(proxy_addr)) return 2; }
-    else if (arg == "--size") {
-      std::string v; if (!need(v) || !ParseSize(v, bytes)) { std::cerr << "bad --size\n"; return 2; }
+    if (arg == "--proxy") {
+      if (!need(proxy_addr)) return 2;
+    } else if (arg == "--size") {
+      std::string v;
+      if (!need(v) || !ParseSize(v, bytes)) {
+        std::cerr << "bad --size\n";
+        return 2;
+      }
+    } else if (arg == "--verify-crc32c") {
+      verify = true;
+    } else {
+      std::cerr << "unknown arg: " << arg << "\n";
+      return 2;
     }
-    else if (arg == "--verify-crc32c") { verify = true; }
-    else { std::cerr << "unknown arg: " << arg << "\n"; return 2; }
   }
 
   std::vector<std::byte> host(bytes);
-  for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
+  for (std::size_t i = 0; i < bytes; ++i)
+    host[i] = static_cast<std::byte>(i % 251U);
 
   ClientOptions opts;
   opts.endpoint = proxy_addr;
   opts.verify_crc32c = verify;
 
   Client client(std::move(opts));
-  if (!client.Initialize()) { std::cerr << "Initialize failed\n"; return 1; }
+  if (!client.Initialize()) {
+    std::cerr << "Initialize failed\n";
+    return 1;
+  }
 
   ClientProxyPutRequest req;
   req.bucket = "test-bucket";
@@ -83,14 +109,17 @@ int main(int argc, char** argv) {
   req.path = PutDataPath::kUcx;
 
   ClientProxyPutResponse resp;
-  bool ok = client.PutObject(req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
+  bool ok = client.PutObject(
+      req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
 
   client.Shutdown();
 
-  if (!ok) { std::cerr << "PutObject(kUcx) FAILED\n"; return 1; }
+  if (!ok) {
+    std::cerr << "PutObject(kUcx) FAILED\n";
+    return 1;
+  }
   const auto& r = resp.ucx_result.value();
-  std::cout << "OK bytes=" << r.bytes_written
-            << " etag=" << r.etag
+  std::cout << "OK bytes=" << r.bytes_written << " etag=" << r.etag
             << " crc32c=" << std::hex << r.crc32c << std::dec << "\n";
   return 0;
 }

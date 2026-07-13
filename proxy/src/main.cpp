@@ -9,13 +9,13 @@
 
 #include "proxy/src/api/proxy_service.h"
 #include "proxy/src/common/flags.h"
+#include "proxy/src/index/dbgate_client.h"
 #include "proxy/src/index/mongo_upload_index.h"
 #include "proxy/src/logging/access_logger.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/service/get_object.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
-#include "proxy/src/index/dbgate_client.h"
 #include "proxy/src/storage/ufile_ac_client.h"
 
 namespace {
@@ -23,12 +23,14 @@ namespace {
 /* 初始化日志 */
 void InitLogging() {
   spdlog::level::level_enum level = spdlog::level::info;
-  if (FLAGS_log_level == "debug")      level = spdlog::level::debug;
-  else if (FLAGS_log_level == "warn")  level = spdlog::level::warn;
-  else if (FLAGS_log_level == "error") level = spdlog::level::err;
+  if (FLAGS_log_level == "debug")
+    level = spdlog::level::debug;
+  else if (FLAGS_log_level == "warn")
+    level = spdlog::level::warn;
+  else if (FLAGS_log_level == "error")
+    level = spdlog::level::err;
   us3_turbo::proxy::Logger::Init(
-      level,
-      static_cast<std::size_t>(FLAGS_log_max_size_mb),
+      level, static_cast<std::size_t>(FLAGS_log_max_size_mb),
       static_cast<std::size_t>(FLAGS_log_max_files));
   us3_turbo::proxy::AccessLogger::Instance();
 }
@@ -39,9 +41,10 @@ std::unique_ptr<us3_turbo::proxy::AssembledStack> AssembleServices() {
   stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
   stack->dbgate = std::make_unique<us3_turbo::proxy::DBGateClient>(
-      FLAGS_dbgate_endpoint, FLAGS_dbgate_timeout_ms, FLAGS_dbgate_conn_pool_size);
-  stack->index = std::make_unique<us3_turbo::proxy::MongoUploadIndex>(
-      stack->dbgate.get());
+      FLAGS_dbgate_endpoint, FLAGS_dbgate_timeout_ms,
+      FLAGS_dbgate_conn_pool_size);
+  stack->index =
+      std::make_unique<us3_turbo::proxy::MongoUploadIndex>(stack->dbgate.get());
   auto single_put = std::make_unique<us3_turbo::proxy::SinglePut>(
       stack->index.get(), stack->ufile_ac.get());
   auto multipart = std::make_unique<us3_turbo::proxy::Multipart>(
@@ -49,7 +52,8 @@ std::unique_ptr<us3_turbo::proxy::AssembledStack> AssembleServices() {
   auto get_object = std::make_unique<us3_turbo::proxy::GetObject>(
       stack->index.get(), stack->ufile_ac.get());
   stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(
-      std::move(single_put), std::move(multipart), std::move(get_object), stack->index.get());
+      std::move(single_put), std::move(multipart), std::move(get_object),
+      stack->index.get());
   return stack;
 }
 
@@ -94,13 +98,15 @@ int main(int argc, char** argv) {
 
   auto stack = AssembleServices();
   LOG_SYS_INFO("[START] services assembled");
-  LOG_SYS_INFO("[CONFIG] backend_endpoint={} (ufile-ac TCP, single-step + multipart blocks)",
-               FLAGS_backend_endpoint);
+  LOG_SYS_INFO(
+      "[CONFIG] backend_endpoint={} (ufile-ac TCP, single-step + multipart "
+      "blocks)",
+      FLAGS_backend_endpoint);
 
   brpc::Server server;
   if (!StartServer(server, *stack->service)) return EXIT_FAILURE;
-  LOG_SYS_INFO("[START] proxy started, listening on {}:{}",
-               FLAGS_bind_host, FLAGS_proxy_port);
+  LOG_SYS_INFO("[START] proxy started, listening on {}:{}", FLAGS_bind_host,
+               FLAGS_proxy_port);
 
   RunUntilAskedToQuit();
 

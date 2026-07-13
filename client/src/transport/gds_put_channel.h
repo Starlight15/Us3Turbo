@@ -12,7 +12,8 @@ namespace us3_turbo::client {
 
 class ProxyRpc;
 
-/** @brief GDS 链路的 PutChannel:device 显存走 cuObj RDMA token + backend 反向 RDMA-READ。 */
+/** @brief GDS 链路的 PutChannel:device 显存走 cuObj RDMA token + backend 反向
+ * RDMA-READ。 */
 class GdsPutChannel final : public PutChannel {
  public:
   GdsPutChannel(const ClientOptions& options, const ProxyRpc& proxy,
@@ -24,9 +25,9 @@ class GdsPutChannel final : public PutChannel {
                              PutPathResult& result) const override;
 
  private:
-  const ClientOptions&  options_;
-  const ProxyRpc&        proxy_;
-  GdsMemoryManager*      gds_mgr_;
+  const ClientOptions& options_;
+  const ProxyRpc& proxy_;
+  GdsMemoryManager* gds_mgr_;
 };
 
 }  // namespace us3_turbo::client

@@ -34,29 +34,30 @@ using clk = std::chrono::steady_clock;
 
 /** @brief 性能追踪阶段名 + 时间戳。*/
 struct LatencyStage {
-  std::string_view    name;
-  clk::time_point     timestamp;
+  std::string_view name;
+  clk::time_point timestamp;
 };
 
 /** @brief 打印相邻阶段耗时 + 首→末总耗时(latency_trace 开启时调用)。*/
 inline void TraceLatency(const std::string& request_id,
-                          std::string_view operation_name,
-                          std::span<const LatencyStage> stages,
-                          std::size_t bytes) {
+                         std::string_view operation_name,
+                         std::span<const LatencyStage> stages,
+                         std::size_t bytes) {
   const auto ms = [](clk::time_point a, clk::time_point b) {
     return std::chrono::duration<double, std::milli>(b - a).count();
   };
 
   std::string parts;
   for (std::size_t i = 1; i < stages.size(); ++i) {
-    parts += fmt::format("{}={:.3f}ms ", stages[i].name, ms(stages[i - 1].timestamp,
-                                                            stages[i].timestamp));
+    parts += fmt::format("{}={:.3f}ms ", stages[i].name,
+                         ms(stages[i - 1].timestamp, stages[i].timestamp));
   }
   const double total =
-      stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp) : 0.0;
+      stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp)
+                         : 0.0;
 
-  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}",
-               operation_name, request_id, parts, total, bytes);
+  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name,
+               request_id, parts, total, bytes);
 }
 
 }  // namespace detail

@@ -2,10 +2,10 @@
 
 #include <ctime>
 #include <string>
+#include <sys/stat.h>
 
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
-#include <sys/stat.h>
 
 namespace us3_turbo::proxy {
 
@@ -23,15 +23,14 @@ std::string MakeLogFileName() {
 
 /* 创建 logs/ 目录 */
 void EnsureLogDir() {
-  struct stat st{};
+  struct stat st {};
   if (::stat("logs", &st) == 0) return;  // already exists
   if (::mkdir("logs", 0755) == 0) return;
 }
 
 }  // namespace
 
-void Logger::Init(spdlog::level::level_enum level,
-                  std::size_t max_file_size_mb,
+void Logger::Init(spdlog::level::level_enum level, std::size_t max_file_size_mb,
                   std::size_t max_files) {
   EnsureLogDir();
 

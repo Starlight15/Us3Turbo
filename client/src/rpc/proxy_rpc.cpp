@@ -17,30 +17,28 @@ namespace {
 // 把 controller 失败填进 PutPathResult 并记日志,区分超时与数据面错误。
 bool FailResult(PutPathResult& result, const brpc::Controller& cntl,
                 std::string_view request_id, std::string_view op) {
-  const bool is_timeout =
-      (cntl.ErrorCode() == brpc::ERPCTIMEDOUT) ||
-      (cntl.ErrorCode() == ETIMEDOUT);
+  const bool is_timeout = (cntl.ErrorCode() == brpc::ERPCTIMEDOUT) ||
+                          (cntl.ErrorCode() == ETIMEDOUT);
   result.ok = false;
   result.error_message = cntl.ErrorText();
   spdlog::error("{} (req={}): failed to execute {} RPC: {}",
-                is_timeout ? "timeout" : "data-plane",
-                request_id, op, cntl.ErrorText());
+                is_timeout ? "timeout" : "data-plane", request_id, op,
+                cntl.ErrorText());
   return false;
 }
 
 }  // namespace
 
-bool ProxyRpc::GdsPut(std::string_view request_id,
-                      const std::string& bucket,
-                      const std::string& key,
-                      std::uint64_t object_size,
+bool ProxyRpc::GdsPut(std::string_view request_id, const std::string& bucket,
+                      const std::string& key, std::uint64_t object_size,
                       const GdsDataSource& gds_source,
                       PutPathResult& result) const {
   if (!ok()) {
-    spdlog::error("GdsPut (req={}): proxy channel not ready: {}",
-                  request_id, init_error());
+    spdlog::error("GdsPut (req={}): proxy channel not ready: {}", request_id,
+                  init_error());
     result.ok = false;
-    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    result.error_message =
+        std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
 
@@ -62,26 +60,25 @@ bool ProxyRpc::GdsPut(std::string_view request_id,
     return FailResult(result, controller, request_id, "GDS");
   }
 
-  result.ok           = resp.ok();
-  result.error_code   = resp.error_code();
+  result.ok = resp.ok();
+  result.error_code = resp.error_code();
   result.error_message = resp.error_message();
-  result.etag         = resp.etag();
-  result.crc32c       = resp.crc32c();
+  result.etag = resp.etag();
+  result.crc32c = resp.crc32c();
   result.bytes_written = resp.bytes_written();
   return resp.ok();
 }
 
-bool ProxyRpc::UcxPut(std::string_view request_id,
-                      const std::string& bucket,
-                      const std::string& key,
-                      std::uint64_t object_size,
+bool ProxyRpc::UcxPut(std::string_view request_id, const std::string& bucket,
+                      const std::string& key, std::uint64_t object_size,
                       const UcxDataSource& ucx_source,
                       PutPathResult& result) const {
   if (!ok()) {
-    spdlog::error("UcxPut (req={}): proxy channel not ready: {}",
-                  request_id, init_error());
+    spdlog::error("UcxPut (req={}): proxy channel not ready: {}", request_id,
+                  init_error());
     result.ok = false;
-    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    result.error_message =
+        std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
 
@@ -106,11 +103,11 @@ bool ProxyRpc::UcxPut(std::string_view request_id,
     return FailResult(result, controller, request_id, "UCX");
   }
 
-  result.ok           = resp.ok();
-  result.error_code   = resp.error_code();
+  result.ok = resp.ok();
+  result.error_code = resp.error_code();
   result.error_message = resp.error_message();
-  result.etag         = resp.etag();
-  result.crc32c       = resp.crc32c();
+  result.etag = resp.etag();
+  result.crc32c = resp.crc32c();
   result.bytes_written = resp.bytes_written();
   return resp.ok();
 }
@@ -120,13 +117,12 @@ bool ProxyRpc::UcxPut(std::string_view request_id,
 // 与 Control_Stub；proxy 在 Control service 上同时暴露这 4 个 RPC。
 // ---------------------------------------------------------------------------
 
-bool ProxyRpc::CreateMultipartUpload(
-    std::string_view request_id,
-    const std::string& bucket,
-    const std::string& key,
-    ::us3_turbo::proxy::PutDataPath path,
-    std::string& out_upload_id,
-    std::string& out_error) const {
+bool ProxyRpc::CreateMultipartUpload(std::string_view request_id,
+                                     const std::string& bucket,
+                                     const std::string& key,
+                                     ::us3_turbo::proxy::PutDataPath path,
+                                     std::string& out_upload_id,
+                                     std::string& out_error) const {
   if (!ok()) {
     out_error = std::string{"proxy channel not ready: "} + init_error();
     return false;
@@ -144,8 +140,8 @@ bool ProxyRpc::CreateMultipartUpload(
   stub()->CreateMultipartUpload(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     out_error = controller.ErrorText();
-    spdlog::error("CreateMultipartUpload (req={}): rpc failed: {}",
-                  request_id, controller.ErrorText());
+    spdlog::error("CreateMultipartUpload (req={}): rpc failed: {}", request_id,
+                  controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
@@ -156,16 +152,15 @@ bool ProxyRpc::CreateMultipartUpload(
   return true;
 }
 
-bool ProxyRpc::UploadPartGds(
-    std::string_view request_id,
-    const std::string& upload_id,
-    std::uint32_t part_number,
-    std::uint64_t part_size,
-    const std::string& rdma_token,
-    PutPathResult& result) const {
+bool ProxyRpc::UploadPartGds(std::string_view request_id,
+                             const std::string& upload_id,
+                             std::uint32_t part_number, std::uint64_t part_size,
+                             const std::string& rdma_token,
+                             PutPathResult& result) const {
   if (!ok()) {
     result.ok = false;
-    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    result.error_message =
+        std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
   brpc::Controller controller;
@@ -183,26 +178,25 @@ bool ProxyRpc::UploadPartGds(
   if (controller.Failed()) {
     return FailResult(result, controller, request_id, "UploadPartGds");
   }
-  result.ok            = resp.ok();
+  result.ok = resp.ok();
   result.error_message = resp.error_message();
-  result.etag          = resp.etag();
+  result.etag = resp.etag();
   result.bytes_written = resp.bytes_written();
   if (resp.has_crc32c()) result.crc32c = resp.crc32c();
   return resp.ok();
 }
 
-bool ProxyRpc::UploadPartUcx(
-    std::string_view request_id,
-    const std::string& upload_id,
-    std::uint32_t part_number,
-    std::uint64_t part_size,
-    std::uint64_t remote_addr,
-    const std::string& packed_rkey,
-    const std::string& client_ucx_addr,
-    PutPathResult& result) const {
+bool ProxyRpc::UploadPartUcx(std::string_view request_id,
+                             const std::string& upload_id,
+                             std::uint32_t part_number, std::uint64_t part_size,
+                             std::uint64_t remote_addr,
+                             const std::string& packed_rkey,
+                             const std::string& client_ucx_addr,
+                             PutPathResult& result) const {
   if (!ok()) {
     result.ok = false;
-    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    result.error_message =
+        std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
   brpc::Controller controller;
@@ -222,17 +216,16 @@ bool ProxyRpc::UploadPartUcx(
   if (controller.Failed()) {
     return FailResult(result, controller, request_id, "UploadPartUcx");
   }
-  result.ok            = resp.ok();
+  result.ok = resp.ok();
   result.error_message = resp.error_message();
-  result.etag          = resp.etag();
+  result.etag = resp.etag();
   result.bytes_written = resp.bytes_written();
   if (resp.has_crc32c()) result.crc32c = resp.crc32c();
   return resp.ok();
 }
 
 bool ProxyRpc::CompleteMultipartUpload(
-    std::string_view request_id,
-    const std::string& upload_id,
+    std::string_view request_id, const std::string& upload_id,
     const std::vector<std::pair<std::uint32_t, std::string>>& parts,
     CompletedMultipart& out) const {
   if (!ok()) {
@@ -259,18 +252,17 @@ bool ProxyRpc::CompleteMultipartUpload(
                   request_id, controller.ErrorText());
     return false;
   }
-  out.ok          = resp.ok();
-  out.object_id   = resp.object_id();
-  out.etag        = resp.etag();
+  out.ok = resp.ok();
+  out.object_id = resp.object_id();
+  out.etag = resp.etag();
   out.object_size = resp.object_size();
-  out.error       = resp.error_message();
+  out.error = resp.error_message();
   return resp.ok();
 }
 
-bool ProxyRpc::AbortMultipartUpload(
-    std::string_view request_id,
-    const std::string& upload_id,
-    std::string& out_error) const {
+bool ProxyRpc::AbortMultipartUpload(std::string_view request_id,
+                                    const std::string& upload_id,
+                                    std::string& out_error) const {
   if (!ok()) {
     out_error = std::string{"proxy channel not ready: "} + init_error();
     return false;
@@ -286,8 +278,8 @@ bool ProxyRpc::AbortMultipartUpload(
   stub()->AbortMultipartUpload(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     out_error = controller.ErrorText();
-    spdlog::error("AbortMultipartUpload (req={}): rpc failed: {}",
-                  request_id, controller.ErrorText());
+    spdlog::error("AbortMultipartUpload (req={}): rpc failed: {}", request_id,
+                  controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
@@ -302,8 +294,7 @@ bool ProxyRpc::AbortMultipartUpload(
 // ---------------------------------------------------------------------------
 
 bool ProxyRpc::StatObject(std::string_view request_id,
-                          const std::string& bucket,
-                          const std::string& key,
+                          const std::string& bucket, const std::string& key,
                           std::uint64_t& out_object_size,
                           std::string& out_error) const {
   if (!ok()) {
@@ -322,8 +313,8 @@ bool ProxyRpc::StatObject(std::string_view request_id,
   stub()->StatObject(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     out_error = controller.ErrorText();
-    spdlog::error("StatObject (req={}): rpc failed: {}",
-                  request_id, controller.ErrorText());
+    spdlog::error("StatObject (req={}): rpc failed: {}", request_id,
+                  controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
@@ -334,17 +325,16 @@ bool ProxyRpc::StatObject(std::string_view request_id,
   return true;
 }
 
-bool ProxyRpc::GdsGet(std::string_view request_id,
-                      const std::string& bucket,
-                      const std::string& key,
-                      std::uint64_t object_size,
+bool ProxyRpc::GdsGet(std::string_view request_id, const std::string& bucket,
+                      const std::string& key, std::uint64_t object_size,
                       const GdsDataSource& gds_source,
                       GetPathResult& result) const {
   if (!ok()) {
-    spdlog::error("GdsGet (req={}): proxy channel not ready: {}",
-                  request_id, init_error());
+    spdlog::error("GdsGet (req={}): proxy channel not ready: {}", request_id,
+                  init_error());
     result.ok = false;
-    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    result.error_message =
+        std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
 
@@ -362,37 +352,35 @@ bool ProxyRpc::GdsGet(std::string_view request_id,
   stub()->GdsGet(&controller, &rpc_request, &resp, nullptr);
 
   if (controller.Failed()) {
-    const bool is_timeout =
-        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) ||
-        (controller.ErrorCode() == ETIMEDOUT);
+    const bool is_timeout = (controller.ErrorCode() == brpc::ERPCTIMEDOUT) ||
+                            (controller.ErrorCode() == ETIMEDOUT);
     result.ok = false;
     result.error_message = controller.ErrorText();
     spdlog::error("{} (req={}): failed to execute GdsGet RPC: {}",
-                  is_timeout ? "timeout" : "data-plane",
-                  request_id, controller.ErrorText());
+                  is_timeout ? "timeout" : "data-plane", request_id,
+                  controller.ErrorText());
     return false;
   }
 
-  result.ok           = resp.ok();
-  result.error_code   = resp.error_code();
+  result.ok = resp.ok();
+  result.error_code = resp.error_code();
   result.error_message = resp.error_message();
-  result.crc32c       = resp.crc32c();
-  result.bytes_read   = resp.bytes_read();
-  result.hash         = resp.hash();
+  result.crc32c = resp.crc32c();
+  result.bytes_read = resp.bytes_read();
+  result.hash = resp.hash();
   return resp.ok();
 }
 
-bool ProxyRpc::UcxGet(std::string_view request_id,
-                      const std::string& bucket,
-                      const std::string& key,
-                      std::uint64_t object_size,
+bool ProxyRpc::UcxGet(std::string_view request_id, const std::string& bucket,
+                      const std::string& key, std::uint64_t object_size,
                       const UcxDataSource& ucx_source,
                       GetPathResult& result) const {
   if (!ok()) {
-    spdlog::error("UcxGet (req={}): proxy channel not ready: {}",
-                  request_id, init_error());
+    spdlog::error("UcxGet (req={}): proxy channel not ready: {}", request_id,
+                  init_error());
     result.ok = false;
-    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    result.error_message =
+        std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
 
@@ -413,23 +401,22 @@ bool ProxyRpc::UcxGet(std::string_view request_id,
   stub()->UcxGet(&controller, &rpc_request, &resp, nullptr);
 
   if (controller.Failed()) {
-    const bool is_timeout =
-        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) ||
-        (controller.ErrorCode() == ETIMEDOUT);
+    const bool is_timeout = (controller.ErrorCode() == brpc::ERPCTIMEDOUT) ||
+                            (controller.ErrorCode() == ETIMEDOUT);
     result.ok = false;
     result.error_message = controller.ErrorText();
     spdlog::error("{} (req={}): failed to execute UcxGet RPC: {}",
-                  is_timeout ? "timeout" : "data-plane",
-                  request_id, controller.ErrorText());
+                  is_timeout ? "timeout" : "data-plane", request_id,
+                  controller.ErrorText());
     return false;
   }
 
-  result.ok           = resp.ok();
-  result.error_code   = resp.error_code();
+  result.ok = resp.ok();
+  result.error_code = resp.error_code();
   result.error_message = resp.error_message();
-  result.crc32c       = resp.crc32c();
-  result.bytes_read   = resp.bytes_read();
-  result.hash         = resp.hash();
+  result.crc32c = resp.crc32c();
+  result.bytes_read = resp.bytes_read();
+  result.hash = resp.hash();
   return resp.ok();
 }
 

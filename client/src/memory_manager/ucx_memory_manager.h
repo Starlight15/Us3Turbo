@@ -1,8 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <atomic>
 #include <string>
 #include <thread>
 
@@ -25,10 +25,10 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
  public:
   /** @brief 一次 UCX PUT 的拉取描述符(随 UcxPut 透传给 backend)。 */
   struct Descriptor {
-    std::uint64_t remote_addr{0};      // host buffer 虚拟地址
-    std::string   rkey;                // ucp_rkey_pack 导出的 packed rkey
-    std::string   client_ucx_addr;     // client UCX listener "ip:port"
-    bool          valid() const noexcept { return remote_addr != 0 && !rkey.empty(); }
+    std::uint64_t remote_addr{0};  // host buffer 虚拟地址
+    std::string rkey;              // ucp_rkey_pack 导出的 packed rkey
+    std::string client_ucx_addr;   // client UCX listener "ip:port"
+    bool valid() const noexcept { return remote_addr != 0 && !rkey.empty(); }
   };
 
   /** @brief 获取进程唯一实例,失败返回 false。 */
@@ -38,7 +38,7 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
   [[nodiscard]] bool AcquireDescriptor(const void* ptr, std::size_t size,
                                        Descriptor& out);
 
-  UcxMemoryManager(const UcxMemoryManager&)            = delete;
+  UcxMemoryManager(const UcxMemoryManager&) = delete;
   UcxMemoryManager& operator=(const UcxMemoryManager&) = delete;
 
  private:
@@ -57,26 +57,27 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
   /** @brief 创建 listener 并 query 取回实际绑定地址。 */
   [[nodiscard]] bool InitListener();
   /** @brief 启动后台 progress 线程驱动 conn_handler。 */
-  void              StartProgressThread();
+  void StartProgressThread();
 
   /** @brief 逆序 cleanup 各阶段组件,幂等(nullptr 跳过)。 */
-  void              CleanupListener();
-  void              CleanupWorker();
-  void              CleanupContext();
+  void CleanupListener();
+  void CleanupWorker();
+  void CleanupContext();
 
   /** @brief listener conn_handler:accept 新 ep 完成握手,client 不持有 ep。 */
   static void ConnCallback(ucp_conn_request_h req, void* arg);
 
-  ucp_context_h  context_{nullptr};
-  ucp_worker_h   worker_{nullptr};
+  ucp_context_h context_{nullptr};
+  ucp_worker_h worker_{nullptr};
   ucp_listener_h listener_{nullptr};
-  std::string    listen_addr_;  // "ip:port",随 Descriptor 透传
+  std::string listen_addr_;  // "ip:port",随 Descriptor 透传
 
-  // 后台 progress 线程驱动 listener conn_handler,否则主线程阻塞时 backend dial 超时。
-  std::thread       progress_thread_;
+  // 后台 progress 线程驱动 listener conn_handler,否则主线程阻塞时 backend dial
+  // 超时。
+  std::thread progress_thread_;
   std::atomic<bool> stop_{false};
 
-  bool                                   started_{false};
+  bool started_{false};
 };
 
 }  // namespace us3_turbo::client

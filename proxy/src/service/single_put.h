@@ -13,7 +13,7 @@ class UfileAcClient;
 
 /* 单步上传输出 */
 struct PutOutput {
-  std::string   etag;
+  std::string etag;
   std::uint32_t crc32c{0};
   std::uint64_t bytes_written{0};
 };
@@ -38,13 +38,14 @@ class SinglePut {
   [[nodiscard]] int ValidateUcxRequest(const ClientProxyPutRequest& req);
 
   /* 写对象索引并填充输出 */
-  [[nodiscard]] bool WriteObjectIndex(
-      const std::string& request_id,
-      const std::string& bucket, const std::string& key,
-      const std::string& obj_id, std::uint64_t object_size,
-      std::uint32_t crc32c, PutOutput& out);
+  [[nodiscard]] bool WriteObjectIndex(const std::string& request_id,
+                                      const std::string& bucket,
+                                      const std::string& key,
+                                      const std::string& obj_id,
+                                      std::uint64_t object_size,
+                                      std::uint32_t crc32c, PutOutput& out);
 
-  IUploadIndex*  index_;
+  IUploadIndex* index_;
   UfileAcClient* client_;
 };
 

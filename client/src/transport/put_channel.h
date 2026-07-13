@@ -7,7 +7,8 @@
 
 namespace us3_turbo::client {
 
-/** @brief 单条 PUT 链路抽象:PutOnce 为一次尝试(不含重试),重试由 Client 负责。 */
+/** @brief 单条 PUT 链路抽象:PutOnce 为一次尝试(不含重试),重试由 Client 负责。
+ */
 class PutChannel {
  public:
   virtual ~PutChannel() = default;

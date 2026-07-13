@@ -1,12 +1,12 @@
 #include "proxy/src/storage/tcp_connection.h"
 
 #include <arpa/inet.h>
+#include <cerrno>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <utility>
+
+#include <unistd.h>
 
 namespace us3_turbo::proxy {
 
@@ -18,19 +18,20 @@ bool TcpConnection::Connect() {
   if (fd_ < 0) return false;
 
   struct timeval tv;
-  tv.tv_sec  = timeout_ms_ / 1000;
+  tv.tv_sec = timeout_ms_ / 1000;
   tv.tv_usec = (timeout_ms_ % 1000) * 1000;
   ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-  struct sockaddr_in addr{};
+  struct sockaddr_in addr {};
   addr.sin_family = AF_INET;
-  addr.sin_port   = htons(static_cast<std::uint16_t>(port_));
+  addr.sin_port = htons(static_cast<std::uint16_t>(port_));
   if (::inet_pton(AF_INET, host_.c_str(), &addr.sin_addr) <= 0) {
     Close();
     return false;
   }
-  if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+  if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
+      0) {
     Close();
     return false;
   }
@@ -47,7 +48,8 @@ void TcpConnection::Close() {
 }
 
 int TcpConnection::SendAll(const void* buf, std::size_t len) {
-  if (!alive_.load(std::memory_order_acquire)) return -1;  // 须先经 AcquireConn->Connect
+  if (!alive_.load(std::memory_order_acquire))
+    return -1;  // 须先经 AcquireConn->Connect
   std::size_t sent = 0;
   const auto* p = static_cast<const char*>(buf);
   while (sent < len) {
@@ -68,7 +70,9 @@ int TcpConnection::RecvAll(void* buf, std::size_t len) {
   std::size_t got = 0;
   auto* p = static_cast<char*>(buf);
   while (got < len) {
-    ssize_t n = ::recv(fd_, p + got, len - got, 0);  // 不用 MSG_WAITALL: 超时算无数据而非未收满, 避免误杀慢对端
+    ssize_t n =
+        ::recv(fd_, p + got, len - got,
+               0);  // 不用 MSG_WAITALL: 超时算无数据而非未收满, 避免误杀慢对端
     if (n < 0) {
       if (errno == EINTR) continue;
       set_dead();

@@ -12,7 +12,7 @@ namespace us3_turbo::client {
 struct ClientOptions {
   // proxy 控制面 endpoint
   std::string endpoint;
-  
+
   // 默认超时
   std::chrono::milliseconds default_timeout{std::chrono::milliseconds(30000)};
 

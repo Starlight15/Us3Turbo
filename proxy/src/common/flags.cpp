@@ -20,27 +20,28 @@ DEFINE_int64(max_single_put_bytes, 16LL * 1024 * 1024,
              "max object size (bytes) for single-step GdsPut/UcxPut; larger "
              "objects must use multipart");
 DEFINE_int64(multipart_block_size, 4LL * 1024 * 1024,
-             "block size (bytes) for multipart upload, must align with s3proxy (default 4MB)");
+             "block size (bytes) for multipart upload, must align with s3proxy "
+             "(default 4MB)");
 DEFINE_int64(multipart_part_size, 16LL * 1024 * 1024,
-             "part size (bytes) for multipart upload, must be block_size * blocks_per_part (default 16MB)");
-DEFINE_int32(multipart_blocks_per_part, 4,
-             "number of blocks per part, must equal part_size / block_size (default 4)");
-DEFINE_string(log_level, "info",
-              "app log level: debug/info/warn/error");
+             "part size (bytes) for multipart upload, must be block_size * "
+             "blocks_per_part (default 16MB)");
+DEFINE_int32(
+    multipart_blocks_per_part, 4,
+    "number of blocks per part, must equal part_size / block_size (default 4)");
+DEFINE_string(log_level, "info", "app log level: debug/info/warn/error");
 DEFINE_int32(log_max_size_mb, 50,
              "max size per app log file (MB); rotates when exceeded");
-DEFINE_int32(log_max_files, 10,
-             "max number of rotated app log files to keep");
+DEFINE_int32(log_max_files, 10, "max number of rotated app log files to keep");
 DEFINE_int32(backend_conn_pool_size, 8,
              "backend connection pool size (recommend: ≈ num_threads for best "
              "throughput)");
 DEFINE_string(dbgate_endpoint, "192.168.1.100:20165",
               "DBGate proxy endpoint for MongoDB operations");
-DEFINE_int32(dbgate_timeout_ms, 5000,
-             "DBGate request timeout in milliseconds");
+DEFINE_int32(dbgate_timeout_ms, 5000, "DBGate request timeout in milliseconds");
 DEFINE_int32(dbgate_conn_pool_size, 4,
              "DBGate connection pool size (recommend: match num_threads)");
 DEFINE_int32(bucket_id, 1,
-             "Bucket ID for index operations (temporary hardcoded, Phase 5 will query bucketidx_col)");
+             "Bucket ID for index operations (temporary hardcoded, Phase 5 "
+             "will query bucketidx_col)");
 DEFINE_string(mongo_db_name, "s3proxy",
               "MongoDB database name for fileidx/minit/part collections");

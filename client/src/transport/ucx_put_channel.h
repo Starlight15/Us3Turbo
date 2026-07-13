@@ -12,7 +12,8 @@ namespace us3_turbo::client {
 
 class ProxyRpc;
 
-/** @brief UCX 链路的 PutChannel:host 内存走 ucp_mem_map + packed rkey,backend ucp_get_nbx 反向拉取。 */
+/** @brief UCX 链路的 PutChannel:host 内存走 ucp_mem_map + packed rkey,backend
+ * ucp_get_nbx 反向拉取。 */
 class UcxPutChannel final : public PutChannel {
  public:
   UcxPutChannel(const ClientOptions& options, const ProxyRpc& proxy,
@@ -24,9 +25,9 @@ class UcxPutChannel final : public PutChannel {
                              PutPathResult& result) const override;
 
  private:
-  const ClientOptions&   options_;
-  const ProxyRpc&        proxy_;
-  UcxMemoryManager*      ucx_mgr_;
+  const ClientOptions& options_;
+  const ProxyRpc& proxy_;
+  UcxMemoryManager* ucx_mgr_;
 };
 
 }  // namespace us3_turbo::client

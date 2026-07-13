@@ -1,18 +1,18 @@
 #include "client/src/memory_manager/ucx_memory_manager.h"
 
 #include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-
 #include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <netinet/in.h>
 #include <string>
+#include <sys/socket.h>
 #include <utility>
 
 #include <spdlog/spdlog.h>
+
+#include <netdb.h>
 
 namespace us3_turbo::client {
 
@@ -63,7 +63,8 @@ bool UcxMemoryManager::InitContext() {
   ucp_config_release(config);
 
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_init failed: {}", ucs_status_string(st));
+    spdlog::error("UcxMemoryManager: ucp_init failed: {}",
+                  ucs_status_string(st));
     context_ = nullptr;
     return false;
   }
@@ -103,8 +104,8 @@ bool UcxMemoryManager::InitListener() {
   }
 
   ucp_listener_params_t lparams{};
-  lparams.field_mask =
-      UCP_LISTENER_PARAM_FIELD_SOCK_ADDR | UCP_LISTENER_PARAM_FIELD_CONN_HANDLER;
+  lparams.field_mask = UCP_LISTENER_PARAM_FIELD_SOCK_ADDR |
+                       UCP_LISTENER_PARAM_FIELD_CONN_HANDLER;
   lparams.sockaddr.addr = reinterpret_cast<struct sockaddr*>(&addr);
   lparams.sockaddr.addrlen = sizeof(addr);
   lparams.conn_handler.cb = &UcxMemoryManager::ConnCallback;
@@ -128,8 +129,8 @@ bool UcxMemoryManager::InitListener() {
   char host[NI_MAXHOST] = {};
   char serv[NI_MAXSERV] = {};
   if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr),
-                  sizeof(lattr.sockaddr), host, sizeof(host), serv, sizeof(serv),
-                  NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+                  sizeof(lattr.sockaddr), host, sizeof(host), serv,
+                  sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
     spdlog::error("UcxMemoryManager: getnameinfo failed");
     return false;
   }
@@ -250,7 +251,9 @@ void UcxMemoryManager::DoUnregister(void* /*ptr*/, ucp_mem_h& handle) {
 bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
                                          Descriptor& out) {
   if (ptr == nullptr || size == 0U) {
-    spdlog::warn("UcxMemoryManager::AcquireDescriptor: requires non-null ptr and positive size");
+    spdlog::warn(
+        "UcxMemoryManager::AcquireDescriptor: requires non-null ptr and "
+        "positive size");
     return false;
   }
   void* mut_ptr = const_cast<void*>(ptr);
@@ -283,9 +286,10 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   out.client_ucx_addr = listen_addr_;
   ucp_rkey_buffer_release(rkey_buf);
 
-  spdlog::info("UcxMemoryManager::AcquireDescriptor: ptr={} size={} "
-               "remote_addr=0x{:x} rkey_bytes={} ucx_addr={}",
-               ptr, size, out.remote_addr, out.rkey.size(), out.client_ucx_addr);
+  spdlog::info(
+      "UcxMemoryManager::AcquireDescriptor: ptr={} size={} "
+      "remote_addr=0x{:x} rkey_bytes={} ucx_addr={}",
+      ptr, size, out.remote_addr, out.rkey.size(), out.client_ucx_addr);
   return true;
 }
 

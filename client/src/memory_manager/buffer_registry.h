@@ -17,7 +17,8 @@ class BufferRegistry {
   virtual ~BufferRegistry() = default;
 
  protected:
-  /** @brief 幂等注册:已在表内直接成功;否则调 DoRegister 后入表。不做 null/size 校验。 */
+  /** @brief 幂等注册:已在表内直接成功;否则调 DoRegister 后入表。不做 null/size
+   * 校验。 */
   [[nodiscard]] bool RegisterBuffer(void* ptr, std::size_t size) {
     std::lock_guard<std::mutex> lk(mu_);
     if (registered_.count(ptr)) return true;
@@ -31,7 +32,7 @@ class BufferRegistry {
   [[nodiscard]] bool UnregisterBuffer(void* ptr) {
     std::lock_guard<std::mutex> lk(mu_);
     auto it = registered_.find(ptr);
-    if (it == registered_.end()) return true;   // 幂等
+    if (it == registered_.end()) return true;  // 幂等
     DoUnregister(ptr, it->second);
     registered_.erase(it);
     return true;
@@ -61,8 +62,8 @@ class BufferRegistry {
   /** @brief 清空注册表(不释放句柄,调用方须先 ForEachLocked 释放)。 */
   void ClearRegistered() noexcept { registered_.clear(); }
 
-  std::mutex                          mu_;
-  std::unordered_map<void*, Handle>   registered_;
+  std::mutex mu_;
+  std::unordered_map<void*, Handle> registered_;
 
   /** @brief 派生类实现:填充 out(句柄),失败返回 false 并自行记日志。 */
   [[nodiscard]] virtual bool DoRegister(void* ptr, std::size_t size,

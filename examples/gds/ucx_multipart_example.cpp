@@ -18,9 +18,8 @@
 #include <string_view>
 #include <vector>
 
-#include "us3_turbo/client/client.h"
-
 #include "client/src/common/request.h"
+#include "us3_turbo/client/client.h"
 
 namespace {
 
@@ -39,11 +38,20 @@ bool ParseSize(std::string_view s, std::uint64_t& out) {
   if (i < s.size()) {
     if (i + 1 != s.size()) return false;
     switch (std::tolower(static_cast<unsigned char>(s[i]))) {
-      case 'b': mul = 1ULL; break;
-      case 'k': mul = 1024ULL; break;
-      case 'm': mul = 1024ULL * 1024; break;
-      case 'g': mul = 1024ULL * 1024 * 1024; break;
-      default: return false;
+      case 'b':
+        mul = 1ULL;
+        break;
+      case 'k':
+        mul = 1024ULL;
+        break;
+      case 'm':
+        mul = 1024ULL * 1024;
+        break;
+      case 'g':
+        mul = 1024ULL * 1024 * 1024;
+        break;
+      default:
+        return false;
     }
   }
   out = num * mul;
@@ -54,13 +62,16 @@ std::string HumanBytes(std::uint64_t b) {
   constexpr double K = 1024.0;
   char buf[64];
   if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f GiB",
+                  static_cast<double>(b) / (K * K * K));
   else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f MiB",
+                  static_cast<double>(b) / (K * K));
   else if (b >= static_cast<std::uint64_t>(K))
     std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
   else
-    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
+    std::snprintf(buf, sizeof(buf), "%llu B",
+                  static_cast<unsigned long long>(b));
   return buf;
 }
 
@@ -77,20 +88,36 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     auto need = [&](std::string& v) -> bool {
-      if (i + 1 >= argc) { std::cerr << "missing value for " << arg << "\n"; return false; }
-      v = argv[++i]; return true;
+      if (i + 1 >= argc) {
+        std::cerr << "missing value for " << arg << "\n";
+        return false;
+      }
+      v = argv[++i];
+      return true;
     };
-    if (arg == "--proxy") { if (!need(proxy_addr)) return 2; }
-    else if (arg == "--part-size") {
-      std::string v; if (!need(v) || !ParseSize(v, part_size)) { std::cerr << "bad --part-size\n"; return 2; }
+    if (arg == "--proxy") {
+      if (!need(proxy_addr)) return 2;
+    } else if (arg == "--part-size") {
+      std::string v;
+      if (!need(v) || !ParseSize(v, part_size)) {
+        std::cerr << "bad --part-size\n";
+        return 2;
+      }
+    } else if (arg == "--num-parts") {
+      std::string v;
+      if (!need(v)) return 2;
+      num_parts =
+          static_cast<std::uint32_t>(std::strtoull(v.c_str(), nullptr, 10));
+      if (num_parts == 0) {
+        std::cerr << "bad --num-parts\n";
+        return 2;
+      }
+    } else if (arg == "--verify-crc32c") {
+      verify = true;
+    } else {
+      std::cerr << "unknown arg: " << arg << "\n";
+      return 2;
     }
-    else if (arg == "--num-parts") {
-      std::string v; if (!need(v)) return 2;
-      num_parts = static_cast<std::uint32_t>(std::strtoull(v.c_str(), nullptr, 10));
-      if (num_parts == 0) { std::cerr << "bad --num-parts\n"; return 2; }
-    }
-    else if (arg == "--verify-crc32c") { verify = true; }
-    else { std::cerr << "unknown arg: " << arg << "\n"; return 2; }
   }
 
   const std::uint64_t total = part_size * num_parts;
@@ -130,9 +157,10 @@ int main(int argc, char** argv) {
   const auto t0 = clk::now();
   for (std::uint32_t i = 1; i <= num_parts; ++i) {
     std::string etag;
-    if (!client.UploadPartUcx(upload_id, i,
-                              ConstBufferView{.data = host.data(), .size = part_size},
-                              etag, error)) {
+    if (!client.UploadPartUcx(
+            upload_id, i,
+            ConstBufferView{.data = host.data(), .size = part_size}, etag,
+            error)) {
       std::cerr << "UploadPartUcx " << i << " failed: " << error << "\n";
       return 1;
     }
@@ -149,16 +177,18 @@ int main(int argc, char** argv) {
   const double wall_ms = ms_double(t1 - t0).count();
 
   std::cout << "CompleteMultipartUpload: object_id=" << done.object_id
-            << " size=" << done.object_size
-            << " etag=" << done.etag << "\n";
+            << " size=" << done.object_size << " etag=" << done.etag << "\n";
   const double wall_s = wall_ms / 1000.0;
-  const double mbs = (wall_s > 0.0) ? static_cast<double>(total) / wall_s / (1024.0 * 1024.0) : 0.0;
+  const double mbs =
+      (wall_s > 0.0) ? static_cast<double>(total) / wall_s / (1024.0 * 1024.0)
+                     : 0.0;
   std::cout << "wall=" << wall_ms << "ms throughput=" << mbs << " MiB/s\n";
 
   client.Shutdown();
 
   if (done.object_size != total) {
-    std::cerr << "size mismatch: got " << done.object_size << " want " << total << "\n";
+    std::cerr << "size mismatch: got " << done.object_size << " want " << total
+              << "\n";
     return 1;
   }
   return 0;

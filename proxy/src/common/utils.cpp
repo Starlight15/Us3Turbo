@@ -24,8 +24,10 @@ std::string GenUuid() {
   std::uint64_t a = rng();
   std::uint64_t b = rng();
   unsigned char bytes[16];
-  for (int i = 0; i < 8; ++i) bytes[i]     = static_cast<unsigned char>(a >> (8 * (7 - i)));
-  for (int i = 0; i < 8; ++i) bytes[i + 8] = static_cast<unsigned char>(b >> (8 * (7 - i)));
+  for (int i = 0; i < 8; ++i)
+    bytes[i] = static_cast<unsigned char>(a >> (8 * (7 - i)));
+  for (int i = 0; i < 8; ++i)
+    bytes[i + 8] = static_cast<unsigned char>(b >> (8 * (7 - i)));
   bytes[6] = (bytes[6] & 0x0F) | 0x40;  // version 4
   bytes[8] = (bytes[8] & 0x3F) | 0x80;  // variant 10
   char buf[37];
@@ -41,8 +43,8 @@ std::string GenUuid() {
 std::string Sha1(std::string_view data) {
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned int md_len = 0;
-  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_sha1(),
-                 nullptr) != 1) {
+  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_sha1(), nullptr) !=
+      1) {
     return {};
   }
   return std::string(reinterpret_cast<const char*>(md), md_len);
@@ -128,8 +130,8 @@ std::string CombineBlockCRC32s(const std::vector<std::uint32_t>& crcs) {
 
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned int md_len = 0;
-  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_md5(),
-                 nullptr) != 1) {
+  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_md5(), nullptr) !=
+      1) {
     return {};
   }
 

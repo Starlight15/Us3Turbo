@@ -15,14 +15,14 @@ class UfileAcClient;
 struct StatObjectOutput {
   std::uint64_t object_size{0};
   std::uint64_t block_size{0};
-  std::string   hash;
+  std::string hash;
 };
 
 /* GET 输出：按块读取 + crc 重组校验后的结果。 */
 struct GetOutput {
   std::uint32_t crc32c{0};
   std::uint64_t bytes_read{0};
-  std::string   hash;
+  std::string hash;
 };
 
 /* 读取逻辑层（GDS / UCX）。镜像 SinglePut 的结构：校验 → 编排 backend 调用 →
@@ -50,7 +50,7 @@ class GetObject {
   /* 校验 UCX GET 请求合法性。 */
   [[nodiscard]] int ValidateUcxRequest(const ClientProxyGetRequest& req);
 
-  IUploadIndex*  index_;
+  IUploadIndex* index_;
   UfileAcClient* client_;
 };
 
