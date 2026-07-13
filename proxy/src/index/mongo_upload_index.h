@@ -14,6 +14,8 @@ class MongoUploadIndex final : public IUploadIndex {
  public:
   explicit MongoUploadIndex(DBGateClient* client) : client_(client) {}
 
+  // ============================ 分段上传（minit_col + part_col） ============================
+
   /* 创建上传会话，写入 minit_col，返回 upload_id */
   [[nodiscard]] std::string Create(
       const std::string& bucket, const std::string& key,
@@ -43,7 +45,9 @@ class MongoUploadIndex final : public IUploadIndex {
   [[nodiscard]] bool UpdateLastMergedPart(
       const std::string& upload_id, std::int32_t part_number) override;
 
-  /* 插入对象元数据到 fileidx_col */
+  // ============================ 单步上传 + GET（fileidx_col） ============================
+
+  /* 插入对象元数据到 fileidx_col，single_put 和 Complete 均调用 */
   [[nodiscard]] bool InsertFileIdx(
       const std::string& bucket,
       const std::string& key,
@@ -52,7 +56,7 @@ class MongoUploadIndex final : public IUploadIndex {
       std::uint64_t filesize,
       const std::string& hash) override;
 
-  /* 按 bucket+key 查询对象元数据，未找到返回 false */
+  /* 按 bucket+key 查询对象元数据，GetObject 第一步 */
   [[nodiscard]] bool GetFileIdx(
       const std::string& bucket,
       const std::string& key,

@@ -63,6 +63,8 @@ class IUploadIndex {
  public:
   virtual ~IUploadIndex() = default;
 
+  // ============================ 分段上传（minit_col + part_col） ============================
+
   /* 创建新会话，返回 upload_id（UUID） */
   [[nodiscard]] virtual std::string Create(
       const std::string& bucket, const std::string& key,
@@ -86,8 +88,6 @@ class IUploadIndex {
   /* 删除超过 ttl_ms 的过期会话（后台清理线程调用） */
   virtual void RemoveExpired(std::int64_t ttl_ms) = 0;
 
-  // 增量写索引接口
-
   /* 更新已合并大小，对齐 s3proxy merged_size（Us3Turbo 无流式合并但保持兼容） */
   [[nodiscard]] virtual bool UpdateMergedSize(
       const std::string& upload_id,
@@ -98,7 +98,9 @@ class IUploadIndex {
       const std::string& upload_id,
       std::int32_t part_number) = 0;
 
-  /* 写 fileidx_col 对象元数据，single_put 和 Complete 调用供 s3proxy 读取 */
+  // ============================ 单步上传 + GET（fileidx_col） ============================
+
+  /* 写 fileidx_col 对象元数据，single_put 和 Complete 均调用 */
   [[nodiscard]] virtual bool InsertFileIdx(
       const std::string& bucket,
       const std::string& key,
@@ -107,7 +109,7 @@ class IUploadIndex {
       std::uint64_t filesize,
       const std::string& hash) = 0;
 
-  /* 读 fileidx_col 对象元数据，GetObject 第一步；未找到或失败均返回 false（调用方按 404 处理） */
+  /* 读 fileidx_col 对象元数据，GetObject 第一步；未找到返回 false */
   [[nodiscard]] virtual bool GetFileIdx(
       const std::string& bucket,
       const std::string& key,
