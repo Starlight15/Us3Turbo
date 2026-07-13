@@ -1,0 +1,24 @@
+# 以 Google 风格为基线，仅固定与本仓库既有习惯相关的几项。
+# 目的：稳定“换行/续行/指针/include 分组”，不引入新风格。
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++17
+
+ColumnLimit: 80
+IndentWidth: 2
+DerivePointerAlignment: false   # 关掉自动推断，固定左贴
+PointerAlignment: Left          # char* p，与现有代码一致
+
+# 保持既有 include 分组：主头 > 标准库 > 第三方 > 本项目
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+IncludeCategories:
+  - Regex:    '^<[a-z_]+>$'          # 标准库：<string> <cstdint>（无 '/'、无扩展名）
+    Priority: 2
+  - Regex:    '^<(sys|arpa|netinet|netdb)/.*>$'  # POSIX 系统头：<arpa/inet.h> <sys/socket.h>（归标准库组）
+    Priority: 2
+  - Regex:    '^<.*/.*>$'            # 第三方：<spdlog/spdlog.h> <nlohmann/json.hpp>
+    Priority: 3
+  - Regex:    '^".*"$'               # 本项目：所有引号 include
+    Priority: 4
+# 主头（与 .cpp 同名的那个）由 clang-format 自动识别为 Priority 0，无需配置。
