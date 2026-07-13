@@ -3,5 +3,5 @@
 # 用法（每位开发者本地执行一次，让 git blame 默认忽略下列 commit）：
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 #
-# 本次只引入 .clang-format 配置，不批量格式化存量代码，故暂无哈希。
-# 后续若做一次性全量格式化，把那个 commit 的 40 位哈希逐行追加到本文件。
+# 32eca5a532f2482a10fb5bbd33635c0136f44a51
+# 一次性 clang-format 全量格式化 C++ 源码（61 文件，纯空白/续行调整）。
