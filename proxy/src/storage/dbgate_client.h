@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/tcp_connection.h"
 
 namespace us3_turbo::proxy {
@@ -28,7 +29,27 @@ class DBGateClient {
   // AcquireConn 无可用连接时返回的哨兵索引（区别于合法下标）
   static constexpr std::size_t kInvalidConnIndex = static_cast<std::size_t>(-1);
 
-  DBGateClient(const std::string& endpoint, int timeout_ms, int pool_size);
+  DBGateClient(const std::string& endpoint, int timeout_ms, int pool_size)
+      : timeout_ms_(timeout_ms) {
+    if (!ParseEndpoint(endpoint, host_, port_)) {
+      LOG_SYS_WARN("dbgate_endpoint '{}' parse failed (expect host:port), "
+                   "DBGate operations disabled", endpoint);
+      return;
+    }
+
+    conns_.reserve(static_cast<std::size_t>(pool_size));
+    conn_mutexes_.reserve(static_cast<std::size_t>(pool_size));
+    std::size_t connected = 0;
+    for (int i = 0; i < pool_size; ++i) {
+      auto conn = std::make_unique<TcpConnection>(host_, port_, timeout_ms_);
+      if (conn->Connect()) ++connected;
+      conns_.push_back(std::move(conn));
+      conn_mutexes_.push_back(std::make_unique<std::mutex>());
+    }
+
+    LOG_SYS_INFO("DBGateClient initialized: endpoint={} pool_size={} "
+                 "connected={}", endpoint, pool_size, connected);
+  }
 
   // ========== fileidx_col ==========
 

@@ -18,7 +18,7 @@ namespace us3_turbo::proxy {
  */
 class MongoUploadIndex final : public IUploadIndex {
  public:
-  explicit MongoUploadIndex(DBGateClient* client);
+  explicit MongoUploadIndex(DBGateClient* client) : client_(client) {}
 
   [[nodiscard]] std::string Create(
       const std::string& bucket, const std::string& key,

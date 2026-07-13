@@ -9,8 +9,6 @@
 
 namespace us3_turbo::proxy {
 
-MongoUploadIndex::MongoUploadIndex(DBGateClient* client) : client_(client) {}
-
 std::string MongoUploadIndex::Create(
     const std::string& bucket, const std::string& key,
     PutDataPath path) {

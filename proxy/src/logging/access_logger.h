@@ -9,8 +9,12 @@
 #include <string_view>
 
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/daily_file_sink.h>
 
 namespace us3_turbo::proxy {
+
+// Access 日志固定文件名模板：logs/access-YYYY-MM-DD.log
+inline constexpr const char* kAccessLogPattern = "logs/access-%Y-%m-%d.log";
 
 /**
  * @brief Access 日志：记录每个请求的审计信息（永久开启，不受 log_level 影响）。
@@ -34,7 +38,23 @@ class AccessLogger {
       std::chrono::milliseconds latency);
 
  private:
-  AccessLogger();
+  AccessLogger() {
+    // 独立 logger：按天切分
+    auto sink = std::make_shared<spdlog::sinks::daily_file_format_sink_mt>(
+        kAccessLogPattern,
+        0,     // rotation hour
+        0,     // rotation minute
+        false, // 不截断已有文件
+        30);   // 保留 30 天
+
+    logger_ = std::make_shared<spdlog::logger>("access", sink);
+    logger_->set_level(spdlog::level::info);
+
+    // 内容为 method|rid|bucket|key|status|bytes|latency。
+    logger_->set_pattern("%Y-%m-%d %H:%M:%S|%v");
+
+    spdlog::register_logger(logger_);
+  }
   ~AccessLogger() = default;
   AccessLogger(const AccessLogger&) = delete;
   AccessLogger& operator=(const AccessLogger&) = delete;

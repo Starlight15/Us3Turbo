@@ -33,7 +33,8 @@ struct CompleteOutput {
 class Multipart {
  public:
 
-  Multipart(IUploadIndex* index, UfileAcClient* client);
+  Multipart(IUploadIndex* index, UfileAcClient* client)
+      : index_(index), client_(client) {}
 
   [[nodiscard]] int CreateUpload(
       const std::string& request_id,

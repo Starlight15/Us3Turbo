@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "proxy/src/common/errors.h"
+#include "proxy/src/common/flags.h"
 #include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/tcp_connection.h"
 #include "proxy/src/storage/ufile_ac_protocol.h"
@@ -43,7 +44,36 @@ struct BlockResult {
  */
 class UfileAcClient {
  public:
-  UfileAcClient(const std::string& backend_endpoint, int timeout_ms);
+  UfileAcClient(const std::string& backend_endpoint, int timeout_ms)
+      : timeout_ms_(timeout_ms),
+        setid_(static_cast<std::uint32_t>(FLAGS_backend_setid)) {
+    if (backend_endpoint.empty()) {
+      LOG_SYS_WARN("backend_endpoint empty, single-step PUT will reject as "
+                   "PROXY_ERR_BACKEND_UNAVAILABLE");
+      return;
+    }
+    if (!ParseEndpoint(backend_endpoint, host_, port_)) {
+      LOG_SYS_WARN("backend_endpoint '{}' parse failed (expect host:port), "
+                   "single-step PUT disabled", backend_endpoint);
+      return;
+    }
+
+    const std::size_t pool_size =
+        static_cast<std::size_t>(FLAGS_backend_conn_pool_size);
+    conns_.reserve(pool_size);
+    conn_mutexes_.reserve(pool_size);
+    std::size_t connected = 0;
+    for (std::size_t i = 0; i < pool_size; ++i) {
+      auto conn = std::make_unique<TcpConnection>(host_, port_, timeout_ms_);
+      if (conn->Connect()) ++connected;
+      conns_.push_back(std::move(conn));
+      conn_mutexes_.push_back(std::make_unique<std::mutex>());
+    }
+
+    LOG_SYS_INFO("ufile-ac client ready (ufile-ac TCP, single-step): {} tcp "
+                 "connections at {}:{} (connected={}, setid={}, timeout {}ms)",
+                 pool_size, host_, port_, connected, setid_, timeout_ms_);
+  }
 
   // GDS：写一个 block。key=block 标识（proxy 生成），gpu_offset=GPU buffer 偏移。
   [[nodiscard]] BlockResult PutBlockGds(

@@ -26,42 +26,6 @@ bool UfileAcClient::ParseEndpoint(const std::string& endpoint,
 }
 
 /*
- * 构造连接池：逐连接 Connect，失败留着 AcquireConn 惰性重连（方案 A），
- * 不整体 return。pool 就绪后打一条汇总日志。
- */
-UfileAcClient::UfileAcClient(const std::string& backend_endpoint,
-                             int timeout_ms)
-    : timeout_ms_(timeout_ms),
-      setid_(static_cast<std::uint32_t>(FLAGS_backend_setid)) {
-  if (backend_endpoint.empty()) {
-    LOG_SYS_WARN("backend_endpoint empty, single-step PUT will reject as "
-                 "PROXY_ERR_BACKEND_UNAVAILABLE");
-    return;
-  }
-  if (!ParseEndpoint(backend_endpoint, host_, port_)) {
-    LOG_SYS_WARN("backend_endpoint '{}' parse failed (expect host:port), "
-                 "single-step PUT disabled", backend_endpoint);
-    return;
-  }
-
-  const std::size_t pool_size =
-      static_cast<std::size_t>(FLAGS_backend_conn_pool_size);
-  conns_.reserve(pool_size);
-  conn_mutexes_.reserve(pool_size);
-  std::size_t connected = 0;
-  for (std::size_t i = 0; i < pool_size; ++i) {
-    auto conn = std::make_unique<TcpConnection>(host_, port_, timeout_ms_);
-    if (conn->Connect()) ++connected;
-    conns_.push_back(std::move(conn));
-    conn_mutexes_.push_back(std::make_unique<std::mutex>());
-  }
-
-  LOG_SYS_INFO("ufile-ac client ready (ufile-ac TCP, single-step): {} tcp "
-               "connections at {}:{} (connected={}, setid={}, timeout {}ms)",
-               pool_size, host_, port_, connected, setid_, timeout_ms_);
-}
-
-/*
  * 方案 A 惰性取连接：轮询最多 pool_size 次，跳过坏连接；坏连接在槽位锁内
  * 当场重连一次（避免多线程并发重连同一槽）。返回 {idx, conn*}；全坏 {npos,null}。
  */

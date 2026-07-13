@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <string>
+#include <utility>  // std::move
 
 namespace us3_turbo::proxy {
 
@@ -11,8 +12,9 @@ namespace us3_turbo::proxy {
 // 独立 mutex 序列化请求-响应对；断开置 dead，由 AcquireConn 惰性重连（方案 A）。
 class TcpConnection {
  public:
-  TcpConnection(std::string host, int port, int timeout_ms);
-  ~TcpConnection();
+  TcpConnection(std::string host, int port, int timeout_ms)
+      : host_(std::move(host)), port_(port), timeout_ms_(timeout_ms), fd_(-1) {}
+  ~TcpConnection() { Close(); }
   TcpConnection(const TcpConnection&) = delete;
   TcpConnection& operator=(const TcpConnection&) = delete;
 

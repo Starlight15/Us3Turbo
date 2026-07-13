@@ -19,28 +19,6 @@ namespace us3_turbo::proxy {
 // bucket/key 在 multipart part/complete/abort 请求里没有，Access 日志用占位。
 static constexpr const char* kDash = "-";
 
-ProxyService::ProxyService(
-    std::unique_ptr<SinglePut> single_put,
-    std::unique_ptr<Multipart> multipart,
-    std::unique_ptr<GetObject> get_object,
-    IUploadIndex* index_for_cleanup)
-    : single_put_(std::move(single_put)),
-      multipart_(std::move(multipart)),
-      get_object_(std::move(get_object)),
-      index_(index_for_cleanup) {
-  // 后台 TTL 清理：周期扫描删除过期会话；析构经 condition_variable 唤醒 join。
-  cleanup_thread_ = std::thread([this]() { CleanupThreadMain(); });
-}
-
-ProxyService::~ProxyService() {
-  {
-    std::lock_guard lock(cleanup_mu_);
-    stop_cleanup_ = true;
-  }
-  cleanup_cv_.notify_all();
-  if (cleanup_thread_.joinable()) cleanup_thread_.join();
-}
-
 void ProxyService::CleanupThreadMain() {
   const std::int64_t kTtlMs = FLAGS_upload_ttl_ms;
   const auto kScanInterval =

@@ -10,11 +10,6 @@
 
 namespace us3_turbo::proxy {
 
-TcpConnection::TcpConnection(std::string host, int port, int timeout_ms)
-    : host_(std::move(host)), port_(port), timeout_ms_(timeout_ms), fd_(-1) {}
-
-TcpConnection::~TcpConnection() { Close(); }
-
 bool TcpConnection::Connect() {
   if (alive_.load(std::memory_order_acquire)) return true;
   if (fd_ >= 0) Close();  // 清理残留 fd

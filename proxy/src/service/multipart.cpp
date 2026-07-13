@@ -145,9 +145,6 @@ bool Multipart::WritePartIndex(
   return true;
 }
 
-Multipart::Multipart(IUploadIndex* index, UfileAcClient* client)
-    : index_(index), client_(client) {}
-
 int Multipart::CreateUpload(
     const std::string& request_id,
     const std::string& bucket, const std::string& key,
