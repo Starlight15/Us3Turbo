@@ -14,51 +14,36 @@
 
 namespace us3_turbo::proxy::utils {
 
-/** @brief 生成 UUID v4 格式字符串（xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx）。 */
+/* 生成 UUID v4 字符串（xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx）。 */
 [[nodiscard]] std::string GenUuid();
 
-/** @brief SHA1(data) 返回 20 字节二进制串（失败返回空串）。 */
+/* SHA1 摘要，返回 20 字节二进制串；失败返回空串。 */
 [[nodiscard]] std::string Sha1(std::string_view data);
 
-/** @brief Base64 编码（标准字母表，无换行；失败返回空串）。 */
+/* Base64 编码，标准字母表无换行；失败返回空串。 */
 [[nodiscard]] std::string Base64Encode(std::string_view data);
 
-/** @brief 当前时间戳（毫秒，system_clock）。 */
+/* 当前时间戳（毫秒，system_clock）。 */
 [[nodiscard]] std::int64_t NowMs();
 
-/**
- * @brief 汇总多个 etag：单元素直接返回；多元素 → 4 字节 LE count + SHA1 拼接 + base64。
- *
- * 与链路无关的纯算法，SessionManager（part→object）与 MultipartPutHandler
- * （block→part）汇总共用，避免两处逐字节重复。
- */
+/* 汇总多个 etag：单元素直接返回；
+ * 多元素 → 4 字节 LE count + SHA1 拼接 + base64。
+ * SessionManager 与 MultipartPutHandler 共用此纯算法。 */
 [[nodiscard]] std::string CombineETags(const std::vector<std::string>& etags);
 
-/**
- * @brief 单个 CRC32C → 8 位十六进制 ETag（单 block 场景，亦供单步 PUT 复用）。
- *
- * backend (ufile-ac) 不返回 etag（etagLen_ 恒 0，F7），故以 crc32c 十六进制作 etag。
- * 非标准 S3 etag，仅作占位标识。
- */
+/* 单个 CRC32C → 8 位十六进制 ETag，单 block 与单步 PUT 复用。
+ * backend 不返回 etag，以 crc32c 十六进制占位。
+ * 非 S3 标准 etag，仅作标识。 */
 [[nodiscard]] std::string Crc32cToETag(std::uint32_t crc32c);
 
-/**
- * @brief 组合多个 block 的 CRC32C 生成 part 级 ETag。
- *
- * - 空 → 空串；
- * - 单 block → Crc32cToETag（与单步 PUT 一致）；
- * - 多 block → MD5(各 crc 大端 4 字节拼接) 的十六进制。
- *
- * 用大端字节序使摘要与主机序无关；MD5 走 EVP（与 Sha1 同栈，避免直接调 MD5()）。
- */
+/* 组合多个 block CRC32C 生成 part 级 ETag：
+ * 空→空串；单→Crc32cToETag；多→MD5(大端拼接)十六进制。
+ * 大端字节序保证跨平台一致；MD5 走 EVP 与 Sha1 同栈。 */
 [[nodiscard]] std::string CombineBlockCRC32s(const std::vector<std::uint32_t>& crcs);
 
-/**
- * @brief 计算从 start 到现在的耗时（毫秒）。
- *
- * steady_clock 单调，不受系统时钟跳变影响，适合 handler 性能测量。
- * inline 定义在头文件，避免多翻译单元符号重复。
- */
+/* 计算从 start 到现在的耗时（毫秒）。
+ * steady_clock 单调，不受系统时钟跳变影响。
+ * inline 定义在头文件，避免多翻译单元符号重复。 */
 [[nodiscard]] inline std::chrono::milliseconds ElapsedMs(
     std::chrono::steady_clock::time_point start) {
   return std::chrono::duration_cast<std::chrono::milliseconds>(

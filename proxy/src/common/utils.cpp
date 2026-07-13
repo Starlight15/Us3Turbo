@@ -17,7 +17,6 @@ constexpr char kBase64Table[] =
 }  // namespace
 
 std::string GenUuid() {
-  // UUID v4（RFC 4122 version/variant），mt19937_64 seeded by random_device ^ steady_clock。
   static thread_local std::mt19937_64 rng{
       std::random_device{}() ^
       static_cast<std::uint64_t>(
@@ -117,7 +116,7 @@ std::string CombineBlockCRC32s(const std::vector<std::uint32_t>& crcs) {
   if (crcs.empty()) return {};
   if (crcs.size() == 1) return Crc32cToETag(crcs[0]);
 
-  // 各 crc 按大端 4 字节拼接（与主机序无关），再 MD5 → 十六进制。
+  /* 各 crc 按大端 4 字节拼接（与主机序无关），再 MD5 → 十六进制。 */
   std::string data;
   data.reserve(crcs.size() * 4);
   for (const std::uint32_t c : crcs) {

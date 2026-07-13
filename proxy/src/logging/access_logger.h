@@ -16,20 +16,15 @@ namespace us3_turbo::proxy {
 // Access 日志固定文件名模板：logs/access-YYYY-MM-DD.log
 inline constexpr const char* kAccessLogPattern = "logs/access-%Y-%m-%d.log";
 
-/**
- * @brief Access 日志：记录每个请求的审计信息（永久开启，不受 log_level 影响）。
- *
- * 文件策略：
- *   - 按天切分（每天 00:00），文件名：access-YYYY-MM-DD.log
- *   - 保留 30 天
- */
+/* Access 审计日志：每个请求一条记录，永久开启不受 log_level 影响。
+   按天切分(00:00)，文件名 access-YYYY-MM-DD.log，保留 30 天。 */
 class AccessLogger {
  public:
   static AccessLogger& Instance();
 
-  // 记录一次请求，接口层在 handler 结束时调用
+  /* 记录一次请求，handler 结束时调用 */
   void LogRequest(
-      std::string_view method,           // "GdsPut" / "UploadPartGds" / ...
+      std::string_view method,
       std::string_view request_id,
       std::string_view bucket,
       std::string_view key,

@@ -68,7 +68,7 @@ int TcpConnection::RecvAll(void* buf, std::size_t len) {
   std::size_t got = 0;
   auto* p = static_cast<char*>(buf);
   while (got < len) {
-    ssize_t n = ::recv(fd_, p + got, len - got, 0);  // 不用 MSG_WAITALL：超时按“无数据”计而非“未收满”，慢速对端不误杀
+    ssize_t n = ::recv(fd_, p + got, len - got, 0);  // 不用 MSG_WAITALL: 超时算无数据而非未收满, 避免误杀慢对端
     if (n < 0) {
       if (errno == EINTR) continue;
       set_dead();

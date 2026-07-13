@@ -20,7 +20,7 @@
 
 namespace {
 
-// 初始化日志
+/* 初始化日志 */
 void InitLogging() {
   spdlog::level::level_enum level = spdlog::level::info;
   if (FLAGS_log_level == "debug")      level = spdlog::level::debug;
@@ -33,7 +33,7 @@ void InitLogging() {
   us3_turbo::proxy::AccessLogger::Instance();
 }
 
-// 依赖注入装配，自底向上：存储层最长命，接口层最上
+/* 依赖注入装配，自底向上：存储层最长命，接口层最上 */
 std::unique_ptr<us3_turbo::proxy::AssembledStack> AssembleServices() {
   auto stack = std::make_unique<us3_turbo::proxy::AssembledStack>();
   stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(
@@ -53,7 +53,7 @@ std::unique_ptr<us3_turbo::proxy::AssembledStack> AssembleServices() {
   return stack;
 }
 
-// 注册 service 并启动 brpc server
+/* 注册 service 并启动 brpc server */
 bool StartServer(brpc::Server& server,
                  us3_turbo::proxy::ProxyService& service) {
   if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
@@ -71,7 +71,7 @@ bool StartServer(brpc::Server& server,
   return true;
 }
 
-// 阻塞至收到 SIGINT/SIGTERM。
+/* 阻塞至收到 SIGINT/SIGTERM */
 void RunUntilAskedToQuit() {
   sigset_t mask{};
   sigemptyset(&mask);

@@ -48,7 +48,7 @@ int DBGateClient::SendAndRecv(const std::vector<char>& req_buf,
 
   std::lock_guard<std::mutex> lock(*conn_mutexes_[idx]);
 
-  // 发送：[4字节大端长度][req_buf]
+  /* 发送: [4B大端长度][req_buf] */
   std::uint32_t req_len = static_cast<std::uint32_t>(req_buf.size());
   std::uint32_t req_len_be = htonl(req_len);
 
@@ -61,7 +61,7 @@ int DBGateClient::SendAndRecv(const std::vector<char>& req_buf,
     return PROXY_ERR_BACKEND_IO;
   }
 
-  // 接收：[4字节大端长度][rsp_buf]
+  /* 接收: [4B大端长度][rsp_buf] */
   std::uint32_t rsp_len_be = 0;
   if (conn->RecvAll(&rsp_len_be, 4) != 0) {
     LOG_SYS_ERROR("RecvAll length failed");
@@ -85,18 +85,16 @@ int DBGateClient::SendAndRecv(const std::vector<char>& req_buf,
   return 0;
 }
 
-// ========== 通用 ExecuteMgo 骨架 ==========
-
 int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized,
                               std::string& out_mgo_rsp_serialized) {
-  // 反序列化请求
+  /* 反序列化请求 */
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   if (!mgo_req.ParseFromString(mgo_req_serialized)) {
     LOG_SYS_ERROR("Failed to parse ExecuteMgoRequest");
     return PROXY_ERR_INTERNAL;
   }
 
-  // 构造 UMessage
+  /* 构造 UMessage */
   ucloud::UMessage msg;
 
   static std::random_device rd;
@@ -114,11 +112,10 @@ int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized,
   head->set_worker_index(0);
   head->set_source_entity(dist(gen));
 
-  // 在 body 上设置 extension
+  /* 设置 body extension */
   msg.mutable_body()->MutableExtension(
       ucloud::umgogate::execute_mgo_request)->CopyFrom(mgo_req);
 
-  // 序列化
   std::string serialized;
   if (!msg.SerializeToString(&serialized)) {
     LOG_SYS_ERROR("Failed to serialize UMessage");
@@ -127,12 +124,12 @@ int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized,
 
   std::vector<char> req_buf(serialized.begin(), serialized.end());
 
-  // 收发
+  /* 收发 */
   std::vector<char> rsp_buf;
   int ret = SendAndRecv(req_buf, rsp_buf);
   if (ret != 0) return ret;
 
-  // 解析响应
+  /* 解析响应 */
   ucloud::UMessage rsp_msg;
   if (!rsp_msg.ParseFromArray(rsp_buf.data(), static_cast<int>(rsp_buf.size()))) {
     LOG_SYS_ERROR("Failed to parse UMessage response");
@@ -154,7 +151,7 @@ int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized,
   const auto& mgo_rsp =
       rsp_msg.body().GetExtension(ucloud::umgogate::execute_mgo_response);
 
-  // 检查 ret_code
+  /* 检查 ret_code */
   if (!mgo_rsp.has_rc() || mgo_rsp.rc().retcode() != 0) {
     int ret_code = mgo_rsp.has_rc() ? mgo_rsp.rc().retcode() : -1;
     std::string ret_msg = mgo_rsp.has_rc() ? mgo_rsp.rc().error_message() : "";
@@ -162,7 +159,6 @@ int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized,
     return PROXY_ERR_BACKEND_FAILED;
   }
 
-  // 序列化响应返回
   if (!mgo_rsp.SerializeToString(&out_mgo_rsp_serialized)) {
     LOG_SYS_ERROR("Failed to serialize ExecuteMgoResponse");
     return PROXY_ERR_INTERNAL;
@@ -171,7 +167,7 @@ int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized,
   return 0;
 }
 
-// 内部辅助：构造请求 → 序列化 → ExecuteMgo → 反序列化响应
+/* 内部辅助: 构造请求 -> 序列化 -> ExecuteMgo -> 反序列化响应 */
 namespace {
 int ExecuteMgoHelper(DBGateClient& client,
                      ucloud::umgogate::ExecuteMgoRequest& mgo_req,
@@ -195,8 +191,6 @@ int ExecuteMgoHelper(DBGateClient& client,
 }
 }  // namespace
 
-// ========== fileidx_col ==========
-
 int DBGateClient::UpsertFileIdx(
     std::uint32_t bucket_id,
     const std::string& key,
@@ -214,8 +208,7 @@ int DBGateClient::UpsertFileIdx(
       R"({{"bucket_id":{}, "key":"{}"}})",
       bucket_id, key);
 
-  // 注意: s3proxy fileidx_col schema 用 "blocksize"(无下划线)，
-  // 无 etag 字段(对象完整性通过 hash 字段存储)。
+  /* s3proxy schema: "blocksize"(无下划线), 无 etag 字段, 用 hash 存对象完整性 */
   std::string doc = fmt::format(
       R"({{"bucket_id":{}, "key":"{}", "first_object":"{}", )"
       R"("blocksize":{}, "filesize":{}, "hash":"{}", "finished":1, "delete":false}})",
@@ -256,8 +249,6 @@ int DBGateClient::QueryFileIdx(
   out_doc = rsp.op_find_rsp().results(0);
   return 0;
 }
-
-// ========== minit_col ==========
 
 int DBGateClient::InsertMinit(
     const std::string& upload_id,
@@ -300,7 +291,7 @@ int DBGateClient::QueryMinit(
   int ret = ExecuteMgoHelper(*this, mgo_req, rsp);
   if (ret != 0) return ret;
 
-  // 检查是否有结果
+  /* 检查是否有结果 */
   if (!rsp.has_op_find_rsp() || rsp.op_find_rsp().results_size() == 0) {
     return -1;  // 未找到
   }
@@ -347,11 +338,9 @@ int DBGateClient::DeleteMinit(const std::string& upload_id) {
 
   ucloud::umgogate::ExecuteMgoResponse rsp;
   int ret = ExecuteMgoHelper(*this, mgo_req, rsp);
-  // 幂等：未找到也返回 0
+  // 幂等: 未找到也返回 0
   return ret;
 }
-
-// ========== part_col ==========
 
 int DBGateClient::InsertPart(
     const std::string& upload_id,
@@ -395,7 +384,7 @@ int DBGateClient::QueryParts(
   int ret = ExecuteMgoHelper(*this, mgo_req, rsp);
   if (ret != 0) return ret;
 
-  // 返回 JSON 数组
+  /* 返回 JSON 数组 */
   out_docs = "[";
   if (rsp.has_op_find_rsp()) {
     for (int i = 0; i < rsp.op_find_rsp().results_size(); ++i) {
@@ -421,7 +410,7 @@ int DBGateClient::DeleteParts(const std::string& upload_id) {
 
   ucloud::umgogate::ExecuteMgoResponse rsp;
   int ret = ExecuteMgoHelper(*this, mgo_req, rsp);
-  return ret;  // 幂等
+  return ret;  // 幂等: 未找到也返回 0
 }
 
 }  // namespace us3_turbo::proxy

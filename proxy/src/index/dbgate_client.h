@@ -13,17 +13,9 @@
 
 namespace us3_turbo::proxy {
 
-/**
- * @brief DBGate 客户端：通过裸 TCP 协议调用 MongoDB 操作
- *
- * 协议：[4字节大端长度][protobuf UMessage]
- * - 长度 = UMessage 序列化后的字节数（不含长度字段本身）
- * - UMessage = ucloud.proto 定义的消息结构
- *
+/* DBGate 客户端：裸 TCP 调用 MongoDB；协议 [4B大端长度][protobuf UMessage]
  * 连接池：轮询 + 惰性重连（复用 TcpConnection，策略同 UfileAcClient）
- *
- * 线程安全：每连接独立 mutex，序列化请求-响应对
- */
+ * 线程安全：每连接独立 mutex，序列化请求-响应对 */
 class DBGateClient {
  public:
   // AcquireConn 无可用连接时返回的哨兵索引（区别于合法下标）
@@ -53,7 +45,7 @@ class DBGateClient {
 
   // ========== fileidx_col ==========
 
-  /** @brief Upsert fileidx_col 文档（single_put / multipart Complete） */
+  /* Upsert fileidx_col 文档（single_put / multipart Complete） */
   [[nodiscard]] int UpsertFileIdx(
       std::uint32_t bucket_id,
       const std::string& key,
@@ -62,7 +54,7 @@ class DBGateClient {
       std::uint64_t filesize,
       const std::string& hash);
 
-  /** @brief Query fileidx_col 文档（GetObject 第一步）. Returns 0=ok, -1=not found, other=error */
+  /* Query fileidx_col 文档（GetObject 第一步）; Returns 0=ok, -1=not found, other=error */
   [[nodiscard]] int QueryFileIdx(
       std::uint32_t bucket_id,
       const std::string& key,
@@ -70,7 +62,7 @@ class DBGateClient {
 
   // ========== minit_col ==========
 
-  /** @brief Insert minit_col 文档（CreateUpload） */
+  /* Insert minit_col 文档（CreateUpload） */
   [[nodiscard]] int InsertMinit(
       const std::string& upload_id,
       std::uint32_t bucket_id,
@@ -78,23 +70,23 @@ class DBGateClient {
       const std::string& first_object,
       int path);
 
-  /** @brief Query minit_col 文档（GetUpload）. Returns 0=ok, -1=not found, other=error */
+  /* Query minit_col 文档（GetUpload）; Returns 0=ok, -1=not found, other=error */
   [[nodiscard]] int QueryMinit(
       const std::string& upload_id,
       std::string& out_doc);
 
-  /** @brief Update minit_col 字段（merged_size / last_merged_part） */
+  /* Update minit_col 字段（merged_size / last_merged_part） */
   [[nodiscard]] int UpdateMinit(
       const std::string& upload_id,
       const std::string& field_name,
       std::uint64_t value);
 
-  /** @brief Delete minit_col 文档（AbortUpload/CompleteUpload） */
+  /* Delete minit_col 文档（AbortUpload/CompleteUpload） */
   [[nodiscard]] int DeleteMinit(const std::string& upload_id);
 
   // ========== part_col ==========
 
-  /** @brief Insert part_col 文档（UploadPart） */
+  /* Insert part_col 文档（UploadPart） */
   [[nodiscard]] int InsertPart(
       const std::string& upload_id,
       std::uint32_t part_number,
@@ -103,24 +95,17 @@ class DBGateClient {
       const std::string& etag,
       const std::string& crc_array);
 
-  /** @brief Query part_col 文档列表（CompleteUpload） */
+  /* Query part_col 文档列表（CompleteUpload） */
   [[nodiscard]] int QueryParts(
       const std::string& upload_id,
       std::string& out_docs);
 
-  /** @brief Delete part_col 文档（AbortUpload/CompleteUpload） */
+  /* Delete part_col 文档（AbortUpload/CompleteUpload） */
   [[nodiscard]] int DeleteParts(const std::string& upload_id);
 
-  /**
-   * @brief 通用 MongoDB 操作骨架
-   *
-   * 构造 UMessage + 发送 + 解析 ExecuteMgoResponse。
-   * 参数为序列化的 protobuf 字符串，避免头文件依赖 proto 类型。
-   *
-   * @param mgo_req_serialized  已序列化的 ExecuteMgoRequest
-   * @param out_mgo_rsp_serialized 输出已序列化的 ExecuteMgoResponse
-   * @return 0=成功，非0=错误码
-   */
+  /* 通用 MongoDB 操作骨架：构造 UMessage + 发送 + 解析 ExecuteMgoResponse
+   * 入参/出参为序列化 protobuf 字符串，避免头文件依赖 proto 类型
+   * Returns 0=成功，非0=错误码 */
   [[nodiscard]] int ExecuteMgo(const std::string& mgo_req_serialized,
                                std::string& out_mgo_rsp_serialized);
 

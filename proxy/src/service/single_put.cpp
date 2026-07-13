@@ -73,11 +73,11 @@ int SinglePut::ValidateUcxRequest(const ClientProxyPutRequest& req) {
 int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
   const std::string& rid = req.request_id();
 
-  // 校验
+  /* 校验 */
   int ret = ValidateGdsRequest(req);
   if (ret != 0) return ret;
 
-  // 生成对象标识 + 写单块
+  /* 生成对象标识 + 写单块 */
   const std::string obj_id     = utils::GenUuid();
   const std::string block_key  = obj_id + "_0";
   const auto res = client_->PutBlockGds(block_key, req.gds_source().rdma_token(),
@@ -89,7 +89,7 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
   LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}",
             block_key, res.crc32c, res.bytes_written);
 
-  // 写对象索引 + 填充输出
+  /* 写对象索引 + 填充输出 */
   if (!WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
                         req.object_size(), res.crc32c, out)) {
     LOG_ERROR(rid, "WriteObjectIndex failed for key={}", req.key());
@@ -101,11 +101,11 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
 int SinglePut::PutUcx(const ClientProxyPutRequest& req, PutOutput& out) {
   const std::string& rid = req.request_id();
 
-  // 校验
+  /* 校验 */
   int ret = ValidateUcxRequest(req);
   if (ret != 0) return ret;
 
-  // 生成对象标识 + 写单块
+  /* 生成对象标识 + 写单块 */
   const std::string obj_id     = utils::GenUuid();
   const std::string block_key  = obj_id + "_0";
   const auto& usrc = req.ucx_source();
@@ -119,7 +119,7 @@ int SinglePut::PutUcx(const ClientProxyPutRequest& req, PutOutput& out) {
   LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}",
             block_key, res.crc32c, res.bytes_written);
 
-  // 写对象索引 + 填充输出
+  /* 写对象索引 + 填充输出 */
   if (!WriteObjectIndex(rid, req.bucket(), req.key(), obj_id,
                         req.object_size(), res.crc32c, out)) {
     LOG_ERROR(rid, "WriteObjectIndex failed for key={}", req.key());
@@ -143,17 +143,17 @@ bool SinglePut::WriteObjectIndex(
            "first_object={} block_size={} filesize={} etag={} hash={}",
            bucket, key, obj_id, object_size, object_size, out.etag, hash);
 
-  // 写 fileidx_col
+  /* 写 fileidx_col */
   bool success = index_->InsertFileIdx(
       bucket, key, obj_id,
       object_size,  // block_size = 对象大小（单块）
-      object_size,  // filesize
+      object_size,
       hash);
 
   if (!success) {
     LOG_ERROR(request_id, "Failed to write fileidx for key={}, rolling back block={}",
               key, obj_id + "_0");
-    // 回滚：删除已写块（尽力而为，失败由 ufile-ac TTL 兜底）
+    /* 回滚: 删除已写块, 失败由 ufile-ac TTL 兜底 */
     const std::string block_key = obj_id + "_0";
     auto result = client_->DeleteBlock(block_key);
     if (result.ret_code != 0) {

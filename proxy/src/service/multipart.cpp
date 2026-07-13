@@ -39,7 +39,7 @@ int Multipart::ValidateUploadPartGds(
     const std::string& request_id, const std::string& upload_id,
     std::uint32_t part_number, std::uint64_t part_size,
     const std::string& rdma_token, UploadRecord& out_upload) {
-  /* 1. 读取 upload 元信息（需要 obj_id） */
+  /* 1) 读取 upload 元信息 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "UploadPartGds upload_id not found upload={}", upload_id);
@@ -51,7 +51,7 @@ int Multipart::ValidateUploadPartGds(
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
 
-  /* 2. 基础校验（part_size 上限用 FLAGS_multipart_part_size） */
+  /* 2) 基础参数校验 */
   if (part_number == 0 || part_size == 0) {
     LOG_WARN(request_id, "UploadPartGds upload={} part={} part_size={} zero",
              upload_id, part_number, part_size);
@@ -76,7 +76,7 @@ int Multipart::ValidateUploadPartUcx(
     std::uint32_t part_number, std::uint64_t part_size,
     std::uint64_t remote_addr, const std::string& packed_rkey,
     const std::string& client_ucx_addr, UploadRecord& out_upload) {
-  /* 1. 读取 upload 元信息（需要 obj_id） */
+  /* 1) 读取 upload 元信息 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "UploadPartUcx upload_id not found upload={}", upload_id);
@@ -88,7 +88,7 @@ int Multipart::ValidateUploadPartUcx(
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
 
-  /* 2. 基础校验（part_size 上限用 FLAGS_multipart_part_size） */
+  /* 2) 基础参数校验 */
   if (part_number == 0 || part_size == 0) {
     LOG_WARN(request_id, "UploadPartUcx upload={} part={} part_size={} zero",
              upload_id, part_number, part_size);
@@ -113,10 +113,10 @@ bool Multipart::WritePartIndex(
     std::uint32_t part_number, std::uint64_t part_size,
     std::uint64_t file_offset, const std::vector<std::uint32_t>& block_crcs,
     UploadPartOutput& out) {
-  /* 1. 计算 part etag */
+  /* 1) 计算 part etag */
   const std::string part_etag = utils::CombineBlockCRC32s(block_crcs);
 
-  /* 2. 写 part 索引（对齐 s3proxy 字段，含 block_crcs 用于对象内容哈希） */
+  /* 2) 写 part 索引 */
   PartRecord part;
   part.part_number    = part_number;
   part.part_size      = part_size;
@@ -128,15 +128,15 @@ bool Multipart::WritePartIndex(
   part.block_crcs     = block_crcs;
   if (!index_->AddPart(upload_id, part)) {
     LOG_ERROR(request_id, "upload={} part={} AddPart failed", upload_id, part_number);
-    // 注：此处不清理 blocks（caller 负责，若 WritePartIndex 失败会走 cleanup）
+    // caller 负责清理 blocks
     return false;
   }
 
-  /* 3. 更新 upload 级合并进度（对齐 s3proxy） */
+  /* 3) 更新 upload 合并进度 */
   index_->UpdateMergedSize(upload_id, file_offset + part_size);
   index_->UpdateLastMergedPart(upload_id, static_cast<std::int32_t>(part_number));
 
-  /* 4. 填充输出 */
+  /* 4) 填充输出 */
   out.etag          = part_etag;
   out.crc32c        = block_crcs.empty() ? 0 : block_crcs[0];
   out.bytes_written = part_size;
@@ -169,13 +169,13 @@ int Multipart::UploadPartGds(
     std::uint32_t part_number, std::uint64_t part_size,
     const std::string& rdma_token,
     UploadPartOutput& out) {
-  /* ① 校验 */
+  /* 1) 校验 */
   UploadRecord upload;
   int ret = ValidateUploadPartGds(request_id, upload_id, part_number, part_size,
                                    rdma_token, upload);
   if (ret != 0) return ret;
 
-  /* ② 计算全局 block 起点 + 文件偏移（从 flag 读常量） */
+  /* 2) 计算 block 起点 + 文件偏移 */
   const std::uint64_t block_size = static_cast<std::uint64_t>(FLAGS_multipart_block_size);
   const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
   const std::uint32_t blocks_per_part = static_cast<std::uint32_t>(FLAGS_multipart_blocks_per_part);
@@ -187,7 +187,7 @@ int Multipart::UploadPartGds(
   LOG_INFO(request_id, "upload={} part={} size={} blocks={} offset={}",
            upload_id, part_number, part_size, block_count, file_offset);
 
-  /* ③ 串行写 blocks */
+  /* 3) 串行写 blocks */
   std::vector<std::uint32_t> crcs;
   crcs.reserve(block_count);
   std::vector<std::string> written_keys;
@@ -220,7 +220,7 @@ int Multipart::UploadPartGds(
               upload_id, part_number, i, block_key, result.crc32c);
   }
 
-  /* ④ 写索引 + 填输出 */
+  /* 4) 写索引 + 填输出 */
   if (!WritePartIndex(request_id, upload_id, part_number, part_size,
                       file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
@@ -237,13 +237,13 @@ int Multipart::UploadPartUcx(
     std::uint64_t remote_addr, const std::string& packed_rkey,
     const std::string& client_ucx_addr,
     UploadPartOutput& out) {
-  /* ① 校验 */
+  /* 1) 校验 */
   UploadRecord upload;
   int ret = ValidateUploadPartUcx(request_id, upload_id, part_number, part_size,
                                    remote_addr, packed_rkey, client_ucx_addr, upload);
   if (ret != 0) return ret;
 
-  /* ② 计算全局 block 起点 + 文件偏移（从 flag 读常量） */
+  /* 2) 计算 block 起点 + 文件偏移 */
   const std::uint64_t block_size = static_cast<std::uint64_t>(FLAGS_multipart_block_size);
   const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
   const std::uint32_t blocks_per_part = static_cast<std::uint32_t>(FLAGS_multipart_blocks_per_part);
@@ -255,7 +255,7 @@ int Multipart::UploadPartUcx(
   LOG_INFO(request_id, "upload={} part={} size={} blocks={} offset={}",
            upload_id, part_number, part_size, block_count, file_offset);
 
-  /* ③ 串行写 blocks（UCX：remote_addr 基址 + source_offset 偏移） */
+  /* 3) 串行写 blocks */
   std::vector<std::uint32_t> crcs;
   crcs.reserve(block_count);
   std::vector<std::string> written_keys;
@@ -289,7 +289,7 @@ int Multipart::UploadPartUcx(
               upload_id, part_number, i, block_key, result.crc32c);
   }
 
-  /* ④ 写索引 + 填输出 */
+  /* 4) 写索引 + 填输出 */
   if (!WritePartIndex(request_id, upload_id, part_number, part_size,
                       file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
@@ -305,7 +305,7 @@ int Multipart::CompleteUpload(
     const std::string& upload_id,
     const std::vector<CompleteMultipartUploadRequest_PartInfo>& client_parts,
     CompleteOutput& out) {
-  /* 1. 读取 upload 元信息 */
+  /* 1) 读取 upload 元信息 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "upload_id not found upload={}", upload_id);
@@ -315,17 +315,17 @@ int Multipart::CompleteUpload(
   std::vector<PartRecord> parts;
   index_->ListParts(upload_id, parts);
 
-  /* 2. 按 part_number 升序排序 */
+  /* 2) 按 part_number 升序排序 */
   std::sort(parts.begin(), parts.end(),
             [](const PartRecord& a, const PartRecord& b) {
               return a.part_number < b.part_number;
             });
 
-  /* 3. 校验升序无重复（允许间隙如 1,3,5） */
+  /* 3) 校验升序无重复 */
   int ret = ValidateParts(request_id, parts);
   if (ret != 0) return ret;
 
-  /* 4. 校验所有 part valid（阶段二写入时置 true，兜底） */
+  /* 4) 校验所有 part valid */
   for (const auto& p : parts) {
     if (!p.valid) {
       LOG_WARN(request_id, "upload={} part {} not valid", upload_id, p.part_number);
@@ -333,11 +333,11 @@ int Multipart::CompleteUpload(
     }
   }
 
-  /* 5. 16MB 对齐校验（除最后一个外必须 16MB） */
+  /* 5) 16MB 对齐校验 */
   ret = ValidatePartSizes(request_id, parts);
   if (ret != 0) return ret;
 
-  /* 6. client 提供 part 列表时校验 etag 匹配 */
+  /* 6) 校验 client part 列表 etag 匹配 */
   if (!client_parts.empty()) {
     if (client_parts.size() != parts.size()) {
       LOG_WARN(request_id, "upload={} client parts={} != actual={}",
@@ -354,10 +354,7 @@ int Multipart::CompleteUpload(
     }
   }
 
-  /*
-   * 7. 使用索引累积的总大小（upload.merged_size 在每个 UploadPart 成功后更新），
-   * 并与 parts 求和交叉校验，确保增量索引与 part 记录一致。
-   */
+  /* 7) 校验 merged_size 与 parts 求和一致 */
   std::uint64_t parts_sum = 0;
   for (const auto& p : parts) parts_sum += p.part_size;
   if (upload.merged_size != parts_sum) {
@@ -367,11 +364,7 @@ int Multipart::CompleteUpload(
   }
   const std::uint64_t total_size = upload.merged_size;
 
-  /*
-   * 8. 从已排序的 parts 重建全局有序的 block crcs（= s3proxy US3Etags）。
-   * 每个 part 的 block_crcs 写入时即有序，parts 已按 part_number 排序，
-   * 故顺序拼接即得全局块号连续的 crc 列表，用于对象内容哈希。
-   */
+  /* 8) 重建全局有序 block crcs 用于对象内容哈希 */
   std::vector<std::uint32_t> object_crcs;
   for (const auto& p : parts) {
     if (p.block_crcs.empty()) {
@@ -383,11 +376,7 @@ int Multipart::CompleteUpload(
   }
   const std::string object_hash = utils::CombineBlockCRC32s(object_crcs);
 
-  /*
-   * 9. 写 fileidx_col（对象元数据，供 s3proxy 读取）
-   * block_size = FLAGS_multipart_block_size（4MB 固定，与 single_put 不同）
-   * hash = 组合所有 part 的 block CRCs
-   */
+  /* 9) 写 fileidx_col 对象元数据供 s3proxy 读取 */
   const std::string final_etag = ComputeFinalETag(parts);
 
   LOG_INFO(request_id, "fileidx(compat s3proxy): bucket={} key={} "
@@ -399,7 +388,7 @@ int Multipart::CompleteUpload(
       upload.bucket,
       upload.key,
       upload.obj_id,
-      upload.block_size,  // 固定 4MB（FLAGS_multipart_block_size）
+      upload.block_size,  // FLAGS_multipart_block_size 固定 4MB
       total_size,
       object_hash);
 
@@ -412,7 +401,7 @@ int Multipart::CompleteUpload(
   out.etag        = final_etag;
   out.object_size = total_size;
 
-  /* 10. 清理 upload 索引（成功后删 minit + parts） */
+  /* 10) 清理 upload 索引 */
   index_->Remove(upload_id);
 
   LOG_INFO(request_id, "completed object_id={} size={} etag={} parts={}",
@@ -427,8 +416,7 @@ bool Multipart::AbortUpload(const std::string& request_id,
   return true;
 }
 
-// s3 语义：part_number 升序且无重复（允许间隙，如 1,3,5）。
-// parts 已在 CompleteUpload 里按 part_number 排序，此处只校验严格升序。
+/* s3 语义：part_number 升序无重复（允许间隙），此处校验严格升序 */
 int Multipart::ValidateParts(const std::string& request_id,
                               const std::vector<PartRecord>& parts) {
   if (parts.empty()) {
@@ -445,12 +433,6 @@ int Multipart::ValidateParts(const std::string& request_id,
   return 0;
 }
 
-/*
- * 16MB 对齐校验：parts 已按 part_number 升序排列。
- * 规则：除最后一个（最大 part_number）外，所有 part 必须 == 16MB；
- *       最后一个可以 ≤ 16MB（允许不足一个 part）。
- * 这是保证 block key 全局连续、s3proxy 可读的前提。
- */
 int Multipart::ValidatePartSizes(const std::string& request_id,
                                  const std::vector<PartRecord>& parts) {
   const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
@@ -470,7 +452,7 @@ int Multipart::ValidatePartSizes(const std::string& request_id,
   return 0;
 }
 
-// 单 part → 该 part 的 etag；多 part → 4 字节 LE count 前缀 + SHA1(各 etag 拼接) 再 base64。
+/* 单 part → 该 part 的 etag；多 part → LE count + SHA1(etags) + base64 */
 std::string Multipart::ComputeFinalETag(
     const std::vector<PartRecord>& parts) {
   std::vector<std::string> etags;

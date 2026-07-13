@@ -18,25 +18,17 @@
 
 namespace us3_turbo::proxy {
 
-/**
- * @brief 应用日志：proxy-YYYY-MM-DD-HH-MM.log，按大小滚动，支持 info/debug 级别。
-
- * 文件策略：
- *   - 按大小滚动（可配置，默认 50MB）
- *   - 保留文件数可配置（默认 10 个）
- *   - 文件名带启动时间戳：proxy-2026-07-07-10-20.log
- *
- * 使用：通过宏自动填充函数名
- *   LOG_INFO(request_id, "msg {}", arg);     // 请求日志
- *   LOG_SYS_INFO("proxy starting on {}", ep); // 进程日志
- */
+/* 应用日志：proxy-YYYY-MM-DD-HH-MM.log，按大小滚动，支持 info/debug 级别。
+ * 按大小滚动（默认 50MB），保留文件数可配置（默认 10 个），文件名带启动时间戳。
+ * 通过 LOG_INFO/LOG_SYS_INFO 等宏自动填充函数名，分别用于请求日志和进程日志。 */
 class Logger {
  public:
+  /* Initialize the rotating file + console dual-sink logger. */
   static void Init(spdlog::level::level_enum level = spdlog::level::info,
                    std::size_t max_file_size_mb = 50,
                    std::size_t max_files = 10);
 
-  // === 请求日志（带 request_id）：[函数名][req=rid] 消息 ===
+  /* 请求日志（带 request_id）：[函数名][req=rid] 消息 */
 
   template <typename... Args>
   static void Info(std::string_view func, std::string_view request_id,
@@ -66,8 +58,7 @@ class Logger {
                   fmt::format(fmt, std::forward<Args>(args)...));
   }
 
-  // === 进程日志（无 request_id）：[函数名] 消息 ===
-  // 用于 main.cpp 启动/停止、存储层构造期等无请求上下文的日志。
+  /* 进程日志（无 request_id）：[函数名] 消息，用于启动/停止、构造期等无请求上下文场景 */
 
   template <typename... Args>
   static void SysInfo(std::string_view func,
@@ -98,7 +89,7 @@ class Logger {
   }
 };
 
-// 请求日志宏（带 request_id）。
+/* 请求日志宏（带 request_id） */
 #define LOG_INFO(rid, fmt, ...)  \
   us3_turbo::proxy::Logger::Info(__func__, rid, fmt, ##__VA_ARGS__)
 #define LOG_WARN(rid, fmt, ...)  \
@@ -108,7 +99,7 @@ class Logger {
 #define LOG_DEBUG(rid, fmt, ...) \
   us3_turbo::proxy::Logger::Debug(__func__, rid, fmt, ##__VA_ARGS__)
 
-// 进程日志宏（无 request_id）。
+/* 进程日志宏（无 request_id） */
 #define LOG_SYS_INFO(fmt, ...)  \
   us3_turbo::proxy::Logger::SysInfo(__func__, fmt, ##__VA_ARGS__)
 #define LOG_SYS_WARN(fmt, ...)  \

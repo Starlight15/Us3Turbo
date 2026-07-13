@@ -16,7 +16,7 @@
 
 namespace us3_turbo::proxy {
 
-// bucket/key 在 multipart part/complete/abort 请求里没有，Access 日志用占位。
+// multipart part/complete/abort 无 bucket/key，Access 日志用占位符
 static constexpr const char* kDash = "-";
 
 void ProxyService::CleanupThreadMain() {
@@ -27,7 +27,7 @@ void ProxyService::CleanupThreadMain() {
   while (!stop_cleanup_) {
     if (cleanup_cv_.wait_for(lock, kScanInterval,
                              [this] { return stop_cleanup_; })) {
-      break;  // 被析构唤醒
+      break;  // 析构唤醒
     }
     lock.unlock();
     index_->RemoveExpired(kTtlMs);
@@ -35,10 +35,7 @@ void ProxyService::CleanupThreadMain() {
   }
 }
 
-// ===========================================================================
-// 单步 PUT（GDS / UCX）：薄委托服务层，ret != 0 → SetFailed。
-// 每个 handler 开始记 LOG_INFO，结束打 Access 日志（成功/失败均打）。
-// ===========================================================================
+/* 单步 PUT(GDS/UCX): 薄委托, ret!=0 → SetFailed; 日志+Access 日志 */
 
 void ProxyService::GdsPut(
     google::protobuf::RpcController* cntl_base,
@@ -108,10 +105,7 @@ void ProxyService::UcxPut(
       0, out.bytes_written, latency);
 }
 
-// ===========================================================================
-// 分段上传：薄委托服务层，ret != 0 → set_error_message + SetFailed。
-// multipart part/complete/abort 请求无 bucket/key，Access 日志用 "-" 占位。
-// ===========================================================================
+/* 分段上传: 薄委托, ret!=0 → set_error_message+SetFailed; part/complete/abort 无 bucket/key, 日志用"-"占位 */
 
 void ProxyService::CreateMultipartUpload(
     google::protobuf::RpcController* cntl_base,
@@ -286,7 +280,7 @@ void ProxyService::AbortMultipartUpload(
   const auto start = std::chrono::steady_clock::now();
   LOG_INFO(rid, "start upload={}", request->upload_id());
 
-  (void)multipart_->AbortUpload(rid, request->upload_id());  // 幂等，恒 true
+  (void)multipart_->AbortUpload(rid, request->upload_id());  // 幂等
   response->set_ok(true);
   const auto latency = utils::ElapsedMs(start);
   LOG_INFO(rid, "done upload={}", request->upload_id());
@@ -294,9 +288,7 @@ void ProxyService::AbortMultipartUpload(
       "AbortMultipartUpload", rid, kDash, kDash, 0, 0, latency);
 }
 
-// ===========================================================================
-// GET（StatObject / GdsGet）：薄委托服务层，ret != 0 → SetFailed。
-// ===========================================================================
+/* GET(StatObject/GdsGet/UcxGet): 薄委托, ret!=0 → SetFailed */
 
 void ProxyService::StatObject(
     google::protobuf::RpcController* cntl_base,

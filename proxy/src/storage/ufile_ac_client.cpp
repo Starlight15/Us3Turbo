@@ -11,7 +11,6 @@
 
 namespace us3_turbo::proxy {
 
-/* 拆分 "host:port" → host + port；失败返回 false。 */
 bool UfileAcClient::ParseEndpoint(const std::string& endpoint,
                                   std::string& host, int& port) {
   const auto pos = endpoint.rfind(':');
@@ -25,10 +24,6 @@ bool UfileAcClient::ParseEndpoint(const std::string& endpoint,
   return !host.empty() && port > 0;
 }
 
-/*
- * 方案 A 惰性取连接：轮询最多 pool_size 次，跳过坏连接；坏连接在槽位锁内
- * 当场重连一次（避免多线程并发重连同一槽）。返回 {idx, conn*}；全坏 {npos,null}。
- */
 std::pair<std::size_t, TcpConnection*> UfileAcClient::AcquireConn() {
   const std::size_t size = conns_.size();
   if (size == 0) return {static_cast<std::size_t>(-1), nullptr};
@@ -43,7 +38,7 @@ std::pair<std::size_t, TcpConnection*> UfileAcClient::AcquireConn() {
   return {static_cast<std::size_t>(-1), nullptr};
 }
 
-// ============================ GDS PUT ============================
+/* GDS PUT */
 
 BlockResult UfileAcClient::PutBlockGds(
     const std::string& key,
@@ -70,7 +65,7 @@ BlockResult UfileAcClient::PutBlockGds(
                          static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
-// ============================ UCX PUT ============================
+/* UCX PUT */
 
 BlockResult UfileAcClient::PutBlockUcx(
     const std::string& key,
@@ -100,7 +95,7 @@ BlockResult UfileAcClient::PutBlockUcx(
                          static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
-// ============================ DEL（尽力清理）============================
+/* DEL (best-effort) */
 
 BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
   LOG_SYS_DEBUG("DeleteBlock: key={}", key);
@@ -123,12 +118,8 @@ BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
                       static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
-// ============================ 通用收发骨架 ============================
+/* 通用收发骨架 */
 
-/*
- * 通用收发骨架：取连接 → 加锁 → 发送 req_buf → 收响应头（校验）→ 收响应体。
- * 成功返回 0，out_body 填充响应体；失败返回非 0，out_result 填 error。
- */
 int UfileAcClient::SendAndRecv(const char* op_name,
                                std::uint32_t expected_type,
                                std::uint32_t min_rsp_body,
@@ -189,7 +180,7 @@ int UfileAcClient::SendAndRecv(const char* op_name,
   return 0;
 }
 
-// ============================ 解码辅助（从 lambda 提取）============================
+/* 解码辅助 */
 
 BlockResult UfileAcClient::DecodeGdsPutRsp(const char* body,
                                            std::uint32_t body_len,
@@ -278,7 +269,7 @@ BlockResult UfileAcClient::DecodeDelRsp(const char* body,
   return BlockResult{};  // 默认全 0，成功
 }
 
-// ============================ GDS GET ============================
+/* GDS GET */
 
 BlockResult UfileAcClient::GetBlockGds(
     const std::string& key,
@@ -340,7 +331,7 @@ BlockResult UfileAcClient::DecodeGdsGetRsp(const char* body,
   return r;
 }
 
-// ============================ UCX GET ============================
+/* UCX GET */
 
 BlockResult UfileAcClient::GetBlockUcx(
     const std::string& key,

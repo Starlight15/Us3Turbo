@@ -9,8 +9,6 @@ namespace us3_turbo::proxy {
 
 // ============================ GDS PUT ============================
 
-/* 编码 GDS PUT 请求：Message(52) + GdsPutReq(52) + key + rdma_token。
- * 仅 msgSize_ 大端，其余主机序直接赋值；预留字段填 0。返回总字节数。 */
 std::size_t EncodeGdsPutRequest(
     const std::string& key,
     const std::string& rdma_token,
@@ -31,7 +29,7 @@ std::size_t EncodeGdsPutRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
-  // 请求头（仅 msgSize_ 大端，其余主机序直接赋值）
+  /* 请求头: 仅 msgSize_ 大端, 其余主机序 */
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -46,7 +44,7 @@ std::size_t EncodeGdsPutRequest(
   std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
   p += MESSAGE_HEAD_SIZE;
 
-  // GdsPutReq（requestId_/sessionId*_/flags_ 预留填 0）
+  /* GdsPutReq: 预留字段填 0 */
   GdsPutReq req{};
   req.keyLen_        = key_len;
   req.tokenLen_      = tok_len;
@@ -59,14 +57,13 @@ std::size_t EncodeGdsPutRequest(
   std::memcpy(p, &req, GDS_PUT_REQ_SIZE);
   p += GDS_PUT_REQ_SIZE;
 
-  // 变长数据：key + rdma_token
+  /* 变长数据: key + rdma_token */
   std::memcpy(p, key.data(), key.size());
   p += key.size();
   std::memcpy(p, rdma_token.data(), rdma_token.size());
   return total;
 }
 
-/* 解码 GDS PUT 响应体（GdsPutRsp + errmsg）。返回 0=成功，-1=格式错误。 */
 int DecodeGdsPutResponse(
     const char* buffer,
     std::size_t len,
@@ -92,8 +89,6 @@ int DecodeGdsPutResponse(
 
 // ============================ UCX PUT ============================
 
-/* 编码 UCX PUT 请求：Message(52) + UcxPutReq(68) + key + client_ucx_addr + packed_rkey。
- * 仅 msgSize_ 大端，其余主机序；预留字段填 0。返回总字节数。 */
 std::size_t EncodeUcxPutRequest(
     const std::string& key,
     std::uint64_t remote_addr,
@@ -117,7 +112,7 @@ std::size_t EncodeUcxPutRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
-  // 请求头（仅 msgSize_ 大端，其余主机序）
+  /* 请求头: 仅 msgSize_ 大端, 其余主机序 */
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -132,7 +127,7 @@ std::size_t EncodeUcxPutRequest(
   std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
   p += MESSAGE_HEAD_SIZE;
 
-  // UcxPutReq（reserved0_/requestId_/sessionId*_/flags_ 预留填 0）
+  /* UcxPutReq: 预留字段填 0 */
   UcxPutReq req{};
   req.keyLen_        = key_len;
   req.addrLen_       = addr_len;
@@ -148,7 +143,7 @@ std::size_t EncodeUcxPutRequest(
   std::memcpy(p, &req, UCX_PUT_REQ_SIZE);
   p += UCX_PUT_REQ_SIZE;
 
-  // 变长数据：key + client_ucx_addr + packed_rkey
+  /* 变长数据: key + addr + rkey */
   std::memcpy(p, key.data(), key.size());
   p += key.size();
   std::memcpy(p, client_ucx_addr.data(), client_ucx_addr.size());
@@ -157,7 +152,6 @@ std::size_t EncodeUcxPutRequest(
   return total;
 }
 
-/* 解码 UCX PUT 响应体（UcxPutRsp + errmsg）。返回 0=成功，-1=格式错误。 */
 int DecodeUcxPutResponse(
     const char* buffer,
     std::size_t len,
@@ -181,8 +175,6 @@ int DecodeUcxPutResponse(
 
 // ============================ DEL ============================
 
-/* 编码 DEL 请求：Message(52) + DelReq(12) + key。
- * 仅 msgSize_ 大端，其余主机序；reserve_ 填 0。返回总字节数。 */
 std::size_t EncodeDelRequest(
     const std::string& key,
     std::uint32_t setid,
@@ -199,7 +191,7 @@ std::size_t EncodeDelRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
-  // 请求头（仅 msgSize_ 大端，其余主机序）
+  /* 请求头: 仅 msgSize_ 大端, 其余主机序 */
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -214,19 +206,18 @@ std::size_t EncodeDelRequest(
   std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
   p += MESSAGE_HEAD_SIZE;
 
-  // DelReq（reserve_ 保留填 0）
+  /* DelReq: reserve_ 填 0 */
   DelReq req{};
   req.keyLen_  = key_len;
   req.reserve_ = 0;
   std::memcpy(p, &req, DEL_REQ_SIZE);
   p += DEL_REQ_SIZE;
 
-  // 变长数据：key
+  /* 变长数据: key */
   std::memcpy(p, key.data(), key.size());
   return total;
 }
 
-/* 解码 DEL 响应体（DelRsp + errmsg）。返回 0=成功，-1=格式错误。 */
 int DecodeDelResponse(
     const char* buffer,
     std::size_t len,
@@ -250,9 +241,6 @@ int DecodeDelResponse(
 
 // ============================ GDS GET ============================
 
-/* 编码 GDS GET 请求：Message(52) + GdsGetReq(60) + key + rdma_token。
- * 与 GdsPutReq 布局不同：tokenLen_ 之后多 readOffset_（8字节）。
- * 仅 msgSize_ 大端，其余主机序直接赋值；预留字段填 0。返回总字节数。 */
 std::size_t EncodeGdsGetRequest(
     const std::string& key,
     const std::string& rdma_token,
@@ -275,7 +263,7 @@ std::size_t EncodeGdsGetRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
-  // 请求头（仅 msgSize_ 大端，其余主机序直接赋值）
+  /* 请求头: 仅 msgSize_ 大端, 其余主机序 */
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -290,7 +278,7 @@ std::size_t EncodeGdsGetRequest(
   std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
   p += MESSAGE_HEAD_SIZE;
 
-  // GdsGetReq（readOffset_ 本阶段恒 0；sessionId*_/flags_ 预留填 0）
+  /* GdsGetReq: readOffset_ 恒 0, 预留字段填 0 */
   GdsGetReq req{};
   req.keyLen_        = key_len;
   req.tokenLen_      = tok_len;
@@ -304,15 +292,13 @@ std::size_t EncodeGdsGetRequest(
   std::memcpy(p, &req, GDS_GET_REQ_SIZE);
   p += GDS_GET_REQ_SIZE;
 
-  // 变长数据：key + rdma_token
+  /* 变长数据: key + rdma_token */
   std::memcpy(p, key.data(), key.size());
   p += key.size();
   std::memcpy(p, rdma_token.data(), rdma_token.size());
   return total;
 }
 
-/* 解码 GDS GET 响应体（GdsGetRsp + errmsg，无 etag）。
- * 对齐 DecodeUcxPutResponse 的写法（同为无 etag 的响应）。返回 0=成功，-1=格式错误。 */
 int DecodeGdsGetResponse(
     const char* buffer,
     std::size_t len,
@@ -336,9 +322,6 @@ int DecodeGdsGetResponse(
 
 // ============================ UCX GET ============================
 
-/* 编码 UCX GET 请求：Message(52) + UcxGetReq(76) + key + client_ucx_addr + packed_rkey。
- * 与 UcxPutReq 布局不同：dataLen_ 之前多 readOffset_（8字节），sourceOffset_ 改为 destOffset_。
- * 仅 msgSize_ 大端，其余主机序；预留字段填 0。返回总字节数。 */
 std::size_t EncodeUcxGetRequest(
     const std::string& key,
     std::uint64_t remote_addr,
@@ -364,7 +347,7 @@ std::size_t EncodeUcxGetRequest(
   out_buffer.resize(total);
   char* p = out_buffer.data();
 
-  // 请求头（仅 msgSize_ 大端，其余主机序）
+  /* 请求头: 仅 msgSize_ 大端, 其余主机序 */
   Message msg{};
   msg.msgSize_       = htonl(msg_size_field);
   msg.magic_         = MESSAGE_MAGIC_NUMBER;
@@ -379,7 +362,7 @@ std::size_t EncodeUcxGetRequest(
   std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
   p += MESSAGE_HEAD_SIZE;
 
-  // UcxGetReq（readOffset_ 本阶段恒 0；reserved0_/sessionId*_/flags_ 预留填 0）
+  /* UcxGetReq: readOffset_ 恒 0, 预留字段填 0 */
   UcxGetReq req{};
   req.keyLen_        = key_len;
   req.addrLen_       = addr_len;
@@ -396,7 +379,7 @@ std::size_t EncodeUcxGetRequest(
   std::memcpy(p, &req, UCX_GET_REQ_SIZE);
   p += UCX_GET_REQ_SIZE;
 
-  // 变长数据：key + client_ucx_addr + packed_rkey
+  /* 变长数据: key + addr + rkey */
   std::memcpy(p, key.data(), key.size());
   p += key.size();
   std::memcpy(p, client_ucx_addr.data(), client_ucx_addr.size());
@@ -405,8 +388,6 @@ std::size_t EncodeUcxGetRequest(
   return total;
 }
 
-/* 解码 UCX GET 响应体（UcxGetRsp + errmsg，无 etag）。
- * 对齐 DecodeUcxPutResponse / DecodeGdsGetResponse 的写法。返回 0=成功，-1=格式错误。 */
 int DecodeUcxGetResponse(
     const char* buffer,
     std::size_t len,
