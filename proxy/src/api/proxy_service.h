@@ -13,6 +13,8 @@
 #include "proxy/src/service/get_object.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
+#include "proxy/src/storage/dbgate_client.h"
+#include "proxy/src/storage/ufile_ac_client.h"
 
 namespace us3_turbo::proxy {
 
@@ -120,6 +122,18 @@ class ProxyService final
   std::mutex              cleanup_mu_;
   std::condition_variable cleanup_cv_;
   bool                    stop_cleanup_{false};   // cleanup_mu_ 保护
+};
+
+/*
+ * 依赖注入装配产物：存储层 + 索引层 + 接口层。
+ * 成员析构逆序 = service→index→dbgate→ufile_ac，保证 service 的 TTL 清理
+ * 先完成再释放下层。
+ */
+struct AssembledStack {
+  std::unique_ptr<UfileAcClient>  ufile_ac;
+  std::unique_ptr<DBGateClient>   dbgate;
+  std::unique_ptr<IUploadIndex>   index;
+  std::unique_ptr<ProxyService>   service;
 };
 
 }  // namespace us3_turbo::proxy

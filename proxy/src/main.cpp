@@ -33,18 +33,9 @@ void InitLogging() {
   us3_turbo::proxy::AccessLogger::Instance();
 }
 
-// 依赖注入装配产物：存储层 + 索引层 + 接口层
-// 成员析构逆序 = service→index→ufile_ac，保证 service 的 TTL 清理
-struct AssembledStack {
-  std::unique_ptr<us3_turbo::proxy::UfileAcClient>       ufile_ac;
-  std::unique_ptr<us3_turbo::proxy::DBGateClient>        dbgate;
-  std::unique_ptr<us3_turbo::proxy::IUploadIndex>        index;
-  std::unique_ptr<us3_turbo::proxy::ProxyService>        service;
-};
-
 // 依赖注入装配，自底向上：存储层最长命，接口层最上
-std::unique_ptr<AssembledStack> AssembleServices() {
-  auto stack = std::make_unique<AssembledStack>();
+std::unique_ptr<us3_turbo::proxy::AssembledStack> AssembleServices() {
+  auto stack = std::make_unique<us3_turbo::proxy::AssembledStack>();
   stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(
       FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
   stack->dbgate = std::make_unique<us3_turbo::proxy::DBGateClient>(
