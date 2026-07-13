@@ -382,4 +382,55 @@ bool ProxyRpc::GdsGet(std::string_view request_id,
   return resp.ok();
 }
 
+bool ProxyRpc::UcxGet(std::string_view request_id,
+                      const std::string& bucket,
+                      const std::string& key,
+                      std::uint64_t object_size,
+                      const UcxDataSource& ucx_source,
+                      GetPathResult& result) const {
+  if (!ok()) {
+    spdlog::error("UcxGet (req={}): proxy channel not ready: {}",
+                  request_id, init_error());
+    result.ok = false;
+    result.error_message = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  us3_turbo::proxy::ClientProxyGetRequest rpc_request;
+  rpc_request.set_request_id(std::string(request_id));
+  rpc_request.set_bucket(bucket);
+  rpc_request.set_key(key);
+  rpc_request.set_object_size(object_size);
+  auto* ucx = rpc_request.mutable_ucx_source();
+  ucx->set_remote_addr(ucx_source.remote_addr);
+  ucx->set_packed_rkey(ucx_source.packed_rkey);
+  ucx->set_client_ucx_addr(ucx_source.client_ucx_addr);
+
+  us3_turbo::proxy::GetPathResult resp;
+  stub()->UcxGet(&controller, &rpc_request, &resp, nullptr);
+
+  if (controller.Failed()) {
+    const bool is_timeout =
+        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) ||
+        (controller.ErrorCode() == ETIMEDOUT);
+    result.ok = false;
+    result.error_message = controller.ErrorText();
+    spdlog::error("{} (req={}): failed to execute UcxGet RPC: {}",
+                  is_timeout ? "timeout" : "data-plane",
+                  request_id, controller.ErrorText());
+    return false;
+  }
+
+  result.ok           = resp.ok();
+  result.error_code   = resp.error_code();
+  result.error_message = resp.error_message();
+  result.crc32c       = resp.crc32c();
+  result.bytes_read   = resp.bytes_read();
+  result.hash         = resp.hash();
+  return resp.ok();
+}
+
 }  // namespace us3_turbo::client

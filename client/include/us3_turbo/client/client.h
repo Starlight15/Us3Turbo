@@ -18,6 +18,7 @@ namespace us3_turbo::client {
 class GdsPutChannel;
 class GdsGetChannel;
 class UcxPutChannel;
+class UcxGetChannel;
 class PutChannel;
 class GdsMemoryManager;
 class UcxMemoryManager;
@@ -116,12 +117,21 @@ class Client {
                                   MutableBufferView buffer,
                                   GetPathResult& result) const;
 
+  /**
+   * @brief UCX 通路 GET：buffer 须已按 StatObject 返回的 size 分配（host 内存）。
+   */
+  [[nodiscard]] bool GetObjectUcx(const std::string& bucket,
+                                  const std::string& key,
+                                  MutableBufferView buffer,
+                                  GetPathResult& result) const;
+
  private:
   ClientOptions                  options_;
   std::unique_ptr<ProxyRpc>      proxy_;
   std::unique_ptr<GdsPutChannel> gds_channel_;
   std::unique_ptr<GdsGetChannel> gds_get_channel_;
   std::unique_ptr<UcxPutChannel> ucx_channel_;
+  std::unique_ptr<UcxGetChannel> ucx_get_channel_;
   bool                        initialized_{false};
 
   [[nodiscard]] bool ValidatePutPath(const ClientProxyPutRequest& req) const;

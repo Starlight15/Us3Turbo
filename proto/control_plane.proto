@@ -156,10 +156,12 @@ message AbortMultipartUploadResponse {
   string error_message = 2;
 }
 
-// ========== GET（GDS）控制面消息 ==========
-// 两段式：StatObject 查对象布局（client 据此分配显存）+ GdsGet 拉数据。
-// GET 时 backend 走 RDMA-WRITE 推数据到 client 注册的 GPU buffer（与 PUT 的
+// ========== GET（GDS / UCX）控制面消息 ==========
+// 两段式：StatObject 查对象布局（client 据此分配 buffer）+ GdsGet/UcxGet 拉数据。
+// GDS GET：backend 走 RDMA-WRITE 推数据到 client 注册的 GPU buffer（与 PUT 的
 // RDMA-READ 方向相反），故 client 须传 rdma_token + gpu_offset。
+// UCX GET：backend 走 ucp_put_nbx 推数据到 client 注册的 host buffer（与 PUT 的
+// ucp_get_nbx 方向相反），故 client 须传 remote_addr + packed_rkey + dest_offset。
 
 // 查对象布局（client GetObject 第一步，用于分配显存 buffer）。
 message StatObjectRequest {
@@ -176,14 +178,16 @@ message StatObjectResponse {
   string hash          = 5;  // fileidx 存的 hash，client 可选比对
 }
 
-// client → proxy GDS GET 请求。object_size 须与 StatObject 返回一致
+// client → proxy GET 请求。object_size 须与 StatObject 返回一致
 // （proxy 据此校验，防止 client 拿旧布局注册了错误大小的 buffer）。
+// GDS 与 UCX 各用独立 RPC（GdsGet / UcxGet），按 source 字段区分。
 message ClientProxyGetRequest {
   string        request_id  = 1;
   string        bucket      = 2;
   string        key         = 3;
   uint64        object_size = 4;
   GdsDataSource gds_source  = 10;
+  UcxDataSource ucx_source  = 11;
 }
 
 // GET 执行结果。crc32c/hash 为 proxy 按块重组后的校验值，与 fileidx.hash
@@ -192,7 +196,7 @@ message GetPathResult {
   bool   ok            = 1;
   int32  error_code    = 2;
   string error_message = 3;
-  uint32 crc32c        = 4;
+  uint32 crc32c        = 4;  // 仅单块对象填整对象 crc32c；多块为 0，完整性以 hash 为准
   uint64 bytes_read    = 5;
   string hash          = 6;
 }
@@ -254,6 +258,7 @@ service Control {
   // ===== GET 接口（client → proxy） =====
   rpc StatObject(StatObjectRequest) returns (StatObjectResponse);
   rpc GdsGet(ClientProxyGetRequest) returns (GetPathResult);
+  rpc UcxGet(ClientProxyGetRequest) returns (GetPathResult);
 }
 
 // Backend 数据面 block 级服务（proxy → backend）。与 Control 同进程注册：

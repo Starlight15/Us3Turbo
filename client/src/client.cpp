@@ -21,6 +21,7 @@
 #include "client/src/transport/gds_get_channel.h"
 #include "client/src/transport/put_channel.h"
 #include "client/src/transport/ucx_put_channel.h"
+#include "client/src/transport/ucx_get_channel.h"
 
 namespace us3_turbo::client {
 
@@ -103,10 +104,12 @@ bool Client::Initialize() {
   UcxMemoryManager* ucx_mgr = nullptr;
   if (UcxMemoryManager::Instance(ucx_mgr)) {
     ucx_channel_ = std::make_unique<UcxPutChannel>(options_, *proxy_, ucx_mgr);
+    ucx_get_channel_ = std::make_unique<UcxGetChannel>(options_, *proxy_, ucx_mgr);
   } else {
     spdlog::warn("Client::Initialize: UCX manager unavailable, "
                  "path=kUcx will fail");
     ucx_channel_.reset();
+    ucx_get_channel_.reset();
   }
 
   initialized_ = true;
@@ -114,6 +117,7 @@ bool Client::Initialize() {
 }
 
 void Client::Shutdown() {
+  ucx_get_channel_.reset();
   ucx_channel_.reset();
   gds_get_channel_.reset();
   gds_channel_.reset();
@@ -403,6 +407,21 @@ bool Client::GetObjectGds(const std::string& bucket,
     return false;
   }
   return gds_get_channel_->GetOnce(bucket, key, buffer, result);
+}
+
+bool Client::GetObjectUcx(const std::string& bucket,
+                          const std::string& key,
+                          MutableBufferView buffer,
+                          GetPathResult& result) const {
+  if (!initialized_) {
+    spdlog::error("GetObjectUcx: Client not initialized");
+    return false;
+  }
+  if (ucx_get_channel_ == nullptr) {
+    spdlog::error("GetObjectUcx: UCX get channel not initialized");
+    return false;
+  }
+  return ucx_get_channel_->GetOnce(bucket, key, buffer, result);
 }
 
 }  // namespace us3_turbo::client

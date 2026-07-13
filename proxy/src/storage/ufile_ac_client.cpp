@@ -321,14 +321,16 @@ BlockResult UfileAcClient::GetBlockGds(
     const std::string& rdma_token,
     std::uint64_t gpu_offset,
     std::uint64_t read_offset,
-    std::uint64_t data_len) {
-  LOG_SYS_DEBUG("GetBlockGds: key={} gpu_offset={} read_offset={} len={}",
-                key, gpu_offset, read_offset, data_len);
+    std::uint64_t data_len,
+    std::uint64_t request_id) {
+  LOG_SYS_DEBUG("GetBlockGds: key={} gpu_offset={} read_offset={} len={} request_id={}",
+                key, gpu_offset, read_offset, data_len, request_id);
 
   // 编码
   std::vector<char> req;
   EncodeGdsGetRequest(key, rdma_token, read_offset, gpu_offset, data_len, setid_,
-                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+                      session_seq_.fetch_add(1, std::memory_order_relaxed),
+                      request_id, req);
 
   // 收发
   std::vector<char> rsp_body;
@@ -367,6 +369,71 @@ BlockResult UfileAcClient::DecodeGdsGetRsp(const char* body,
   const std::uint32_t crc = rsp.crc32c_;
   const std::uint64_t read = rsp.bytesRead_;
   LOG_SYS_DEBUG("GetBlockGds: ok key={} crc32c={:#x} bytes={}", key, crc, read);
+  BlockResult r;
+  r.ret_code = 0;
+  r.crc32c = crc;
+  r.bytes_written = read;  // GET 语义下复用字段 = bytes_read
+  return r;
+}
+
+// ============================ UCX GET ============================
+
+BlockResult UfileAcClient::GetBlockUcx(
+    const std::string& key,
+    std::uint64_t remote_addr,
+    const std::string& packed_rkey,
+    const std::string& client_ucx_addr,
+    std::uint64_t dest_offset,
+    std::uint64_t read_offset,
+    std::uint64_t data_len,
+    std::uint64_t request_id) {
+  LOG_SYS_DEBUG("GetBlockUcx: key={} dest_offset={} read_offset={} len={} request_id={}",
+                key, dest_offset, read_offset, data_len, request_id);
+
+  // 编码
+  std::vector<char> req;
+  EncodeUcxGetRequest(key, remote_addr, packed_rkey, client_ucx_addr,
+                      dest_offset, read_offset, data_len, setid_,
+                      session_seq_.fetch_add(1, std::memory_order_relaxed),
+                      request_id, req);
+
+  // 收发
+  std::vector<char> rsp_body;
+  BlockResult result;
+  if (SendAndRecv("GetBlockUcx", OSD_UCX_GET_RSP, UCX_GET_RSP_SIZE,
+                  req, rsp_body, result) != 0) {
+    return result;  // 已填错误
+  }
+
+  // 解码
+  return DecodeUcxGetRsp(rsp_body.data(),
+                         static_cast<std::uint32_t>(rsp_body.size()), key);
+}
+
+BlockResult UfileAcClient::DecodeUcxGetRsp(const char* body,
+                                           std::uint32_t body_len,
+                                           const std::string& key) {
+  UcxGetRsp rsp{};
+  std::string errmsg;
+  if (DecodeUcxGetResponse(body, body_len, rsp, errmsg) != 0) {
+    LOG_SYS_ERROR("GetBlockUcx: decode failed key={}", key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "decode response failed: " + errmsg;
+    return r;
+  }
+  if (rsp.retcode_ != 0) {
+    const std::int32_t ret = rsp.retcode_;
+    LOG_SYS_ERROR("GetBlockUcx: backend ret={} msg={} key={}", ret, errmsg, key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "backend retcode=" + std::to_string(ret) + " msg=" + errmsg;
+    return r;
+  }
+  // packed 字段先拷贝到临时变量，避免绑定引用错误
+  const std::uint32_t crc = rsp.crc32c_;
+  const std::uint64_t read = rsp.bytesRead_;
+  LOG_SYS_DEBUG("GetBlockUcx: ok key={} crc32c={:#x} bytes={}", key, crc, read);
   BlockResult r;
   r.ret_code = 0;
   r.crc32c = crc;

@@ -97,6 +97,12 @@ class ProxyService final
       GetPathResult* response,
       google::protobuf::Closure* done) override;
 
+  void UcxGet(
+      google::protobuf::RpcController* cntl,
+      const ClientProxyGetRequest* request,
+      GetPathResult* response,
+      google::protobuf::Closure* done) override;
+
  private:
   // TTL 清理线程主函数（后台周期扫描，删除过期 multipart 会话）。
   void CleanupThreadMain();

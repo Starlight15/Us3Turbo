@@ -38,6 +38,8 @@ enum MessageType : std::uint32_t {
   OSD_GDS_GET_RSP  = 24,
   OSD_UCX_PUT_REQ  = 25,
   OSD_UCX_PUT_RSP  = 26,
+  OSD_UCX_GET_REQ  = 27,
+  OSD_UCX_GET_RSP  = 28,
 };
 
 /*
@@ -123,6 +125,42 @@ struct UcxPutRsp {
 } __attribute__((packed));
 
 /*
+ * UCX GET 请求（sizeof = 76）+ 变长 data_。
+ * 与 UcxPutReq 布局不同：dataLen_ 之前多 readOffset_（8 字节），
+ * remoteAddr_ 语义为 destination buffer（GET 写入端），sourceOffset_ 改为 destOffset_。
+ * 参数顺序按 backend message.h UcxGetReq 原样排列，不可照抄 UcxPutReq 顺序。
+ *   data_   = key bytes || client_ucx_addr bytes || packed_rkey bytes
+ *   bodyLen_ = UCX_GET_REQ_SIZE + keyLen_ + addrLen_ + rkeyLen_
+ */
+struct UcxGetReq {
+  std::uint32_t keyLen_;           // key 长度
+  std::uint32_t addrLen_;          // client_ucx_addr 长度
+  std::uint32_t rkeyLen_;          // packed_rkey 长度
+  std::uint32_t reserved0_;       // 预留填 0
+  std::uint64_t readOffset_;      // 对象内读偏移，本阶段恒 0（整对象读）
+  std::uint64_t dataLen_;          // 本次读取长度
+  std::uint64_t remoteAddr_;       // client destination buffer 虚拟地址
+  std::uint64_t destOffset_;       // 写入 destination buffer 的偏移
+  std::uint64_t requestId_;       // 预留填 0
+  std::uint64_t sessionIdLow_;     // 预留填 0
+  std::uint64_t sessionIdHigh_;    // 预留填 0
+  std::uint32_t flags_;            // 预留填 0
+  char          data_[0];          // key + client_ucx_addr + packed_rkey
+} __attribute__((packed));
+
+/*
+ * UCX GET 响应（sizeof = 20）+ 变长 data_（errmsg bytes，无 etag）。
+ *   bodyLen_ = UCX_GET_RSP_SIZE + errMsgLen_
+ */
+struct UcxGetRsp {
+  std::int32_t  retcode_;          // 0=成功
+  std::uint32_t crc32c_;
+  std::uint64_t bytesRead_;
+  std::uint32_t errMsgLen_;
+  char          data_[0];          // errmsg bytes
+} __attribute__((packed));
+
+/*
  * GDS GET 请求（sizeof = 60）+ 变长 data_。
  * 与 GdsPutReq 布局不同：tokenLen_ 之后多 readOffset_（8 字节），
  * 参数顺序按 backend message.h GdsGetReq 原样排列，不可照抄 GdsPutReq 顺序。
@@ -180,6 +218,8 @@ constexpr std::size_t GDS_PUT_REQ_SIZE  = sizeof(GdsPutReq);
 constexpr std::size_t GDS_PUT_RSP_SIZE  = sizeof(GdsPutRsp);
 constexpr std::size_t UCX_PUT_REQ_SIZE  = sizeof(UcxPutReq);
 constexpr std::size_t UCX_PUT_RSP_SIZE  = sizeof(UcxPutRsp);
+constexpr std::size_t UCX_GET_REQ_SIZE  = sizeof(UcxGetReq);
+constexpr std::size_t UCX_GET_RSP_SIZE  = sizeof(UcxGetRsp);
 constexpr std::size_t GDS_GET_REQ_SIZE  = sizeof(GdsGetReq);
 constexpr std::size_t GDS_GET_RSP_SIZE  = sizeof(GdsGetRsp);
 constexpr std::size_t DEL_REQ_SIZE      = sizeof(DelReq);
@@ -226,6 +266,31 @@ int DecodeUcxPutResponse(
     UcxPutRsp& out_rsp,
     std::string& out_err);
 
+// ============================ UCX GET ============================
+
+// 编码 UCX GET 请求到 out_buffer，返回总字节数。
+// buffer = Message(52) + UcxGetReq(76) + key + client_ucx_addr + packed_rkey
+// 与 UcxPutReq 布局不同：dataLen_ 之前多 readOffset_，sourceOffset_ 改为 destOffset_。
+std::size_t EncodeUcxGetRequest(
+    const std::string& key,
+    std::uint64_t remote_addr,
+    const std::string& packed_rkey,
+    const std::string& client_ucx_addr,
+    std::uint64_t dest_offset,
+    std::uint64_t read_offset,
+    std::uint64_t data_len,
+    std::uint32_t setid,
+    std::uint64_t session_id,
+    std::uint64_t request_id,
+    std::vector<char>& out_buffer);
+
+// 解码 UCX GET 响应体（UcxGetRsp + errmsg）。返回 0=成功，-1=格式错误。
+int DecodeUcxGetResponse(
+    const char* buffer,
+    std::size_t len,
+    UcxGetRsp& out_rsp,
+    std::string& out_err);
+
 // 编码 DEL 请求到 out_buffer，返回总字节数。
 // buffer = Message(52) + DelReq(12) + key
 std::size_t EncodeDelRequest(
@@ -253,6 +318,7 @@ std::size_t EncodeGdsGetRequest(
     std::uint64_t data_len,
     std::uint32_t setid,
     std::uint64_t session_id,
+    std::uint64_t request_id,
     std::vector<char>& out_buffer);
 
 // 解码 GDS GET 响应体（GdsGetRsp + errmsg，不含 Message 头）。

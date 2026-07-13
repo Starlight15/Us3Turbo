@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <functional>  // std::hash
 
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/utils.h"
@@ -55,6 +56,35 @@ int GetObject::ValidateGdsRequest(const ClientProxyGetRequest& req) {
   return 0;
 }
 
+int GetObject::ValidateUcxRequest(const ClientProxyGetRequest& req) {
+  const std::string& rid = req.request_id();
+  if (req.bucket().empty() || req.key().empty()) {
+    LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
+    return PROXY_ERR_INVALID_PARAM;
+  }
+  if (req.object_size() == 0) {
+    LOG_WARN(rid, "object_size=0 bucket={}/{}", req.bucket(), req.key());
+    return PROXY_ERR_INVALID_PARAM;
+  }
+  if (!req.has_ucx_source()) {
+    LOG_WARN(rid, "ucx_source missing bucket={}/{}", req.bucket(), req.key());
+    return PROXY_ERR_MISSING_SOURCE;
+  }
+  if (req.ucx_source().remote_addr() == 0) {
+    LOG_WARN(rid, "ucx remote_addr=0 bucket={}/{}", req.bucket(), req.key());
+    return PROXY_ERR_MISSING_SOURCE;
+  }
+  if (req.ucx_source().packed_rkey().empty()) {
+    LOG_WARN(rid, "ucx packed_rkey empty bucket={}/{}", req.bucket(), req.key());
+    return PROXY_ERR_MISSING_SOURCE;
+  }
+  if (req.ucx_source().client_ucx_addr().empty()) {
+    LOG_WARN(rid, "ucx client_ucx_addr empty bucket={}/{}", req.bucket(), req.key());
+    return PROXY_ERR_MISSING_SOURCE;
+  }
+  return 0;
+}
+
 int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
   const std::string& rid = req.request_id();
 
@@ -77,6 +107,7 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
   const std::uint64_t block_size = rec.block_size;
   const std::uint64_t block_count = (rec.filesize + block_size - 1) / block_size;
   const std::string& rdma_token = req.gds_source().rdma_token();
+  const std::uint64_t rid_hash = std::hash<std::string>{}(rid);
 
   std::vector<std::uint32_t> crcs;
   crcs.reserve(block_count);
@@ -87,7 +118,7 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
     const std::uint64_t len = std::min(block_size, rec.filesize - offset);
     const std::string block_key = rec.first_object + "_" + std::to_string(i);
 
-    const auto result = client_->GetBlockGds(block_key, rdma_token, offset, 0, len);
+    const auto result = client_->GetBlockGds(block_key, rdma_token, offset, 0, len, rid_hash);
     if (result.ret_code != 0) {
       LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key, result.error);
       return result.ret_code;
@@ -106,10 +137,73 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
     return PROXY_ERR_BACKEND_FAILED;
   }
 
-  out.crc32c     = crcs.empty() ? 0 : crcs[0];
+  out.crc32c     = (crcs.size() == 1) ? crcs[0] : 0;  // 仅单块整对象 crc；多块用 hash
   out.bytes_read = total_read;
   out.hash       = hash;
   LOG_INFO(rid, "GetGds ok bucket={}/{} bytes={} blocks={}",
+           req.bucket(), req.key(), total_read, block_count);
+  return 0;
+}
+
+int GetObject::GetUcx(const ClientProxyGetRequest& req, GetOutput& out) {
+  const std::string& rid = req.request_id();
+
+  int ret = ValidateUcxRequest(req);
+  if (ret != 0) return ret;
+
+  /* 1. 查布局，校验 client 传入的 object_size 与 fileidx 一致 */
+  FileIdxRecord rec;
+  if (!index_->GetFileIdx(req.bucket(), req.key(), rec)) {
+    LOG_WARN(rid, "object not found bucket={}/{}", req.bucket(), req.key());
+    return PROXY_ERR_INVALID_PARAM;
+  }
+  if (rec.filesize != req.object_size()) {
+    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}",
+             req.object_size(), rec.filesize, req.bucket(), req.key());
+    return PROXY_ERR_INVALID_PARAM;
+  }
+
+  /* 2. 按 block_size 切块，串行读取（descriptor 复用，仅 dest_offset 递增） */
+  const std::uint64_t block_size = rec.block_size;
+  const std::uint64_t block_count = (rec.filesize + block_size - 1) / block_size;
+  const std::uint64_t remote_addr = req.ucx_source().remote_addr();
+  const std::string& packed_rkey = req.ucx_source().packed_rkey();
+  const std::string& client_ucx_addr = req.ucx_source().client_ucx_addr();
+  const std::uint64_t rid_hash = std::hash<std::string>{}(rid);
+
+  std::vector<std::uint32_t> crcs;
+  crcs.reserve(block_count);
+  std::uint64_t total_read = 0;
+
+  for (std::uint64_t i = 0; i < block_count; ++i) {
+    const std::uint64_t offset = i * block_size;
+    const std::uint64_t len = std::min(block_size, rec.filesize - offset);
+    const std::string block_key = rec.first_object + "_" + std::to_string(i);
+
+    const auto result = client_->GetBlockUcx(block_key, remote_addr, packed_rkey,
+                                             client_ucx_addr, offset, 0, len, rid_hash);
+    if (result.ret_code != 0) {
+      LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key, result.error);
+      return result.ret_code;
+    }
+    crcs.push_back(result.crc32c);
+    total_read += result.bytes_written;  // GET 语义下复用字段 = bytes_read
+    LOG_DEBUG(rid, "block {} key={} ok crc={:#x} bytes={}",
+              i, block_key, result.crc32c, result.bytes_written);
+  }
+
+  /* 3. 重组 hash，与 fileidx.hash 比对（数据完整性兜底） */
+  const std::string hash = utils::CombineBlockCRC32s(crcs);
+  if (hash != rec.hash) {
+    LOG_ERROR(rid, "hash mismatch: computed={} fileidx={} bucket={}/{}",
+              hash, rec.hash, req.bucket(), req.key());
+    return PROXY_ERR_BACKEND_FAILED;
+  }
+
+  out.crc32c     = (crcs.size() == 1) ? crcs[0] : 0;  // 仅单块整对象 crc；多块用 hash
+  out.bytes_read = total_read;
+  out.hash       = hash;
+  LOG_INFO(rid, "GetUcx ok bucket={}/{} bytes={} blocks={}",
            req.bucket(), req.key(), total_read, block_count);
   return 0;
 }

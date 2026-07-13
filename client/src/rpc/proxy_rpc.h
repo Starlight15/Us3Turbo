@@ -146,6 +146,14 @@ class ProxyRpc {
                             const GdsDataSource& gds_source,
                             GetPathResult& result) const;
 
+  /** @brief UCX 通路 GET：描述符随 RPC 透传，backend ucp_put_nbx 推数据到 client。 */
+  [[nodiscard]] bool UcxGet(std::string_view request_id,
+                            const std::string& bucket,
+                            const std::string& key,
+                            std::uint64_t object_size,
+                            const UcxDataSource& ucx_source,
+                            GetPathResult& result) const;
+
  private:
   void ApplyTimeout(brpc::Controller& controller) const {
     controller.set_timeout_ms(static_cast<int>(default_timeout_.count()));

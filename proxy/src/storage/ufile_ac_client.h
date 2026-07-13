@@ -67,12 +67,28 @@ class UfileAcClient {
 
   // GDS：读一个 block。key=block 标识，gpu_offset=写入 client GPU buffer 偏移，
   // read_offset=对象内读偏移（本阶段固定传 0），data_len=读取长度。
+  // request_id=proxy 侧 rid 的 hash，透传进 backend requestId_（跨端日志关联）。
   [[nodiscard]] BlockResult GetBlockGds(
       const std::string& key,
       const std::string& rdma_token,
       std::uint64_t gpu_offset,
       std::uint64_t read_offset,
-      std::uint64_t data_len);
+      std::uint64_t data_len,
+      std::uint64_t request_id);
+
+  // UCX：读一个 block。remote_addr=client destination buffer 基地址，
+  // packed_rkey/client_ucx_addr=UCX 描述符，dest_offset=写入 destination 偏移，
+  // read_offset=对象内读偏移（本阶段固定传 0），data_len=读取长度。
+  // request_id=proxy 侧 rid 的 hash，透传进 backend requestId_（跨端日志关联）。
+  [[nodiscard]] BlockResult GetBlockUcx(
+      const std::string& key,
+      std::uint64_t remote_addr,
+      const std::string& packed_rkey,
+      const std::string& client_ucx_addr,
+      std::uint64_t dest_offset,
+      std::uint64_t read_offset,
+      std::uint64_t data_len,
+      std::uint64_t request_id);
 
  private:
   // 拆分 "host:port" → host + port；失败返回 false。
@@ -103,6 +119,8 @@ class UfileAcClient {
   static BlockResult DecodeDelRsp(const char* body, std::uint32_t body_len,
                                   const std::string& key);
   static BlockResult DecodeGdsGetRsp(const char* body, std::uint32_t body_len,
+                                     const std::string& key);
+  static BlockResult DecodeUcxGetRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
 
   int      timeout_ms_;

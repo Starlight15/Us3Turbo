@@ -30,8 +30,8 @@ struct GetOutput {
 };
 
 /**
- * @brief 读取逻辑层（GDS）。镜像 SinglePut 的结构：校验 → 编排 backend 调用 →
- * 填输出。与 UCX GET（未来）完全独立实现。
+ * @brief 读取逻辑层（GDS / UCX）。镜像 SinglePut 的结构：校验 → 编排 backend 调用 →
+ * 填输出。GDS 与 UCX 完全独立实现。
  */
 class GetObject {
  public:
@@ -44,8 +44,12 @@ class GetObject {
   [[nodiscard]] int GetGds(const ClientProxyGetRequest& request,
                            GetOutput& out);
 
+  [[nodiscard]] int GetUcx(const ClientProxyGetRequest& request,
+                           GetOutput& out);
+
  private:
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyGetRequest& req);
+  [[nodiscard]] int ValidateUcxRequest(const ClientProxyGetRequest& req);
 
   IUploadIndex*  index_;
   UfileAcClient* client_;
