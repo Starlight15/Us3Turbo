@@ -5,9 +5,12 @@
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
 #include "proxy/src/common/utils.h"
+#include "proxy/src/index/mongo_schema.h"
 #include "proxy/src/logging/logger.h"
 
 namespace us3_turbo::proxy {
+
+namespace mgo = ::us3_turbo::proxy::mongo;
 
 std::string MongoUploadIndex::Create(
     const std::string& bucket, const std::string& key,
@@ -37,22 +40,22 @@ bool MongoUploadIndex::Get(const std::string& upload_id, UploadRecord& out) {
 
   try {
     auto doc = nlohmann::json::parse(doc_json);
-    out.upload_id = doc["uploadid"].get<std::string>();
+    out.upload_id = doc[mgo::f::kUploadId].get<std::string>();
     out.bucket = "";  // bucket_id only; name lookup deferred to Phase 5
-    out.key = doc["key"].get<std::string>();
-    out.obj_id = doc["first_object"].get<std::string>();
-    out.block_size = doc.value("block_size", 4194304ULL);
-    out.merged_size = doc.value("merged_size", 0ULL);
-    out.last_merged_part = doc.value("last_merged_part", 0);
-    out.status = doc.value("status", 0);
+    out.key = doc[mgo::f::kKey].get<std::string>();
+    out.obj_id = doc[mgo::f::kFirstObject].get<std::string>();
+    out.block_size = doc.value(mgo::f::kMinitBlockSize, 4194304ULL);
+    out.merged_size = doc.value(mgo::f::kMergedSize, 0ULL);
+    out.last_merged_part = doc.value(mgo::f::kLastMergedPart, 0);
+    out.status = doc.value(mgo::f::kStatus, 0);
 
     /* path field: DBGate stores as number, may be string or int */
     int path_int = 1;
-    if (doc.contains("path")) {
-      if (doc["path"].is_string()) {
-        path_int = std::stoi(doc["path"].get<std::string>());
-      } else if (doc["path"].is_number()) {
-        path_int = doc["path"].get<int>();
+    if (doc.contains(mgo::f::kPath)) {
+      if (doc[mgo::f::kPath].is_string()) {
+        path_int = std::stoi(doc[mgo::f::kPath].get<std::string>());
+      } else if (doc[mgo::f::kPath].is_number()) {
+        path_int = doc[mgo::f::kPath].get<int>();
       }
     }
     out.path = static_cast<PutDataPath>(path_int);
@@ -66,21 +69,13 @@ bool MongoUploadIndex::Get(const std::string& upload_id, UploadRecord& out) {
 
 bool MongoUploadIndex::AddPart(const std::string& upload_id,
                                 const PartRecord& part) {
-  /* Build CRC array JSON: "[123,456,789,...]" */
-  std::string crc_array = "[";
-  for (std::size_t i = 0; i < part.block_crcs.size(); ++i) {
-    if (i > 0) crc_array += ",";
-    crc_array += std::to_string(part.block_crcs[i]);
-  }
-  crc_array += "]";
-
   int ret = client_->InsertPart(
       upload_id,
       part.part_number,
       part.file_offset,
       part.part_size,
       part.etag,
-      crc_array);
+      part.block_crcs);
   return ret == 0;
 }
 
@@ -96,15 +91,15 @@ bool MongoUploadIndex::ListParts(const std::string& upload_id,
 
     for (const auto& doc : docs) {
       PartRecord part;
-      part.part_number = doc["seq"].get<std::uint32_t>();
-      part.file_offset = doc["offset"].get<std::uint64_t>();
-      part.part_size = doc["size"].get<std::uint64_t>();
-      part.etag = doc.value("etag", "");
+      part.part_number = doc[mgo::f::kSeq].get<std::uint32_t>();
+      part.file_offset = doc[mgo::f::kOffset].get<std::uint64_t>();
+      part.part_size = doc[mgo::f::kSize].get<std::uint64_t>();
+      part.etag = doc.value(mgo::f::kEtag, "");
       part.valid = true;  // persisted part implies successful upload
 
       // parse CRC array
-      if (doc.contains("crc") && doc["crc"].is_array()) {
-        for (const auto& c : doc["crc"]) {
+      if (doc.contains(mgo::f::kCrc) && doc[mgo::f::kCrc].is_array()) {
+        for (const auto& c : doc[mgo::f::kCrc]) {
           part.block_crcs.push_back(c.get<std::uint32_t>());
         }
       }
@@ -130,13 +125,13 @@ void MongoUploadIndex::RemoveExpired(std::int64_t /*ttl_ms*/) {
 
 bool MongoUploadIndex::UpdateMergedSize(const std::string& upload_id,
                                          std::uint64_t merged_size) {
-  int ret = client_->UpdateMinit(upload_id, "merged_size", merged_size);
+  int ret = client_->UpdateMinit(upload_id, mgo::f::kMergedSize, merged_size);
   return ret == 0;
 }
 
 bool MongoUploadIndex::UpdateLastMergedPart(const std::string& upload_id,
                                              std::int32_t part_number) {
-  int ret = client_->UpdateMinit(upload_id, "last_merged_part",
+  int ret = client_->UpdateMinit(upload_id, mgo::f::kLastMergedPart,
                                   static_cast<std::uint64_t>(part_number));
   return ret == 0;
 }
@@ -169,10 +164,10 @@ bool MongoUploadIndex::GetFileIdx(
 
   try {
     auto doc = nlohmann::json::parse(doc_json);
-    out.first_object = doc["first_object"].get<std::string>();
-    out.block_size   = doc["blocksize"].get<std::uint64_t>();  // field name has no underscore
-    out.filesize     = doc["filesize"].get<std::uint64_t>();
-    out.hash         = doc.value("hash", "");
+    out.first_object = doc[mgo::f::kFirstObject].get<std::string>();
+    out.block_size   = doc[mgo::f::kFileIdxBlockSize].get<std::uint64_t>();  // 无下划线
+    out.filesize     = doc[mgo::f::kFilesize].get<std::uint64_t>();
+    out.hash         = doc.value(mgo::f::kHash, "");
     return true;
   } catch (const std::exception& e) {
     LOG_SYS_ERROR("Failed to parse fileidx doc: {}", e.what());

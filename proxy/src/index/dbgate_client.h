@@ -86,14 +86,14 @@ class DBGateClient {
 
   // ========== part_col ==========
 
-  /* Insert part_col 文档（UploadPart） */
+  /* Insert part_col 文档（UploadPart）; block_crcs 序列化为 JSON 数组 */
   [[nodiscard]] int InsertPart(
       const std::string& upload_id,
       std::uint32_t part_number,
       std::uint64_t offset,
       std::uint64_t size,
       const std::string& etag,
-      const std::string& crc_array);
+      const std::vector<std::uint32_t>& block_crcs);
 
   /* Query part_col 文档列表（CompleteUpload） */
   [[nodiscard]] int QueryParts(
