@@ -18,7 +18,18 @@ clang-format --version   # 须为 18.x
 clang-format -i path/to/file.cpp
 ```
 
-只读检查（不改动文件，CI 增量门禁用同款命令）：
+更推荐用封装脚本 `scripts/fmt-changed.sh`（参数与用法见脚本头部中文注释）：
+
+```bash
+# 格式化当前改动到的 C++ 文件（默认对比 HEAD，直接改写文件）
+scripts/fmt-changed.sh
+# 只检查不改动（提交前自查 / CI 门禁用同款命令）
+scripts/fmt-changed.sh --check
+# 检查整条分支相对 main 的格式
+scripts/fmt-changed.sh --check --base origin/main
+```
+
+只读检查的手写等价命令（CI 增量门禁用同款）：
 
 ```bash
 # 仅检查改动到的 C++ 文件
