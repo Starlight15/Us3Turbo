@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <utility>
 
@@ -22,6 +23,12 @@ bool TcpConnection::Connect() {
   tv.tv_usec = (timeout_ms_ % 1000) * 1000;
   ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+  /* TCP_NODELAY：禁用 Nagle。dbgate 客户端把请求拆成 [4B长度头][body] 两次 send，
+   * 无 NODELAY 时 body 小包会被 Nagle 卡住等头部的 ACK，叠加对端 delayed-ACK，
+   * 每条 RPC 固定多 ~40ms（5 条串行 RPC ≈ 200ms，实测即 Complete 的 210ms）。 */
+  int flag = 1;
+  ::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
   struct sockaddr_in addr {};
   addr.sin_family = AF_INET;

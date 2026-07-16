@@ -183,61 +183,46 @@ int Multipart::UploadPartGds(const std::string& request_id,
                                   rdma_token, upload);
   if (ret != 0) return ret;
 
-  /* 2) 计算 block 起点 + 文件偏移 */
-  const std::uint64_t block_size =
-      static_cast<std::uint64_t>(FLAGS_multipart_block_size);
+  /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
+   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockGds 已支持整 part（≤16MB，
+   * 见 MAX_VALUE_LENGTH），一次 RDMA 读 + 一次落盘，消除 block 间串行往返。
+   * 全局 block 序号 = part_number-1（1 block/part），与 GET 按
+   * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
+   * (part-1)）。 */
   const std::uint64_t part_size_limit =
       static_cast<std::uint64_t>(FLAGS_multipart_part_size);
-  const std::uint32_t blocks_per_part =
-      static_cast<std::uint32_t>(FLAGS_multipart_blocks_per_part);
-
-  const std::uint32_t global_block_start = (part_number - 1) * blocks_per_part;
   const std::uint64_t file_offset =
       static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
-  const std::uint64_t block_count = (part_size + block_size - 1) / block_size;
+  const std::string block_key =
+      GenerateBlockKey(upload.obj_id, part_number - 1);
 
-  LOG_INFO(request_id, "upload={} part={} size={} blocks={} offset={}",
-           upload_id, part_number, part_size, block_count, file_offset);
+  LOG_INFO(request_id, "upload={} part={} size={} block_key={} offset={}",
+           upload_id, part_number, part_size, block_key, file_offset);
 
-  /* 3) 串行写 blocks */
-  std::vector<std::uint32_t> crcs;
-  crcs.reserve(block_count);
-  std::vector<std::string> written_keys;
-  written_keys.reserve(block_count);
-
-  for (std::uint64_t i = 0; i < block_count; ++i) {
-    const std::uint64_t offset = i * block_size;
-    const std::uint64_t len = std::min(block_size, part_size - offset);
-    const std::string block_key = GenerateBlockKey(
-        upload.obj_id, global_block_start + static_cast<std::uint32_t>(i));
-
-    if (block_key.size() > KEY_MAX_LENGTH) {
-      LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
-                upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
-      CleanupWrittenBlocks(request_id, written_keys);
-      return PROXY_ERR_INVALID_PARAM;
-    }
-
-    const auto result =
-        client_->PutBlockGds(block_key, rdma_token, offset, len);
-    if (result.ret_code != 0) {
-      LOG_ERROR(request_id, "upload={} part={} block {} failed: {}", upload_id,
-                part_number, i, result.error);
-      CleanupWrittenBlocks(request_id, written_keys);
-      return result.ret_code;
-    }
-
-    written_keys.push_back(block_key);
-    crcs.push_back(result.crc32c);
-    LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
-              upload_id, part_number, i, block_key, result.crc32c);
+  if (block_key.size() > KEY_MAX_LENGTH) {
+    LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
+              upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
+    return PROXY_ERR_INVALID_PARAM;
   }
 
-  /* 4) 写索引 + 填输出 */
+  /* 写单块（整 part）。失败时无已写 block，直接返回，无需回滚。 */
+  const auto result =
+      client_->PutBlockGds(block_key, rdma_token, /*gpu_offset=*/0, part_size);
+  if (result.ret_code != 0) {
+    LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id,
+              part_number, result.error);
+    return result.ret_code;
+  }
+  LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}",
+            upload_id, part_number, block_key, result.crc32c);
+
+  /* 写索引 + 填输出；索引失败回滚已写块。 */
+  const std::vector<std::uint32_t> crcs{result.crc32c};
   if (!WritePartIndex(request_id, upload_id, part_number, part_size,
                       file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
               upload_id, part_number);
+    const std::vector<std::string> written_keys{block_key};
     CleanupWrittenBlocks(request_id, written_keys);
     return PROXY_ERR_INDEX_FAILED;
   }
@@ -258,61 +243,47 @@ int Multipart::UploadPartUcx(const std::string& request_id,
                             remote_addr, packed_rkey, client_ucx_addr, upload);
   if (ret != 0) return ret;
 
-  /* 2) 计算 block 起点 + 文件偏移 */
-  const std::uint64_t block_size =
-      static_cast<std::uint64_t>(FLAGS_multipart_block_size);
+  /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
+   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockUcx 已支持整 part（≤16MB，
+   * 见 MAX_VALUE_LENGTH），一次远程 RMA 读 + 一次落盘，消除 block 间串行往返。
+   * 全局 block 序号 = part_number-1（1 block/part），与 GET 按
+   * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
+   * (part-1)）。 */
   const std::uint64_t part_size_limit =
       static_cast<std::uint64_t>(FLAGS_multipart_part_size);
-  const std::uint32_t blocks_per_part =
-      static_cast<std::uint32_t>(FLAGS_multipart_blocks_per_part);
-
-  const std::uint32_t global_block_start = (part_number - 1) * blocks_per_part;
   const std::uint64_t file_offset =
       static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
-  const std::uint64_t block_count = (part_size + block_size - 1) / block_size;
+  const std::string block_key =
+      GenerateBlockKey(upload.obj_id, part_number - 1);
 
-  LOG_INFO(request_id, "upload={} part={} size={} blocks={} offset={}",
-           upload_id, part_number, part_size, block_count, file_offset);
+  LOG_INFO(request_id, "upload={} part={} size={} block_key={} offset={}",
+           upload_id, part_number, part_size, block_key, file_offset);
 
-  /* 3) 串行写 blocks */
-  std::vector<std::uint32_t> crcs;
-  crcs.reserve(block_count);
-  std::vector<std::string> written_keys;
-  written_keys.reserve(block_count);
-
-  for (std::uint64_t i = 0; i < block_count; ++i) {
-    const std::uint64_t offset = i * block_size;
-    const std::uint64_t len = std::min(block_size, part_size - offset);
-    const std::string block_key = GenerateBlockKey(
-        upload.obj_id, global_block_start + static_cast<std::uint32_t>(i));
-
-    if (block_key.size() > KEY_MAX_LENGTH) {
-      LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
-                upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
-      CleanupWrittenBlocks(request_id, written_keys);
-      return PROXY_ERR_INVALID_PARAM;
-    }
-
-    const auto result = client_->PutBlockUcx(
-        block_key, remote_addr, packed_rkey, client_ucx_addr, offset, len);
-    if (result.ret_code != 0) {
-      LOG_ERROR(request_id, "upload={} part={} block {} failed: {}", upload_id,
-                part_number, i, result.error);
-      CleanupWrittenBlocks(request_id, written_keys);
-      return result.ret_code;
-    }
-
-    written_keys.push_back(block_key);
-    crcs.push_back(result.crc32c);
-    LOG_DEBUG(request_id, "upload={} part={} block {} ok key={} crc={:#x}",
-              upload_id, part_number, i, block_key, result.crc32c);
+  if (block_key.size() > KEY_MAX_LENGTH) {
+    LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}",
+              upload_id, part_number, block_key.size(), KEY_MAX_LENGTH);
+    return PROXY_ERR_INVALID_PARAM;
   }
 
-  /* 4) 写索引 + 填输出 */
+  /* 写单块（整 part）。失败时无已写 block，直接返回，无需回滚。 */
+  const auto result =
+      client_->PutBlockUcx(block_key, remote_addr, packed_rkey, client_ucx_addr,
+                           /*source_offset=*/0, part_size);
+  if (result.ret_code != 0) {
+    LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id,
+              part_number, result.error);
+    return result.ret_code;
+  }
+  LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}",
+            upload_id, part_number, block_key, result.crc32c);
+
+  /* 写索引 + 填输出；索引失败回滚已写块。 */
+  const std::vector<std::uint32_t> crcs{result.crc32c};
   if (!WritePartIndex(request_id, upload_id, part_number, part_size,
                       file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}",
               upload_id, part_number);
+    const std::vector<std::string> written_keys{block_key};
     CleanupWrittenBlocks(request_id, written_keys);
     return PROXY_ERR_INDEX_FAILED;
   }
@@ -404,12 +375,14 @@ int Multipart::CompleteUpload(
   LOG_INFO(request_id,
            "fileidx(compat s3proxy): bucket={} key={} "
            "first_object={} block_size={} filesize={} etag={} hash={}",
-           upload.bucket, upload.key, upload.obj_id, upload.block_size,
-           total_size, final_etag, object_hash);
+           upload.bucket, upload.key, upload.obj_id,
+           static_cast<std::uint64_t>(FLAGS_multipart_part_size), total_size,
+           final_etag, object_hash);
 
   bool success = index_->InsertFileIdx(
       upload.bucket, upload.key, upload.obj_id,
-      upload.block_size,  // FLAGS_multipart_block_size 固定 4MB
+      static_cast<std::uint64_t>(
+          FLAGS_multipart_part_size),  // block_size = part_size（1 block/part）
       total_size, object_hash);
 
   if (!success) {

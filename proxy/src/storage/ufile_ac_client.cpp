@@ -126,59 +126,111 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
                                const std::vector<char>& req_buf,
                                std::vector<char>& out_body,
                                BlockResult& out_result) {
-  // 取连接
-  auto [idx, conn] = AcquireConn();
-  if (conn == nullptr) {
-    out_result.ret_code = PROXY_ERR_BACKEND_UNAVAILABLE;
-    out_result.error = "backend pool all dead";
-    LOG_SYS_WARN("{}: no available connection", op_name);
-    return -1;
-  }
-  std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
+  /* 连接级失败重试: 对端(ufile-ac)空闲关闭后, 池中连接第一笔请求必失败。
+   * 失败后立即 Close 当前连接, 下次 AcquireConn 跳过 !alive 连接取下一条
+   * (或触发 Connect 重连)。固定重试 1 次(共 2 次尝试), 吸收单次连接级故障。
+   * 见 review/fix_proxy_connection_retry.md (P4)。
+   * PutBlock 失败调用方已 CleanupWrittenBlocks 回滚, 重试用新连接发新请求
+   * (keyed by block_id), 幂等安全。协议错误(bad magic/body too short)不重试。
+   */
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    // 取连接
+    auto [idx, conn] = AcquireConn();
+    if (conn == nullptr) {
+      if (attempt == 0) {
+        LOG_SYS_WARN("{}: AcquireConn failed, retry once", op_name);
+        continue;  // 池中可能有其它连接或可重连
+      }
+      out_result.ret_code = PROXY_ERR_BACKEND_UNAVAILABLE;
+      out_result.error = "backend pool all dead";
+      LOG_SYS_ERROR("{}: no available connection after 2 attempts", op_name);
+      return -1;
+    }
+    std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
 
-  // 发送
-  if (conn->SendAll(req_buf.data(), req_buf.size()) != 0) {
-    out_result.ret_code = PROXY_ERR_BACKEND_RPC;
-    out_result.error = "send request failed";
-    LOG_SYS_ERROR("{}: send failed", op_name);
-    return -1;
-  }
+    // 发送
+    bool ok = true;
+    if (conn->SendAll(req_buf.data(), req_buf.size()) != 0) {
+      LOG_SYS_ERROR("{}: send failed", op_name);
+      ok = false;
+    }
 
-  // 收响应头并校验
-  Message rmsg{};
-  if (conn->RecvAll(&rmsg, MESSAGE_HEAD_SIZE) != 0) {
-    out_result.ret_code = PROXY_ERR_BACKEND_RPC;
-    out_result.error = "recv header failed";
-    LOG_SYS_ERROR("{}: recv header failed", op_name);
-    return -1;
-  }
-  const std::uint32_t rsp_magic = rmsg.magic_;
-  const std::uint32_t rsp_type = rmsg.type_;
-  if (rsp_magic != MESSAGE_MAGIC_NUMBER || rsp_type != expected_type) {
-    out_result.ret_code = PROXY_ERR_BACKEND_RPC;
-    out_result.error = "bad response header";
-    LOG_SYS_ERROR("{}: bad rsp magic={:#x} type={}", op_name, rsp_magic,
-                  rsp_type);
-    return -1;
-  }
-  const std::uint32_t rbody = rmsg.bodyLen_;
-  if (rbody < min_rsp_body) {
-    out_result.ret_code = PROXY_ERR_BACKEND_RPC;
-    out_result.error = "response body too short";
-    LOG_SYS_ERROR("{}: body_len={} < {}", op_name, rbody, min_rsp_body);
-    return -1;
-  }
+    // 收响应头并校验
+    Message rmsg{};
+    if (ok && conn->RecvAll(&rmsg, MESSAGE_HEAD_SIZE) != 0) {
+      LOG_SYS_ERROR("{}: recv header failed", op_name);
+      ok = false;
+    }
+    bool protocol_error = false;
+    if (ok) {
+      const std::uint32_t rsp_magic = rmsg.magic_;
+      const std::uint32_t rsp_type = rmsg.type_;
+      if (rsp_magic != MESSAGE_MAGIC_NUMBER || rsp_type != expected_type) {
+        out_result.ret_code = PROXY_ERR_BACKEND_RPC;
+        out_result.error = "bad response header";
+        LOG_SYS_ERROR("{}: bad rsp magic={:#x} type={}", op_name, rsp_magic,
+                      rsp_type);
+        protocol_error = true;
+        ok = false;
+      }
+    }
+    if (ok) {
+      const std::uint32_t rbody = rmsg.bodyLen_;
+      if (rbody < min_rsp_body) {
+        out_result.ret_code = PROXY_ERR_BACKEND_RPC;
+        out_result.error = "response body too short";
+        LOG_SYS_ERROR("{}: body_len={} < {}", op_name, rbody, min_rsp_body);
+        protocol_error = true;
+        ok = false;
+      }
+    }
 
-  // 收响应体
-  out_body.resize(rbody);
-  if (conn->RecvAll(out_body.data(), rbody) != 0) {
-    out_result.ret_code = PROXY_ERR_BACKEND_RPC;
-    out_result.error = "recv body failed";
-    LOG_SYS_ERROR("{}: recv body failed", op_name);
-    return -1;
-  }
+    // 收响应体
+    if (ok) {
+      out_body.resize(rmsg.bodyLen_);
+      if (conn->RecvAll(out_body.data(), rmsg.bodyLen_) != 0) {
+        LOG_SYS_ERROR("{}: recv body failed", op_name);
+        ok = false;
+      }
+    }
 
-  return 0;
+    if (ok) {
+      return 0;  // 成功
+    }
+
+    // 协议错误(bad magic/body too short)不重试: 对端返回了响应但内容非法,
+    // 重试不会改变结果。
+    if (protocol_error) {
+      return -1;
+    }
+
+    // 连接级失败: 立即销毁当前连接, 准备重试
+    conn->set_dead();
+    conn->Close();
+
+    /* 对端空闲关闭时, 池中连接可能同时失效。仅 set_dead 当前连接不够:
+     * AcquireConn 仍会返回其它 alive_=true 但实际已死的僵尸连接。主动
+     * 把池中所有连接标 dead, 让下次 AcquireConn 走 Connect() 建新连接。 */
+    if (attempt == 0) {
+      for (auto& c : conns_) {
+        c->set_dead();
+      }
+      LOG_SYS_WARN(
+          "{}: SendAndRecv to ufile-ac failed (send/recv error), "
+          "invalidated all pool conns, retry with fresh conn",
+          op_name);
+      continue;
+    }
+    LOG_SYS_ERROR("{}: SendAndRecv to ufile-ac failed after 2 attempts",
+                  op_name);
+  }
+  // 走到这: 两次都是连接级失败(SendAll/RecvAll)。out_result 已在 AcquireConn
+  // 失败分支设过 UNAVAILABLE, 这里补 RPC 错误码。
+  if (out_result.ret_code == 0) {
+    out_result.ret_code = PROXY_ERR_BACKEND_RPC;
+    out_result.error = "send/recv failed after retries";
+  }
+  return -1;
 }
 
 /* 解码辅助 */

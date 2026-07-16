@@ -36,6 +36,7 @@ add_link_options(-static-libstdc++ -static-libgcc)
 
 option(US3_TURBO_ACCESS_BUILD_EXAMPLES "Build Us3Turbo examples" ON)
 option(US3_TURBO_ACCESS_USE_SPDLOG_HEADER_ONLY "Use spdlog header-only target" ON)
+option(US3_TURBO_ACCESS_BUILD_RTEST "Build Us3Turbo regression tests" ON)
 
 set(FUSION_ACCESS_DEPS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/install"
     CACHE PATH "Offline dependency install root (default: in-repo third_party/install)")
@@ -207,4 +208,8 @@ add_subdirectory(proxy)
 
 if(US3_TURBO_ACCESS_BUILD_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+if(US3_TURBO_ACCESS_BUILD_RTEST)
+  add_subdirectory(rtest)
 endif()
