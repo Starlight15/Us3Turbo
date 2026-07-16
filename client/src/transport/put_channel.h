@@ -14,8 +14,7 @@ class PutChannel {
   virtual ~PutChannel() = default;
 
   /** @brief 单次 PUT 尝试:result 回填链路结果,失败返回 false 供上层重试。 */
-  [[nodiscard]] virtual bool PutOnce(const ClientProxyPutRequest& request,
-                                     ConstBufferView buffer,
+  [[nodiscard]] virtual bool PutOnce(const ClientProxyPutRequest& request, ConstBufferView buffer,
                                      PutPathResult& result) const = 0;
 };
 

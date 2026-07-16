@@ -29,6 +29,9 @@ struct ClientOptions {
 
   // 单次 PUT 阶段耗时埋点开关，默认关闭
   bool latency_trace{false};
+
+  // 单步 PUT 失败后的重试退避（retry-once），默认 100ms
+  std::chrono::milliseconds retry_backoff{std::chrono::milliseconds(100)};
 };
 
 }  // namespace us3_turbo::client

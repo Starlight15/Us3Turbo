@@ -23,20 +23,17 @@ class AccessLogger {
   static AccessLogger& Instance();
 
   /* 记录一次请求，handler 结束时调用 */
-  void LogRequest(std::string_view method, std::string_view request_id,
-                  std::string_view bucket, std::string_view key,
-                  int status_code, std::uint64_t bytes,
-                  std::chrono::milliseconds latency);
+  void LogRequest(std::string_view method, std::string_view request_id, std::string_view bucket, std::string_view key,
+                  int status_code, std::uint64_t bytes, std::chrono::milliseconds latency);
 
  private:
   AccessLogger() {
     // 独立 logger：按天切分
-    auto sink = std::make_shared<spdlog::sinks::daily_file_format_sink_mt>(
-        kAccessLogPattern,
-        0,      // rotation hour
-        0,      // rotation minute
-        false,  // 不截断已有文件
-        30);    // 保留 30 天
+    auto sink = std::make_shared<spdlog::sinks::daily_file_format_sink_mt>(kAccessLogPattern,
+                                                                           0,      // rotation hour
+                                                                           0,      // rotation minute
+                                                                           false,  // 不截断已有文件
+                                                                           30);    // 保留 30 天
 
     logger_ = std::make_shared<spdlog::logger>("access", sink);
     logger_->set_level(spdlog::level::info);

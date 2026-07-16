@@ -37,8 +37,7 @@ bool TcpConnection::Connect() {
     Close();
     return false;
   }
-  if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
-      0) {
+  if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
     Close();
     return false;
   }
@@ -55,8 +54,7 @@ void TcpConnection::Close() {
 }
 
 int TcpConnection::SendAll(const void* buf, std::size_t len) {
-  if (!alive_.load(std::memory_order_acquire))
-    return -1;  // 须先经 AcquireConn->Connect
+  if (!alive_.load(std::memory_order_acquire)) return -1;  // 须先经 AcquireConn->Connect
   std::size_t sent = 0;
   const auto* p = static_cast<const char*>(buf);
   while (sent < len) {
@@ -77,9 +75,8 @@ int TcpConnection::RecvAll(void* buf, std::size_t len) {
   std::size_t got = 0;
   auto* p = static_cast<char*>(buf);
   while (got < len) {
-    ssize_t n =
-        ::recv(fd_, p + got, len - got,
-               0);  // 不用 MSG_WAITALL: 超时算无数据而非未收满, 避免误杀慢对端
+    ssize_t n = ::recv(fd_, p + got, len - got,
+                       0);  // 不用 MSG_WAITALL: 超时算无数据而非未收满, 避免误杀慢对端
     if (n < 0) {
       if (errno == EINTR) continue;
       set_dead();

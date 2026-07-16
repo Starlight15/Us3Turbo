@@ -55,9 +55,7 @@ class BufferRegistry {
   }
 
   /** @brief 当前已注册 buffer 数量。 */
-  [[nodiscard]] std::size_t RegisteredCount() const noexcept {
-    return registered_.size();
-  }
+  [[nodiscard]] std::size_t RegisteredCount() const noexcept { return registered_.size(); }
 
   /** @brief 清空注册表(不释放句柄,调用方须先 ForEachLocked 释放)。 */
   void ClearRegistered() noexcept { registered_.clear(); }
@@ -66,8 +64,7 @@ class BufferRegistry {
   std::unordered_map<void*, Handle> registered_;
 
   /** @brief 派生类实现:填充 out(句柄),失败返回 false 并自行记日志。 */
-  [[nodiscard]] virtual bool DoRegister(void* ptr, std::size_t size,
-                                        Handle& out) = 0;
+  [[nodiscard]] virtual bool DoRegister(void* ptr, std::size_t size, Handle& out) = 0;
   /** @brief 派生类实现:释放 handle 持有的资源。 */
   virtual void DoUnregister(void* ptr, Handle& handle) = 0;
 };

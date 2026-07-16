@@ -31,8 +31,7 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
 
    private:
     friend class GdsMemoryManager;
-    Token(cuObjClient* client, char* tok) noexcept
-        : client_(client), tok_(tok) {}
+    Token(cuObjClient* client, char* tok) noexcept : client_(client), tok_(tok) {}
     void Reset() noexcept;
 
     cuObjClient* client_{nullptr};
@@ -51,9 +50,8 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
   /** @brief 获取 RDMA token(RAII 析构自动释放)。未注册的 ptr 会 lazy register。
    *  operation: CUOBJ_PUT(默认，写场景 backend RDMA_READ) 或
    *  CUOBJ_GET(读场景 backend RDMA_WRITE)。 */
-  [[nodiscard]] bool AcquireToken(
-      const void* ptr, std::size_t size, std::size_t offset, Token& out,
-      cuObjOpType_t operation = static_cast<cuObjOpType_t>(0));
+  [[nodiscard]] bool AcquireToken(const void* ptr, std::size_t size, std::size_t offset, Token& out,
+                                  cuObjOpType_t operation = static_cast<cuObjOpType_t>(0));
 
   GdsMemoryManager(const GdsMemoryManager&) = delete;
   GdsMemoryManager& operator=(const GdsMemoryManager&) = delete;
@@ -63,8 +61,7 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
   ~GdsMemoryManager() override;
 
   /** @brief BufferRegistry<size_t> 钩子:真正 pin 进 BAR1。 */
-  [[nodiscard]] bool DoRegister(void* ptr, std::size_t size,
-                                std::size_t& out) override;
+  [[nodiscard]] bool DoRegister(void* ptr, std::size_t size, std::size_t& out) override;
   /** @brief BufferRegistry<size_t> 钩子:释放 pin(调 cuMemObjPutDescriptor)。 */
   void DoUnregister(void* ptr, std::size_t& handle) override;
 

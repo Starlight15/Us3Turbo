@@ -34,15 +34,13 @@ void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   }
   std::scoped_lock lk(self->mu_);
   ucp_ep_params_t ep_params{};
-  ep_params.field_mask =
-      UCP_EP_PARAM_FIELD_CONN_REQUEST | UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
+  ep_params.field_mask = UCP_EP_PARAM_FIELD_CONN_REQUEST | UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
   ep_params.conn_request = req;
   ep_params.err_mode = UCP_ERR_HANDLING_MODE_NONE;
   ucp_ep_h ep = nullptr;
   ucs_status_t st = ucp_ep_create(self->worker_, &ep_params, &ep);
   if (st != UCS_OK) {
-    spdlog::warn("UcxMemoryManager: conn cb ucp_ep_create failed: {}",
-                 ucs_status_string(st));
+    spdlog::warn("UcxMemoryManager: conn cb ucp_ep_create failed: {}", ucs_status_string(st));
   }
 }
 
@@ -63,8 +61,7 @@ bool UcxMemoryManager::InitContext() {
   ucp_config_release(config);
 
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_init failed: {}",
-                  ucs_status_string(st));
+    spdlog::error("UcxMemoryManager: ucp_init failed: {}", ucs_status_string(st));
     context_ = nullptr;
     return false;
   }
@@ -82,8 +79,7 @@ bool UcxMemoryManager::InitWorker() {
 
   ucs_status_t st = ucp_worker_create(context_, &wparams, &worker_);
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_worker_create failed: {}",
-                  ucs_status_string(st));
+    spdlog::error("UcxMemoryManager: ucp_worker_create failed: {}", ucs_status_string(st));
     worker_ = nullptr;
     return false;
   }
@@ -104,8 +100,7 @@ bool UcxMemoryManager::InitListener() {
   }
 
   ucp_listener_params_t lparams{};
-  lparams.field_mask = UCP_LISTENER_PARAM_FIELD_SOCK_ADDR |
-                       UCP_LISTENER_PARAM_FIELD_CONN_HANDLER;
+  lparams.field_mask = UCP_LISTENER_PARAM_FIELD_SOCK_ADDR | UCP_LISTENER_PARAM_FIELD_CONN_HANDLER;
   lparams.sockaddr.addr = reinterpret_cast<struct sockaddr*>(&addr);
   lparams.sockaddr.addrlen = sizeof(addr);
   lparams.conn_handler.cb = &UcxMemoryManager::ConnCallback;
@@ -113,8 +108,7 @@ bool UcxMemoryManager::InitListener() {
 
   ucs_status_t st = ucp_listener_create(worker_, &lparams, &listener_);
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_listener_create failed: {}",
-                  ucs_status_string(st));
+    spdlog::error("UcxMemoryManager: ucp_listener_create failed: {}", ucs_status_string(st));
     listener_ = nullptr;
     return false;
   }
@@ -128,8 +122,7 @@ bool UcxMemoryManager::InitListener() {
   }
   char host[NI_MAXHOST] = {};
   char serv[NI_MAXSERV] = {};
-  if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr),
-                  sizeof(lattr.sockaddr), host, sizeof(host), serv,
+  if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr), sizeof(lattr.sockaddr), host, sizeof(host), serv,
                   sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
     spdlog::error("UcxMemoryManager: getnameinfo failed");
     return false;
@@ -226,15 +219,13 @@ bool UcxMemoryManager::Instance(UcxMemoryManager*& out) {
 
 bool UcxMemoryManager::DoRegister(void* ptr, std::size_t size, ucp_mem_h& out) {
   ucp_mem_map_params_t mparams{};
-  mparams.field_mask =
-      UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH;
+  mparams.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH;
   mparams.address = ptr;
   mparams.length = size;
   ucp_mem_h memh = nullptr;
   ucs_status_t st = ucp_mem_map(context_, &mparams, &memh);
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_mem_map failed (ptr={} size={} {})",
-                  ptr, size, ucs_status_string(st));
+    spdlog::error("UcxMemoryManager: ucp_mem_map failed (ptr={} size={} {})", ptr, size, ucs_status_string(st));
     return false;
   }
   out = memh;
@@ -248,8 +239,7 @@ void UcxMemoryManager::DoUnregister(void* /*ptr*/, ucp_mem_h& handle) {
   }
 }
 
-bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
-                                         Descriptor& out) {
+bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size, Descriptor& out) {
   if (ptr == nullptr || size == 0U) {
     spdlog::warn(
         "UcxMemoryManager::AcquireDescriptor: requires non-null ptr and "
@@ -277,8 +267,7 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   size_t rkey_size = 0;
   ucs_status_t st = ucp_rkey_pack(context_, memh, &rkey_buf, &rkey_size);
   if (st != UCS_OK || rkey_buf == nullptr) {
-    spdlog::error("UcxMemoryManager: ucp_rkey_pack failed: {}",
-                  ucs_status_string(st));
+    spdlog::error("UcxMemoryManager: ucp_rkey_pack failed: {}", ucs_status_string(st));
     return false;
   }
   out.remote_addr = reinterpret_cast<std::uint64_t>(mut_ptr);

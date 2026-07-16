@@ -55,42 +55,34 @@ inline std::string HumanBytes(std::uint64_t b) {
   constexpr double K = 1024.0;
   char buf[64];
   if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB",
-                  static_cast<double>(b) / (K * K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
   else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB",
-                  static_cast<double>(b) / (K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
   else if (b >= static_cast<std::uint64_t>(K))
     std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
   else
-    std::snprintf(buf, sizeof(buf), "%llu B",
-                  static_cast<unsigned long long>(b));
+    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
   return buf;
 }
 
 // 时间戳后缀，避免多次运行 key 冲突（同 gds_get_example 做法）。
 inline std::string MakeTimestampSuffix() {
-  return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count());
+  return std::to_string(
+      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
 // 确定性 i%251 pattern 填入 host buffer（GDS 作 H2D 暂存，UCX 直接作上传/读回
 // buffer）。offset_base 让多 part 对象各段填不同 pattern。
-inline void FillHostPattern(std::vector<std::byte>& buf,
-                            std::uint64_t offset_base = 0) {
-  for (std::size_t i = 0; i < buf.size(); ++i)
-    buf[i] = static_cast<std::byte>((i + offset_base) % 251U);
+inline void FillHostPattern(std::vector<std::byte>& buf, std::uint64_t offset_base = 0) {
+  for (std::size_t i = 0; i < buf.size(); ++i) buf[i] = static_cast<std::byte>((i + offset_base) % 251U);
 }
 
 // 逐字节比对 host 读回 buffer 与期望；打印首处失配细节。GDS 调用前需 D2H。
-inline bool VerifyHostBuffer(const void* read, std::size_t size,
-                             const std::vector<std::byte>& expected,
+inline bool VerifyHostBuffer(const void* read, std::size_t size, const std::vector<std::byte>& expected,
                              const std::string& tag) {
   const auto* p = static_cast<const std::byte*>(read);
   if (size != expected.size()) {
-    std::cerr << "[" << tag << "] size mismatch: got " << size << " want "
-              << expected.size() << "\n";
+    std::cerr << "[" << tag << "] size mismatch: got " << size << " want " << expected.size() << "\n";
     return false;
   }
   std::size_t mism = 0;
@@ -102,14 +94,12 @@ inline bool VerifyHostBuffer(const void* read, std::size_t size,
     }
   }
   if (mism > 0) {
-    std::cerr << "[" << tag << "] DATA MISMATCH: " << mism
-              << " bytes differ, first at offset " << first << " (got 0x"
-              << std::hex << static_cast<unsigned>(p[first]) << " want 0x"
-              << static_cast<unsigned>(expected[first]) << std::dec << ")\n";
+    std::cerr << "[" << tag << "] DATA MISMATCH: " << mism << " bytes differ, first at offset " << first << " (got 0x"
+              << std::hex << static_cast<unsigned>(p[first]) << " want 0x" << static_cast<unsigned>(expected[first])
+              << std::dec << ")\n";
     return false;
   }
-  std::cout << "[" << tag << "] data VERIFIED OK (" << HumanBytes(size)
-            << ")\n";
+  std::cout << "[" << tag << "] data VERIFIED OK (" << HumanBytes(size) << ")\n";
   return true;
 }
 

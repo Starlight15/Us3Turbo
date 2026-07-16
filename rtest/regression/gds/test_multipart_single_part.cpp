@@ -25,8 +25,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t part_size =
-      16ULL * 1024 * 1024;  // 默认 16M（== proxy part 上限）
+  std::uint64_t part_size = 16ULL * 1024 * 1024;  // 默认 16M（== proxy part 上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -53,8 +52,7 @@ int main(int argc, char** argv) {
   }
 
   const std::string bucket = "test-bucket";
-  const std::string key =
-      std::string("rtest-t13-gds-") + rtest::MakeTimestampSuffix();
+  const std::string key = std::string("rtest-t13-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T1.3 GDS " << kTestName << " ===\n"
             << "  proxy     : " << proxy_addr << "\n"
@@ -62,17 +60,13 @@ int main(int argc, char** argv) {
 
   void* dev_put = nullptr;
   if (cudaError_t e = cudaMalloc(&dev_put, part_size); e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName
-              << ": cudaMalloc: " << cudaGetErrorString(e) << "\n";
+    std::cerr << "[FAIL] " << kTestName << ": cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
-  if (cudaError_t e =
-          cudaMemcpy(dev_put, host.data(), part_size, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName
-              << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
+  if (cudaError_t e = cudaMemcpy(dev_put, host.data(), part_size, cudaMemcpyHostToDevice); e != cudaSuccess) {
+    std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_put);
     return 1;
   }
@@ -93,8 +87,7 @@ int main(int argc, char** argv) {
 
   // ---- CreateMultipartUpload ----
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kGds, upload_id,
-                                    error)) {
+  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kGds, upload_id, error)) {
     fail_reason = "CreateMultipartUpload failed: " + error;
     goto cleanup;
   }
@@ -102,9 +95,7 @@ int main(int argc, char** argv) {
   // ---- UploadPart (part 1) + Complete（同一作用域复用 etag）----
   {
     std::string etag;
-    if (!client.UploadPartGds(
-            upload_id, 1, ConstBufferView{.data = dev_put, .size = part_size},
-            etag, error)) {
+    if (!client.UploadPartGds(upload_id, 1, ConstBufferView{.data = dev_put, .size = part_size}, etag, error)) {
       fail_reason = "UploadPartGds 1 failed: " + error;
       goto cleanup;
     }
@@ -114,12 +105,10 @@ int main(int argc, char** argv) {
       fail_reason = "CompleteMultipartUpload failed: " + done.error;
       goto cleanup;
     }
-    std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size
-              << " etag=" << done.etag << "\n";
+    std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size << " etag=" << done.etag << "\n";
     if (done.object_size != part_size) {
-      fail_reason = "object_size mismatch: got " +
-                    std::to_string(done.object_size) + " want " +
-                    std::to_string(part_size);
+      fail_reason =
+          "object_size mismatch: got " + std::to_string(done.object_size) + " want " + std::to_string(part_size);
       goto cleanup;
     }
     test_passed = true;
@@ -129,23 +118,18 @@ int main(int argc, char** argv) {
   if (test_passed) {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(bucket, key, obj_size, stat_err) ||
-        obj_size != part_size) {
+    if (!client.StatObject(bucket, key, obj_size, stat_err) || obj_size != part_size) {
       std::cout << "  (optional GET skipped: StatObject failed or size "
                    "mismatch)\n";
-    } else if (cudaError_t e = cudaMalloc(&dev_get, obj_size);
-               e != cudaSuccess) {
+    } else if (cudaError_t e = cudaMalloc(&dev_get, obj_size); e != cudaSuccess) {
       std::cout << "  (optional GET skipped: cudaMalloc(get) failed)\n";
     } else {
       cudaMemset(dev_get, 0xAA, obj_size);
       GetPathResult get_res;
-      if (client.GetObjectGds(
-              bucket, key, MutableBufferView{.data = dev_get, .size = obj_size},
-              get_res) &&
+      if (client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_get, .size = obj_size}, get_res) &&
           get_res.ok) {
-        std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x"
-                  << std::hex << get_res.crc32c << std::dec
-                  << " hash=" << get_res.hash << "\n";
+        std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex << get_res.crc32c
+                  << std::dec << " hash=" << get_res.hash << "\n";
         // 1 block/part: 16MB 单 part = 单块 → crc32c = 该块 crc（非 0）。
         if (!get_res.hash.empty() && get_res.bytes_read == obj_size) {
           std::cout << "  optional GET checks OK (hash non-empty)\n";
@@ -156,11 +140,9 @@ int main(int argc, char** argv) {
         // D2H + 逐字节比对（加分项）。
         std::vector<std::byte> host_read(obj_size);
         cudaMemcpy(host_read.data(), dev_get, obj_size, cudaMemcpyDeviceToHost);
-        rtest::VerifyHostBuffer(host_read.data(), obj_size, host,
-                                "single-part");
+        rtest::VerifyHostBuffer(host_read.data(), obj_size, host, "single-part");
       } else {
-        std::cout << "  (optional GET failed: " << get_res.error_message
-                  << ")\n";
+        std::cout << "  (optional GET failed: " << get_res.error_message << ")\n";
       }
     }
   }

@@ -11,16 +11,13 @@
 
 namespace us3_turbo::client {
 
-bool UcxGetChannel::StatObject(const std::string& bucket,
-                               const std::string& key,
-                               std::uint64_t& out_object_size,
+bool UcxGetChannel::StatObject(const std::string& bucket, const std::string& key, std::uint64_t& out_object_size,
                                std::string& out_error) const {
   const std::string request_id = detail::MakeRequestId();
   return proxy_.StatObject(request_id, bucket, key, out_object_size, out_error);
 }
 
-bool UcxGetChannel::GetOnce(const std::string& bucket, const std::string& key,
-                            MutableBufferView buffer,
+bool UcxGetChannel::GetOnce(const std::string& bucket, const std::string& key, MutableBufferView buffer,
                             GetPathResult& result) const {
   assert(ucx_mgr_ != nullptr);
   const std::string request_id = detail::MakeRequestId();
@@ -33,8 +30,7 @@ bool UcxGetChannel::GetOnce(const std::string& bucket, const std::string& key,
   }
   UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};
 
-  return proxy_.UcxGet(request_id, bucket, key, buffer.size, ucx_source,
-                       result);
+  return proxy_.UcxGet(request_id, bucket, key, buffer.size, ucx_source, result);
 }
 
 }  // namespace us3_turbo::client

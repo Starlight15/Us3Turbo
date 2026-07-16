@@ -26,8 +26,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t size =
-      2ULL * 1024 * 1024;  // 默认 2M（< 4M 单块，≤16M 单步上限）
+  std::uint64_t size = 2ULL * 1024 * 1024;  // 默认 2M（< 4M 单块，≤16M 单步上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -54,15 +53,13 @@ int main(int argc, char** argv) {
   }
 
   if (size > kSinglePutLimit || size >= kBlockSize) {
-    std::cerr << "[FAIL] " << kTestName
-              << ": size must be <= 16M and < 4M for single-block, got "
+    std::cerr << "[FAIL] " << kTestName << ": size must be <= 16M and < 4M for single-block, got "
               << rtest::HumanBytes(size) << "\n";
     return 2;
   }
 
   const std::string bucket = "test-bucket";
-  const std::string key =
-      std::string("rtest-t21-ucx-") + rtest::MakeTimestampSuffix();
+  const std::string key = std::string("rtest-t21-ucx-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.1 UCX " << kTestName << " ===\n"
             << "  proxy : " << proxy_addr << "\n"
@@ -95,25 +92,22 @@ int main(int argc, char** argv) {
     put_req.path = PutDataPath::kUcx;
 
     ClientProxyPutResponse put_resp;
-    if (!client.PutObject(put_req,
-                          ConstBufferView{.data = put_buf.data(), .size = size},
-                          put_resp)) {
+    if (!client.PutObject(put_req, ConstBufferView{.data = put_buf.data(), .size = size}, put_resp)) {
       fail_reason = "PutObject FAILED";
       goto cleanup;
     }
     const auto& pr = put_resp.ucx_result.value();
     put_etag = pr.etag;
     put_crc = pr.crc32c;
-    std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << put_etag
-              << " crc32c=0x" << std::hex << put_crc << std::dec << "\n";
+    std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << put_etag << " crc32c=0x" << std::hex << put_crc
+              << std::dec << "\n";
   }
 
   // ---- StatObject ----
   {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(bucket, key, obj_size, stat_err) ||
-        obj_size != size) {
+    if (!client.StatObject(bucket, key, obj_size, stat_err) || obj_size != size) {
       fail_reason = "StatObject failed or size mismatch";
       goto cleanup;
     }
@@ -124,15 +118,12 @@ int main(int argc, char** argv) {
     std::vector<std::byte> get_buf(size);
     std::memset(get_buf.data(), 0xAA, size);
     GetPathResult get_res;
-    if (!client.GetObjectUcx(
-            bucket, key,
-            MutableBufferView{.data = get_buf.data(), .size = size}, get_res) ||
+    if (!client.GetObjectUcx(bucket, key, MutableBufferView{.data = get_buf.data(), .size = size}, get_res) ||
         !get_res.ok) {
       fail_reason = "GetObjectUcx FAILED: " + get_res.error_message;
       goto cleanup;
     }
-    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x"
-              << std::hex << get_res.crc32c << std::dec
+    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex << get_res.crc32c << std::dec
               << " hash=" << get_res.hash << "\n";
 
     if (get_res.crc32c == 0) {
@@ -140,15 +131,11 @@ int main(int argc, char** argv) {
     } else if (get_res.hash.empty()) {
       fail_reason = "hash is empty";
     } else if (get_res.crc32c != put_crc) {
-      fail_reason = "crc32c mismatch: get=0x" + std::to_string(get_res.crc32c) +
-                    " put=0x" + std::to_string(put_crc);
+      fail_reason = "crc32c mismatch: get=0x" + std::to_string(get_res.crc32c) + " put=0x" + std::to_string(put_crc);
     } else if (get_res.hash != put_etag) {
-      fail_reason =
-          "hash != put.etag: get=" + get_res.hash + " put=" + put_etag;
+      fail_reason = "hash != put.etag: get=" + get_res.hash + " put=" + put_etag;
     } else if (get_res.bytes_read != size) {
-      fail_reason = "bytes_read mismatch: got " +
-                    std::to_string(get_res.bytes_read) + " want " +
-                    std::to_string(size);
+      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) + " want " + std::to_string(size);
     } else {
       test_passed = true;
     }

@@ -11,40 +11,33 @@ namespace us3_turbo::proxy::utils {
 
 namespace {
 
-constexpr char kBase64Table[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+constexpr char kBase64Table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 }  // namespace
 
 std::string GenUuid() {
   static thread_local std::mt19937_64 rng{
-      std::random_device{}() ^
-      static_cast<std::uint64_t>(
-          std::chrono::steady_clock::now().time_since_epoch().count())};
+      std::random_device{}() ^ static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
   std::uint64_t a = rng();
   std::uint64_t b = rng();
   unsigned char bytes[16];
-  for (int i = 0; i < 8; ++i)
-    bytes[i] = static_cast<unsigned char>(a >> (8 * (7 - i)));
-  for (int i = 0; i < 8; ++i)
-    bytes[i + 8] = static_cast<unsigned char>(b >> (8 * (7 - i)));
+  for (int i = 0; i < 8; ++i) bytes[i] = static_cast<unsigned char>(a >> (8 * (7 - i)));
+  for (int i = 0; i < 8; ++i) bytes[i + 8] = static_cast<unsigned char>(b >> (8 * (7 - i)));
   bytes[6] = (bytes[6] & 0x0F) | 0x40;  // version 4
   bytes[8] = (bytes[8] & 0x3F) | 0x80;  // variant 10
   char buf[37];
   std::snprintf(buf, sizeof(buf),
                 "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
                 "%02x%02x%02x%02x%02x%02x",
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
-                bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11],
-                bytes[12], bytes[13], bytes[14], bytes[15]);
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
+                bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
   return std::string(buf);
 }
 
 std::string Sha1(std::string_view data) {
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned int md_len = 0;
-  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_sha1(), nullptr) !=
-      1) {
+  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_sha1(), nullptr) != 1) {
     return {};
   }
   return std::string(reinterpret_cast<const char*>(md), md_len);
@@ -84,8 +77,7 @@ std::string Base64Encode(std::string_view data) {
 }
 
 std::int64_t NowMs() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::system_clock::now().time_since_epoch())
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
       .count();
 }
 
@@ -130,8 +122,7 @@ std::string CombineBlockCRC32s(const std::vector<std::uint32_t>& crcs) {
 
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned int md_len = 0;
-  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_md5(), nullptr) !=
-      1) {
+  if (EVP_Digest(data.data(), data.size(), md, &md_len, EVP_md5(), nullptr) != 1) {
     return {};
   }
 

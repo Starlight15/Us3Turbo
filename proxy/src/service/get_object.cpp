@@ -30,8 +30,8 @@ int GetObject::StatObject(const StatObjectRequest& req, StatObjectOutput& out) {
   out.object_size = rec.filesize;
   out.block_size = rec.block_size;
   out.hash = rec.hash;
-  LOG_DEBUG(rid, "stat bucket={}/{} size={} block_size={} hash={}",
-            req.bucket(), req.key(), rec.filesize, rec.block_size, rec.hash);
+  LOG_DEBUG(rid, "stat bucket={}/{} size={} block_size={} hash={}", req.bucket(), req.key(), rec.filesize,
+            rec.block_size, rec.hash);
   return 0;
 }
 
@@ -75,13 +75,11 @@ int GetObject::ValidateUcxRequest(const ClientProxyGetRequest& req) {
     return PROXY_ERR_MISSING_SOURCE;
   }
   if (req.ucx_source().packed_rkey().empty()) {
-    LOG_WARN(rid, "ucx packed_rkey empty bucket={}/{}", req.bucket(),
-             req.key());
+    LOG_WARN(rid, "ucx packed_rkey empty bucket={}/{}", req.bucket(), req.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
   if (req.ucx_source().client_ucx_addr().empty()) {
-    LOG_WARN(rid, "ucx client_ucx_addr empty bucket={}/{}", req.bucket(),
-             req.key());
+    LOG_WARN(rid, "ucx client_ucx_addr empty bucket={}/{}", req.bucket(), req.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
   return 0;
@@ -100,15 +98,14 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
     return PROXY_ERR_INVALID_PARAM;
   }
   if (rec.filesize != req.object_size()) {
-    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}",
-             req.object_size(), rec.filesize, req.bucket(), req.key());
+    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}", req.object_size(), rec.filesize,
+             req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
 
   /* 2) 按 block_size 切块串行读，token 复用仅 gpu_offset 递增 */
   const std::uint64_t block_size = rec.block_size;
-  const std::uint64_t block_count =
-      (rec.filesize + block_size - 1) / block_size;
+  const std::uint64_t block_count = (rec.filesize + block_size - 1) / block_size;
   const std::string& rdma_token = req.gds_source().rdma_token();
   const std::uint64_t rid_hash = std::hash<std::string>{}(rid);
 
@@ -121,32 +118,27 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
     const std::uint64_t len = std::min(block_size, rec.filesize - offset);
     const std::string block_key = rec.first_object + "_" + std::to_string(i);
 
-    const auto result =
-        client_->GetBlockGds(block_key, rdma_token, offset, 0, len, rid_hash);
+    const auto result = client_->GetBlockGds(block_key, rdma_token, offset, 0, len, rid_hash);
     if (result.ret_code != 0) {
-      LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key,
-                result.error);
+      LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key, result.error);
       return result.ret_code;
     }
     crcs.push_back(result.crc32c);
     total_read += result.bytes_written;  // GET 语义下复用字段 = bytes_read
-    LOG_DEBUG(rid, "block {} key={} ok crc={:#x} bytes={}", i, block_key,
-              result.crc32c, result.bytes_written);
+    LOG_DEBUG(rid, "block {} key={} ok crc={:#x} bytes={}", i, block_key, result.crc32c, result.bytes_written);
   }
 
   /* 3) 重组 hash 与 fileidx 比对，数据完整性兜底 */
   const std::string hash = utils::CombineBlockCRC32s(crcs);
   if (hash != rec.hash) {
-    LOG_ERROR(rid, "hash mismatch: computed={} fileidx={} bucket={}/{}", hash,
-              rec.hash, req.bucket(), req.key());
+    LOG_ERROR(rid, "hash mismatch: computed={} fileidx={} bucket={}/{}", hash, rec.hash, req.bucket(), req.key());
     return PROXY_ERR_BACKEND_FAILED;
   }
 
   out.crc32c = (crcs.size() == 1) ? crcs[0] : 0;  // 单块整对象 crc，多块用 hash
   out.bytes_read = total_read;
   out.hash = hash;
-  LOG_INFO(rid, "GetGds ok bucket={}/{} bytes={} blocks={}", req.bucket(),
-           req.key(), total_read, block_count);
+  LOG_INFO(rid, "GetGds ok bucket={}/{} bytes={} blocks={}", req.bucket(), req.key(), total_read, block_count);
   return 0;
 }
 
@@ -163,15 +155,14 @@ int GetObject::GetUcx(const ClientProxyGetRequest& req, GetOutput& out) {
     return PROXY_ERR_INVALID_PARAM;
   }
   if (rec.filesize != req.object_size()) {
-    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}",
-             req.object_size(), rec.filesize, req.bucket(), req.key());
+    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}", req.object_size(), rec.filesize,
+             req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
 
   /* 2) 按 block_size 切块串行读，descriptor 复用仅 dest_offset 递增 */
   const std::uint64_t block_size = rec.block_size;
-  const std::uint64_t block_count =
-      (rec.filesize + block_size - 1) / block_size;
+  const std::uint64_t block_count = (rec.filesize + block_size - 1) / block_size;
   const std::uint64_t remote_addr = req.ucx_source().remote_addr();
   const std::string& packed_rkey = req.ucx_source().packed_rkey();
   const std::string& client_ucx_addr = req.ucx_source().client_ucx_addr();
@@ -187,32 +178,27 @@ int GetObject::GetUcx(const ClientProxyGetRequest& req, GetOutput& out) {
     const std::string block_key = rec.first_object + "_" + std::to_string(i);
 
     const auto result =
-        client_->GetBlockUcx(block_key, remote_addr, packed_rkey,
-                             client_ucx_addr, offset, 0, len, rid_hash);
+        client_->GetBlockUcx(block_key, remote_addr, packed_rkey, client_ucx_addr, offset, 0, len, rid_hash);
     if (result.ret_code != 0) {
-      LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key,
-                result.error);
+      LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key, result.error);
       return result.ret_code;
     }
     crcs.push_back(result.crc32c);
     total_read += result.bytes_written;  // GET 语义下复用字段 = bytes_read
-    LOG_DEBUG(rid, "block {} key={} ok crc={:#x} bytes={}", i, block_key,
-              result.crc32c, result.bytes_written);
+    LOG_DEBUG(rid, "block {} key={} ok crc={:#x} bytes={}", i, block_key, result.crc32c, result.bytes_written);
   }
 
   /* 3) 重组 hash 与 fileidx 比对，数据完整性兜底 */
   const std::string hash = utils::CombineBlockCRC32s(crcs);
   if (hash != rec.hash) {
-    LOG_ERROR(rid, "hash mismatch: computed={} fileidx={} bucket={}/{}", hash,
-              rec.hash, req.bucket(), req.key());
+    LOG_ERROR(rid, "hash mismatch: computed={} fileidx={} bucket={}/{}", hash, rec.hash, req.bucket(), req.key());
     return PROXY_ERR_BACKEND_FAILED;
   }
 
   out.crc32c = (crcs.size() == 1) ? crcs[0] : 0;  // 单块整对象 crc，多块用 hash
   out.bytes_read = total_read;
   out.hash = hash;
-  LOG_INFO(rid, "GetUcx ok bucket={}/{} bytes={} blocks={}", req.bucket(),
-           req.key(), total_read, block_count);
+  LOG_INFO(rid, "GetUcx ok bucket={}/{} bytes={} blocks={}", req.bucket(), req.key(), total_read, block_count);
   return 0;
 }
 

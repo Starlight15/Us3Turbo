@@ -30,18 +30,17 @@ void EnsureLogDir() {
 
 }  // namespace
 
-void Logger::Init(spdlog::level::level_enum level, std::size_t max_file_size_mb,
-                  std::size_t max_files) {
+void Logger::Init(spdlog::level::level_enum level, std::size_t max_file_size_mb, std::size_t max_files) {
   EnsureLogDir();
 
   // Sink 1: 控制台（带颜色，便于开发调试）
   auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
 
   // Sink 2: 文件（按大小滚动）
-  auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-      MakeLogFileName(),
-      max_file_size_mb * 1024 * 1024,  // MB -> bytes
-      max_files);
+  auto file_sink =
+      std::make_shared<spdlog::sinks::rotating_file_sink_mt>(MakeLogFileName(),
+                                                             max_file_size_mb * 1024 * 1024,  // MB -> bytes
+                                                             max_files);
 
   // 双 sink 合并，同时输出到控制台和文件
   spdlog::sinks_init_list sinks{console_sink, file_sink};
