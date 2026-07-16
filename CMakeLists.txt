@@ -126,11 +126,17 @@ link_directories(${CUDART_LIBRARY_DIR})
 # CUDA driver API (libcuda): cuPointerGetAttribute 属于 driver API,运行期由
 # 系统真实驱动的 libcuda.so.1 提供符号;链接期用 stubs/libcuda.so 是标准做法。
 find_library(CUDA_DRIVER_LIBRARY NAMES cuda
-  HINTS
-    /usr/local/cuda/targets/x86_64-linux/lib/stubs
-    /usr/local/cuda-13.1/targets/x86_64-linux/lib/stubs
-    /usr/local/cuda-13.2/targets/x86_64-linux/lib/stubs
-  REQUIRED)
+  PATHS ${CUDA_TOOLKIT_ROOT_DIR}/lib64/stubs
+        ${CUDA_TOOLKIT_ROOT_DIR}/targets/x86_64-linux/lib/stubs
+        /usr/local/cuda/targets/x86_64-linux/lib/stubs
+        /usr/local/cuda-13.1/targets/x86_64-linux/lib/stubs
+        /usr/local/cuda-13.2/targets/x86_64-linux/lib/stubs
+  NO_DEFAULT_PATH)
+if(NOT CUDA_DRIVER_LIBRARY)
+  message(FATAL_ERROR "libcuda.so (CUDA driver stub) not found. "
+                      "Check CUDA_TOOLKIT_ROOT_DIR or install CUDA toolkit.")
+endif()
+message(STATUS "Found CUDA driver stub: ${CUDA_DRIVER_LIBRARY}")
 
 find_path(CUOBJCLIENT_INCLUDE_DIR NAMES cuobjclient.h
   HINTS

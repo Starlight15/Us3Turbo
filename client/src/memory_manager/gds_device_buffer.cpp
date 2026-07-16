@@ -49,16 +49,22 @@ void GdsDeviceBuffer::Reset() noexcept {
   if (GdsMemoryManager::Instance(mgr) && mgr != nullptr) {
     // 幂等:ptr_ 未曾 AcquireToken 过也直接返回 true。
     if (!mgr->UnregisterBuffer(ptr_)) {
-      LOG_SYS_WARN("UnregisterBuffer failed (ptr={})", ptr_);
+      LOG_SYS_ERROR(
+          "UnregisterBuffer failed (ptr={}), stale entry may remain until "
+          "process exit. Relying on buffer_id check for safety.",
+          ptr_);
     }
   } else {
     // manager 不可用(例如进程退出路径):无法主动 unregister,
     // 退化依赖 Step1 的 buffer_id 校验在下次复用时兜底识别。
-    LOG_SYS_DEBUG(
-        "GdsMemoryManager unavailable, skip explicit unregister (ptr={})",
-        ptr_);
+    LOG_SYS_DEBUG("GdsMemoryManager unavailable (ptr={}), skip unregister",
+                  ptr_);
   }
-  cudaFree(ptr_);
+  const cudaError_t e = cudaFree(ptr_);
+  if (e != cudaSuccess) {
+    LOG_SYS_ERROR("cudaFree failed (ptr={} err={})", ptr_,
+                  cudaGetErrorString(e));
+  }
   ptr_ = nullptr;
   size_ = 0;
 }
