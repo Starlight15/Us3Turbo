@@ -8,7 +8,7 @@ BUILD_DIR="${PROJECT_ROOT}/build"
 BUILD_TYPE="${BUILD_TYPE:-RelWithDebInfo}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 CLEAN_BUILD=0
-BUILD_EXAMPLES="${BUILD_EXAMPLES:-ON}"
+BUILD_RTEST="${BUILD_RTEST:-ON}"
 
 # FUSION_ACCESS_DEPS_ROOT：默认使用代码库内 third_party/install
 FUSION_ACCESS_DEPS_ROOT="${FUSION_ACCESS_DEPS_ROOT:-${PROJECT_ROOT}/third_party/install}"
@@ -81,7 +81,7 @@ log "Configuring CMake (${BUILD_TYPE})"
 cmake -S "${PROJECT_ROOT}" -B "${BUILD_DIR}" \
   -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
   -DFUSION_ACCESS_DEPS_ROOT="${FUSION_ACCESS_DEPS_ROOT}" \
-  -DUS3_TURBO_ACCESS_BUILD_EXAMPLES="${BUILD_EXAMPLES}"
+  -DUS3_TURBO_ACCESS_BUILD_RTEST="${BUILD_RTEST}"
 
 log "Building targets with ${JOBS} jobs"
 cmake --build "${BUILD_DIR}" -j"${JOBS}"

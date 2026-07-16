@@ -15,10 +15,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)/build"
+BUILD_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)/build"
 
 # 默认日志目录(仓库内 test/log,可被环境变量覆盖)。
-LOG_DIR="${LOG_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)/test/log}"
+LOG_DIR="${LOG_DIR:-$(cd "${SCRIPT_DIR}/../.." && pwd)/test/log}"
 mkdir -p "${LOG_DIR}"
 
 # ============================================================
@@ -44,13 +44,13 @@ BACKEND_COMPUTE_CRC32C="${BACKEND_COMPUTE_CRC32C:-true}"
 
 BACKEND_BIN="${BUILD_DIR}/backend/us3_turbo_backend"
 PROXY_BIN="${BUILD_DIR}/proxy/us3_turbo_proxy"
-BENCH_BIN="${BUILD_DIR}/examples/us3_turbo_gds_bench_example"
+BENCH_BIN="${BUILD_DIR}/rtest/examples/us3_turbo_gds_bench_example"
 
 # ---- 检查二进制存在 ----
 for bin in "$BACKEND_BIN" "$PROXY_BIN" "$BENCH_BIN"; do
   if [[ ! -x "$bin" ]]; then
     echo "[ERROR] not found or not executable: $bin"
-    echo "        run: cd ${SCRIPT_DIR}/.. && bash do_make.sh"
+    echo "        run: cd ${SCRIPT_DIR}/../.. && bash do_make.sh"
     exit 1
   fi
 done

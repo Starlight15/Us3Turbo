@@ -176,7 +176,7 @@ UCX 单流 283 vs GDS 494 MiB/s。ufile-ac 反向 `ucp_get_nbx` 从 client host 
 
 ### 测量注意：单步 bench warmup 模式的吞吐假象
 
-`examples/us3_turbo_gds_bench_example` 在 `--warmup` 较大时报出 9000–17000 MiB/s，**不可信**：
+`rtest/examples/us3_turbo_gds_bench_example` 在 `--warmup` 较大时报出 9000–17000 MiB/s，**不可信**：
 warmup 与正式阶段用同一 `key_prefix`，重复 key 命中 `PutFromGds` 的 `keysmap_->Get!=NULL` 分支
 （`ac_server.cc:1342` key duplicate → `ReadDataHeader` 提前返回，**不落盘**）。warmup 越多、key 复用越多，
 落盘越少 → 报出吞吐虚高。**以 iostat nvme3n1 实写为准 ≈ 1.1 GiB/s**；fresh unique key（warmup=0 或

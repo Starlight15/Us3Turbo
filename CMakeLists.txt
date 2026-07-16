@@ -34,9 +34,8 @@ add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-D_GLIBCXX_USE_CXX11_ABI=1>)
 # 故把 C++ 运行时符号静态烤进可执行文件,运行期不再依赖高版本 libstdc++。
 add_link_options(-static-libstdc++ -static-libgcc)
 
-option(US3_TURBO_ACCESS_BUILD_EXAMPLES "Build Us3Turbo examples" ON)
 option(US3_TURBO_ACCESS_USE_SPDLOG_HEADER_ONLY "Use spdlog header-only target" ON)
-option(US3_TURBO_ACCESS_BUILD_RTEST "Build Us3Turbo regression tests" ON)
+option(US3_TURBO_ACCESS_BUILD_RTEST "Build Us3Turbo regression tests (incl. examples)" ON)
 
 set(FUSION_ACCESS_DEPS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/install"
     CACHE PATH "Offline dependency install root (default: in-repo third_party/install)")
@@ -205,10 +204,6 @@ add_custom_target(us3_message_proto
 
 add_subdirectory(client)
 add_subdirectory(proxy)
-
-if(US3_TURBO_ACCESS_BUILD_EXAMPLES)
-  add_subdirectory(examples)
-endif()
 
 if(US3_TURBO_ACCESS_BUILD_RTEST)
   add_subdirectory(rtest)

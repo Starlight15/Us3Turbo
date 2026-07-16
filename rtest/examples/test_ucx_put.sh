@@ -10,8 +10,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)/build"
-LOG_DIR="${LOG_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)/test/log}"
+BUILD_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)/build"
+LOG_DIR="${LOG_DIR:-$(cd "${SCRIPT_DIR}/../.." && pwd)/test/log}"
 mkdir -p "${LOG_DIR}"
 
 PROXY_HOST="192.168.1.198"
@@ -25,7 +25,7 @@ BACKEND_EP="${BACKEND_HOST}:${BACKEND_PORT}"
 
 BACKEND_BIN="${BUILD_DIR}/backend/us3_turbo_backend"
 PROXY_BIN="${BUILD_DIR}/proxy/us3_turbo_proxy"
-CLIENT_BIN="${BUILD_DIR}/examples/us3_turbo_ucx_put_example"
+CLIENT_BIN="${BUILD_DIR}/rtest/examples/us3_turbo_ucx_put_example"
 
 for bin in "$BACKEND_BIN" "$PROXY_BIN" "$CLIENT_BIN"; do
   if [[ ! -x "$bin" ]]; then

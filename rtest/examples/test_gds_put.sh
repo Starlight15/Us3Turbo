@@ -10,10 +10,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)/build"
+BUILD_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)/build"
 
 # 默认日志目录（仓库内 test/log，避免写 /var/log；可被环境变量覆盖）。
-LOG_DIR="${LOG_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)/test/log}"
+LOG_DIR="${LOG_DIR:-$(cd "${SCRIPT_DIR}/../.." && pwd)/test/log}"
 mkdir -p "${LOG_DIR}"
 
 # ============================================================
@@ -35,7 +35,7 @@ BACKEND_EP="${BACKEND_HOST}:${BACKEND_PORT}"
 
 BACKEND_BIN="${BUILD_DIR}/backend/us3_turbo_backend"
 PROXY_BIN="${BUILD_DIR}/proxy/us3_turbo_proxy"
-CLIENT_BIN="${BUILD_DIR}/examples/us3_turbo_gds_put_example"
+CLIENT_BIN="${BUILD_DIR}/rtest/examples/us3_turbo_gds_put_example"
 
 # ---- 检查二进制存在 ----
 for bin in "$BACKEND_BIN" "$PROXY_BIN" "$CLIENT_BIN"; do
