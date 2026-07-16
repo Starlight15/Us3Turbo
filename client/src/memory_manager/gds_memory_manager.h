@@ -7,14 +7,24 @@
 #include "client/src/memory_manager/buffer_registry.h"
 #include "us3_turbo/client/types.h"
 
+#include <cuda.h>         // CU_POINTER_ATTRIBUTE_BUFFER_ID (driver API)
 #include <cuobjclient.h>  // needed for cuObjOpType_t in AcquireToken signature
 
 namespace us3_turbo::client {
 
 /**
+ * @brief GDS 注册表条目:size 用于覆盖范围判断,buffer_id 用于识别 CUDA
+ *        地址复用(cudaFree+cudaMalloc 后同地址不同分配)。
+ */
+struct GdsRegEntry {
+  std::size_t size{0};
+  unsigned long long buffer_id{0};  // CU_POINTER_ATTRIBUTE_BUFFER_ID
+};
+
+/**
  * @brief 进程唯一的 GDS 内存管理器:注册 device buffer 并颁发 RDMA token。
  */
-class GdsMemoryManager : public BufferRegistry<std::size_t> {
+class GdsMemoryManager : public BufferRegistry<GdsRegEntry> {
  public:
   /** @brief RDMA token 的 RAII 持有者,析构调 cuMemObjPutRDMAToken 释放。 */
   class Token {
@@ -62,11 +72,12 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
   GdsMemoryManager();
   ~GdsMemoryManager() override;
 
-  /** @brief BufferRegistry<size_t> 钩子:真正 pin 进 BAR1。 */
+  /** @brief BufferRegistry<GdsRegEntry> 钩子:真正 pin 进 BAR1。 */
   [[nodiscard]] bool DoRegister(void* ptr, std::size_t size,
-                                std::size_t& out) override;
-  /** @brief BufferRegistry<size_t> 钩子:释放 pin(调 cuMemObjPutDescriptor)。 */
-  void DoUnregister(void* ptr, std::size_t& handle) override;
+                                GdsRegEntry& out) override;
+  /** @brief BufferRegistry<GdsRegEntry> 钩子:释放 pin(调
+   * cuMemObjPutDescriptor)。 */
+  void DoUnregister(void* ptr, GdsRegEntry& handle) override;
 
   struct Impl;
   std::unique_ptr<Impl> impl_;

@@ -123,6 +123,15 @@ find_library(CUDART_LIBRARY NAMES cudart_static cudart
 get_filename_component(CUDART_LIBRARY_DIR ${CUDART_LIBRARY} DIRECTORY)
 link_directories(${CUDART_LIBRARY_DIR})
 
+# CUDA driver API (libcuda): cuPointerGetAttribute 属于 driver API,运行期由
+# 系统真实驱动的 libcuda.so.1 提供符号;链接期用 stubs/libcuda.so 是标准做法。
+find_library(CUDA_DRIVER_LIBRARY NAMES cuda
+  HINTS
+    /usr/local/cuda/targets/x86_64-linux/lib/stubs
+    /usr/local/cuda-13.1/targets/x86_64-linux/lib/stubs
+    /usr/local/cuda-13.2/targets/x86_64-linux/lib/stubs
+  REQUIRED)
+
 find_path(CUOBJCLIENT_INCLUDE_DIR NAMES cuobjclient.h
   HINTS
     /usr/local/cuda/targets/x86_64-linux/include

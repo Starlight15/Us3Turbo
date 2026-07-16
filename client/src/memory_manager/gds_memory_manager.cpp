@@ -118,28 +118,50 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
 
   void* mut_ptr = const_cast<void*>(ptr);
 
+  // 查询当前地址上"住户"的进程内唯一分配 ID。CUDA 保证:同一进程内,
+  // 不同分配的 buffer_id 绝不重复,free 后也不会被后来者捡走
+  // (见 cuda.h CU_POINTER_ATTRIBUTE_BUFFER_ID 文档)。
+  unsigned long long cur_buffer_id = 0;
+  const CUresult pr =
+      cuPointerGetAttribute(&cur_buffer_id, CU_POINTER_ATTRIBUTE_BUFFER_ID,
+                            reinterpret_cast<CUdeviceptr>(mut_ptr));
+  if (pr != CUDA_SUCCESS) {
+    LOG_SYS_ERROR("cuPointerGetAttribute(BUFFER_ID) failed (ptr={} rc={})", ptr,
+                  static_cast<int>(pr));
+    return false;  // 身份查不到就不能判断是否复用,直接失败,不降级。
+  }
+
   // 单次加锁完成幂等注册检查,DoRegister 失败则回滚占位。
-  // 若同一地址已注册但覆盖范围不足（cudaFree+cudaMalloc 地址复用），
-  // 先注销旧描述符再重新注册。
+  // 重新 pin 的条件:地址被复用(buffer_id 变了) || 旧注册范围不够。
   {
     std::lock_guard<std::mutex> lk(mu_);
     const std::size_t needed = size + offset;
-    if (registered_.count(mut_ptr)) {
-      if (registered_[mut_ptr] < needed) {
-        // 旧注册范围不够（地址被 CUDA 复用于更大的 buffer），
-        // 先注销再重新注册以覆盖新大小。
-        LOG_SYS_INFO("re-register ptr={} old_size={} new_size={}", mut_ptr,
-                     registered_[mut_ptr], needed);
-        DoUnregister(mut_ptr, registered_[mut_ptr]);
-        if (!DoRegister(mut_ptr, needed, registered_[mut_ptr])) {
-          registered_.erase(mut_ptr);
+    auto it = registered_.find(mut_ptr);
+    if (it != registered_.end()) {
+      const bool addr_reused = it->second.buffer_id != cur_buffer_id;
+      const bool too_small = it->second.size < needed;
+      if (addr_reused || too_small) {
+        LOG_SYS_INFO(
+            "re-register ptr={} reason={} old_size={} new_size={} old_bufid={} "
+            "new_bufid={}",
+            mut_ptr,
+            addr_reused ? "buffer reused at same address" : "size grew",
+            it->second.size, needed, it->second.buffer_id, cur_buffer_id);
+        DoUnregister(mut_ptr, it->second);
+        GdsRegEntry entry{};
+        if (!DoRegister(mut_ptr, needed, entry)) {
+          registered_.erase(it);
           return false;
         }
+        entry.buffer_id = cur_buffer_id;
+        it->second = entry;
       }
-      // 已注册且范围足够，无需再 pin。
-    } else if (!DoRegister(mut_ptr, needed, registered_[mut_ptr])) {
-      registered_.erase(mut_ptr);  // DoRegister 失败:回滚占位
-      return false;
+      // 身份未变且范围足够:无需再 pin。
+    } else {
+      GdsRegEntry entry{};
+      if (!DoRegister(mut_ptr, needed, entry)) return false;
+      entry.buffer_id = cur_buffer_id;
+      registered_.emplace(mut_ptr, entry);
     }
   }
   // cuMemObjGetRDMAToken 可能耗时较长,锁外执行以提高并发性。
@@ -159,18 +181,18 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
 }
 
 bool GdsMemoryManager::DoRegister(void* ptr, std::size_t size,
-                                  std::size_t& out) {
+                                  GdsRegEntry& out) {
   const auto rc = impl_->client->cuMemObjGetDescriptor(ptr, size);
   if (rc != CU_OBJ_SUCCESS) {
     LOG_SYS_ERROR("cuMemObjGetDescriptor failed (ptr={} size={} rc={})", ptr,
                   size, rc);
     return false;
   }
-  out = size;  // GDS 句柄即 buffer size
+  out.size = size;  // GDS 句柄即 buffer size
   return true;
 }
 
-void GdsMemoryManager::DoUnregister(void* ptr, std::size_t& /*handle*/) {
+void GdsMemoryManager::DoUnregister(void* ptr, GdsRegEntry& /*handle*/) {
   const auto rc = impl_->client->cuMemObjPutDescriptor(ptr);
   if (rc != CU_OBJ_SUCCESS) {
     LOG_SYS_ERROR("cuMemObjPutDescriptor failed (ptr={} rc={})", ptr, rc);

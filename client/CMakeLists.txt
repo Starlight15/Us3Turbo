@@ -18,6 +18,7 @@ add_library(us3_turbo_client
   src/rpc/proxy_rpc.cpp
   src/common/crc32c.cpp
   src/memory_manager/gds_memory_manager.cpp
+  src/memory_manager/gds_device_buffer.cpp
   src/memory_manager/ucx_memory_manager.cpp
   src/transport/gds_put_channel.cpp
   src/transport/gds_get_channel.cpp
@@ -50,6 +51,7 @@ target_link_libraries(us3_turbo_client
     us3_turbo_brpc
     ${CUOBJCLIENT_LIBRARY}
     ${CUDART_LIBRARY}
+    ${CUDA_DRIVER_LIBRARY}
     ${UCP_LIBRARY} ${UCS_LIBRARY} ${UCT_LIBRARY} ${UCM_LIBRARY})
 
 target_compile_options(us3_turbo_client
