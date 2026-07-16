@@ -13,8 +13,8 @@ struct ClientOptions {
   // proxy 控制面 endpoint
   std::string endpoint;
 
-  // 默认超时
-  std::chrono::milliseconds default_timeout{std::chrono::milliseconds(30000)};
+  // RPC 超时
+  std::chrono::milliseconds rpc_timeout{std::chrono::milliseconds(30000)};
 
   // 单步 PUT 对象上限，默认 16MiB；超出走分段上传。0 表示不限制。
   std::size_t put_single_max_bytes{16ULL * 1024 * 1024};

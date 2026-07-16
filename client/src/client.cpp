@@ -72,18 +72,17 @@ namespace {
 
 }  // namespace
 
-Client::Client(ClientOptions options) : options_(std::move(options)) {}
+Client::Client(ClientOptions options) : opts_(std::move(options)) {}
 Client::~Client() = default;
 
 bool Client::Initialize() {
   if (initialized_) return true;
 
   // 单 brpc channel 指向 proxy,线程安全,可被多 worker 并发调用。
-  proxy_ =
-      std::make_unique<ProxyRpc>(options_.endpoint, options_.default_timeout);
+  proxy_ = std::make_unique<ProxyRpc>(opts_.endpoint, opts_.rpc_timeout);
   if (!proxy_->ok()) {
     spdlog::error("Initialize: proxy channel({}) init failed: {}",
-                  options_.endpoint, proxy_->init_error());
+                  opts_.endpoint, proxy_->init_error());
     proxy_.reset();
     return false;
   }
@@ -91,9 +90,8 @@ bool Client::Initialize() {
   // manager 不可用则 channel 留空,该 path 落到 SelectChannel 返回 nullptr。
   GdsMemoryManager* gds_mgr = nullptr;
   if (GdsMemoryManager::Instance(gds_mgr)) {
-    gds_channel_ = std::make_unique<GdsPutChannel>(options_, *proxy_, gds_mgr);
-    gds_get_channel_ =
-        std::make_unique<GdsGetChannel>(options_, *proxy_, gds_mgr);
+    gds_channel_ = std::make_unique<GdsPutChannel>(opts_, *proxy_, gds_mgr);
+    gds_get_channel_ = std::make_unique<GdsGetChannel>(opts_, *proxy_, gds_mgr);
   } else {
     spdlog::warn(
         "Client::Initialize: GDS manager unavailable, path=kGds will fail");
@@ -104,9 +102,8 @@ bool Client::Initialize() {
   // UCX 同构,Start 失败不致命。
   UcxMemoryManager* ucx_mgr = nullptr;
   if (UcxMemoryManager::Instance(ucx_mgr)) {
-    ucx_channel_ = std::make_unique<UcxPutChannel>(options_, *proxy_, ucx_mgr);
-    ucx_get_channel_ =
-        std::make_unique<UcxGetChannel>(options_, *proxy_, ucx_mgr);
+    ucx_channel_ = std::make_unique<UcxPutChannel>(opts_, *proxy_, ucx_mgr);
+    ucx_get_channel_ = std::make_unique<UcxGetChannel>(opts_, *proxy_, ucx_mgr);
   } else {
     spdlog::warn(
         "Client::Initialize: UCX manager unavailable, path=kUcx will fail");
@@ -169,7 +166,7 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
   }
 
   // 大小上限校验。
-  const auto max_put = options_.put_single_max_bytes;
+  const auto max_put = opts_.put_single_max_bytes;
   if (max_put != 0 && buffer.size > max_put) {
     spdlog::warn(
         "PutObject: bucket={}/{} body size {} exceeds put_single_max_bytes {}; "
@@ -188,10 +185,10 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
 
   PutPathResult result;
 
-  // retry-once:首次失败等 options_.retry_backoff（默认
+  // retry-once:首次失败等 opts_.retry_backoff（默认
   // 100ms）再试一次,接受最终结果。
   if (!ch->PutOnce(request, buffer, result)) {
-    std::this_thread::sleep_for(options_.retry_backoff);
+    std::this_thread::sleep_for(opts_.retry_backoff);
     ch->PutOnce(request, buffer, result);
   }
 
@@ -252,10 +249,10 @@ bool Client::UploadPartGds(const std::string& upload_id,
   // 分段 part 上限：须 ≤ multipart_part_size（默认 16MiB，与 proxy 对齐）。
   // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
   // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
-  if (buffer.size > options_.multipart_part_size) {
+  if (buffer.size > opts_.multipart_part_size) {
     out_error = "part size " + std::to_string(buffer.size) +
                 " exceeds multipart_part_size (" +
-                std::to_string(options_.multipart_part_size) + ")";
+                std::to_string(opts_.multipart_part_size) + ")";
     return false;
   }
 
@@ -281,7 +278,7 @@ bool Client::UploadPartGds(const std::string& upload_id,
   }
 
   // 可选 CRC 校验（仅当 server 返回了 crc32c）。
-  if (options_.verify_crc32c && result.crc32c != 0) {
+  if (opts_.verify_crc32c && result.crc32c != 0) {
     VerifyPartCrc32c(request_id, buffer, result.crc32c,
                      IsDevicePointer(buffer.data), "UploadPartGds");
   }
@@ -309,10 +306,10 @@ bool Client::UploadPartUcx(const std::string& upload_id,
   // 分段 part 上限：须 ≤ multipart_part_size（默认 16MiB，与 proxy 对齐）。
   // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
   // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
-  if (buffer.size > options_.multipart_part_size) {
+  if (buffer.size > opts_.multipart_part_size) {
     out_error = "part size " + std::to_string(buffer.size) +
                 " exceeds multipart_part_size (" +
-                std::to_string(options_.multipart_part_size) + ")";
+                std::to_string(opts_.multipart_part_size) + ")";
     return false;
   }
 
@@ -334,7 +331,7 @@ bool Client::UploadPartUcx(const std::string& upload_id,
     return false;
   }
 
-  if (options_.verify_crc32c && result.crc32c != 0) {
+  if (opts_.verify_crc32c && result.crc32c != 0) {
     VerifyPartCrc32c(request_id, buffer, result.crc32c, false, "UploadPartUcx");
   }
 

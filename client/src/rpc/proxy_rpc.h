@@ -24,8 +24,8 @@ namespace us3_turbo::client {
  */
 class ProxyRpc {
  public:
-  ProxyRpc(const std::string& endpoint, std::chrono::milliseconds timeout)
-      : default_timeout_(timeout) {
+  ProxyRpc(const std::string& endpoint, std::chrono::milliseconds rpc_timeout)
+      : rpc_timeout_(rpc_timeout) {
     if (endpoint.empty()) {
       init_error_ = "proxy endpoint must not be empty";
       return;
@@ -33,8 +33,8 @@ class ProxyRpc {
     channel_ = std::make_unique<brpc::Channel>();
     brpc::ChannelOptions co;
     co.protocol = "baidu_std";
-    co.connect_timeout_ms = static_cast<int>(timeout.count());
-    co.timeout_ms = static_cast<int>(timeout.count());
+    co.connect_timeout_ms = static_cast<int>(rpc_timeout.count());
+    co.timeout_ms = static_cast<int>(rpc_timeout.count());
     co.max_retry = 2;
     std::string trimmed = endpoint;
     while (!trimmed.empty() && trimmed.back() == '/') {
@@ -147,15 +147,15 @@ class ProxyRpc {
 
  private:
   void ApplyTimeout(brpc::Controller& controller) const {
-    controller.set_timeout_ms(static_cast<int>(default_timeout_.count()));
+    controller.set_timeout_ms(static_cast<int>(rpc_timeout_.count()));
   }
 
   [[nodiscard]] us3_turbo::proxy::Control_Stub* stub() const {
     return stub_.get();
   }
 
-  // 默认 RPC 超时(用 options.default_timeout)。
-  std::chrono::milliseconds default_timeout_{};
+  // RPC 超时(用 opts.rpc_timeout)。
+  std::chrono::milliseconds rpc_timeout_{};
   std::unique_ptr<brpc::Channel> channel_;
   std::unique_ptr<us3_turbo::proxy::Control_Stub> stub_;
   std::string init_error_;

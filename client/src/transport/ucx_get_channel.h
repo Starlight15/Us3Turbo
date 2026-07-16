@@ -17,7 +17,7 @@ class UcxGetChannel final {
  public:
   UcxGetChannel(const ClientOptions& options, const ProxyRpc& proxy,
                 UcxMemoryManager* ucx_mgr)
-      : options_(options), proxy_(proxy), ucx_mgr_(ucx_mgr) {}
+      : opts_(options), proxy_(proxy), ucx_mgr_(ucx_mgr) {}
 
   /** @brief 查对象布局(object_size)，调用方据此分配 buffer。 */
   [[nodiscard]] bool StatObject(const std::string& bucket,
@@ -31,7 +31,7 @@ class UcxGetChannel final {
                              GetPathResult& result) const;
 
  private:
-  const ClientOptions& options_;
+  const ClientOptions& opts_;
   const ProxyRpc& proxy_;
   UcxMemoryManager* ucx_mgr_;
 };

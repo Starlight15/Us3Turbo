@@ -60,7 +60,7 @@ bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request,
   assert(ucx_mgr_ != nullptr);
   const std::string request_id = MakeRequestId();  // 每次新生成,跨端日志关联
 
-  const bool trace = options_.latency_trace;
+  const bool trace = opts_.latency_trace;
   auto t0 = trace ? clk::now() : clk::time_point{};
 
   UcxMemoryManager::Descriptor desc;
@@ -76,7 +76,7 @@ bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request,
   }
   auto t_put = trace ? clk::now() : clk::time_point{};
 
-  if (options_.verify_crc32c) {
+  if (opts_.verify_crc32c) {
     if (!VerifyUcxCrc32c(request_id, buffer, result.crc32c, request)) {
       return false;
     }

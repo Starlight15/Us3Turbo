@@ -17,7 +17,7 @@ class GdsGetChannel final {
  public:
   GdsGetChannel(const ClientOptions& options, const ProxyRpc& proxy,
                 GdsMemoryManager* gds_mgr)
-      : options_(options), proxy_(proxy), gds_mgr_(gds_mgr) {}
+      : opts_(options), proxy_(proxy), gds_mgr_(gds_mgr) {}
 
   /** @brief 查对象布局(object_size)，调用方据此分配 buffer。 */
   [[nodiscard]] bool StatObject(const std::string& bucket,
@@ -31,7 +31,7 @@ class GdsGetChannel final {
                              GetPathResult& result) const;
 
  private:
-  const ClientOptions& options_;
+  const ClientOptions& opts_;
   const ProxyRpc& proxy_;
   GdsMemoryManager* gds_mgr_;
 };

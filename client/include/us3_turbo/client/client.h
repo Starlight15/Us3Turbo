@@ -113,7 +113,7 @@ class Client {
                                   GetPathResult& result) const;
 
  private:
-  ClientOptions options_;
+  ClientOptions opts_;
   std::unique_ptr<ProxyRpc> proxy_;
   std::unique_ptr<GdsPutChannel> gds_channel_;
   std::unique_ptr<GdsGetChannel> gds_get_channel_;
