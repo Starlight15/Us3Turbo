@@ -96,18 +96,19 @@ bool ParseUint(std::string_view s, std::uint64_t& out) {
 }
 
 void PrintUsage() {
-  std::cout << "usage: us3_turbo_gds_bench_example [options]\n"
-               "  --proxy HOST:PORT        control plane (proxy; GdsPut goes through "
-               "it) (default 192.168.1.198:9100)\n"
-               "  --size N[K|M|G]          object size     (default 100M)\n"
-               "  --count N                number of objects (default 10)\n"
-               "  --concurrency N          worker threads  (default 1)\n"
-               "  --warmup N               warmup ops, not counted (default 0)\n"
-               "  --bucket NAME            (default test-bucket)\n"
-               "  --key-prefix STR         (default obj)\n"
-               "  --verify-crc32c          enable client-side CRC32C verification\n"
-               "  --trace                  log per-PUT stage latency "
-               "(open/token/put)\n";
+  std::cout
+      << "usage: us3_turbo_gds_bench_example [options]\n"
+         "  --proxy HOST:PORT        control plane (proxy; GdsPut goes through "
+         "it) (default 192.168.1.198:9100)\n"
+         "  --size N[K|M|G]          object size     (default 100M)\n"
+         "  --count N                number of objects (default 10)\n"
+         "  --concurrency N          worker threads  (default 1)\n"
+         "  --warmup N               warmup ops, not counted (default 0)\n"
+         "  --bucket NAME            (default test-bucket)\n"
+         "  --key-prefix STR         (default obj)\n"
+         "  --verify-crc32c          enable client-side CRC32C verification\n"
+         "  --trace                  log per-PUT stage latency "
+         "(open/token/put)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Args& a) {
@@ -176,20 +177,23 @@ std::string HumanBytes(std::uint64_t b) {
   constexpr double K = 1024.0;
   char buf[64];
   if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f GiB",
+                  static_cast<double>(b) / (K * K * K));
   else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f MiB",
+                  static_cast<double>(b) / (K * K));
   else if (b >= static_cast<std::uint64_t>(K))
     std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
   else
-    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
+    std::snprintf(buf, sizeof(buf), "%llu B",
+                  static_cast<unsigned long long>(b));
   return buf;
 }
 
 double Percentile(std::vector<double>& sorted, double p) {
   if (sorted.empty()) return 0.0;
-  std::size_t idx =
-      static_cast<std::size_t>(p / 100.0 * static_cast<double>(sorted.size() - 1));
+  std::size_t idx = static_cast<std::size_t>(
+      p / 100.0 * static_cast<double>(sorted.size() - 1));
   if (idx >= sorted.size()) idx = sorted.size() - 1;
   return sorted[idx];
 }
@@ -226,10 +230,11 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
               << ") failed: " << cudaGetErrorString(e) << "\n";
     return;
   }
-  if (cudaError_t e = cudaMemcpy(dev, host_pattern, a.size, cudaMemcpyHostToDevice);
+  if (cudaError_t e =
+          cudaMemcpy(dev, host_pattern, a.size, cudaMemcpyHostToDevice);
       e != cudaSuccess) {
-    std::cerr << "[worker " << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e)
-              << "\n";
+    std::cerr << "[worker " << wid
+              << "] cudaMemcpy failed: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return;
   }
@@ -259,7 +264,8 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
 
   // 2) warmup(不计入统计,key 与正式对象隔离)。
   for (std::uint64_t i = 0; i < a.warmup; ++i) {
-    do_put(a.key_prefix + "-warmup-" + std::to_string(wid) + "-" + std::to_string(i));
+    do_put(a.key_prefix + "-warmup-" + std::to_string(wid) + "-" +
+           std::to_string(i));
   }
 
   // 3) 屏障对齐后开始计时,所有 worker 共享同一个 start。
@@ -297,7 +303,8 @@ int main(int argc, char** argv) {
 
   // 共享 host pattern(只读,各 worker 并发拷贝)。
   std::vector<std::byte> host(a.size);
-  for (std::size_t i = 0; i < a.size; ++i) host[i] = static_cast<std::byte>(i % 251U);
+  for (std::size_t i = 0; i < a.size; ++i)
+    host[i] = static_cast<std::byte>(i % 251U);
 
   ClientOptions opts;
   opts.endpoint = a.proxy;
@@ -320,8 +327,8 @@ int main(int argc, char** argv) {
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
     threads.emplace_back(Worker, w, std::ref(a), std::ref(client), host.data(),
-                         std::ref(next), a.count, std::ref(sync), std::ref(start),
-                         std::ref(stats[w]));
+                         std::ref(next), a.count, std::ref(sync),
+                         std::ref(start), std::ref(stats[w]));
   }
   for (auto& t : threads) t.join();
 
@@ -332,14 +339,16 @@ int main(int argc, char** argv) {
   bool any_ready = false;
   for (std::size_t w = 0; w < nworkers; ++w) {
     if (!stats[w].ready) {
-      std::cerr << "[worker " << w << "] not ready (buffer alloc/register failed)\n";
+      std::cerr << "[worker " << w
+                << "] not ready (buffer alloc/register failed)\n";
       continue;
     }
     any_ready = true;
     ok += stats[w].ok;
     fail += stats[w].fail;
     bytes += stats[w].bytes;
-    lat.insert(lat.end(), stats[w].latencies_ms.begin(), stats[w].latencies_ms.end());
+    lat.insert(lat.end(), stats[w].latencies_ms.begin(),
+               stats[w].latencies_ms.end());
     if (w == 0) {
       end_min = stats[w].end;
       end_max = stats[w].end;
@@ -362,23 +371,29 @@ int main(int argc, char** argv) {
   std::sort(lat.begin(), lat.end());
   double sum_lat = 0.0;
   for (double v : lat) sum_lat += v;
-  const double avg_lat = lat.empty() ? 0.0 : sum_lat / static_cast<double>(lat.size());
+  const double avg_lat =
+      lat.empty() ? 0.0 : sum_lat / static_cast<double>(lat.size());
 
   const double throughput_mbs =
-      (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
-  const double ops_per_sec = (wall_s > 0.0) ? static_cast<double>(ok) / wall_s : 0.0;
+      (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0)
+                     : 0.0;
+  const double ops_per_sec =
+      (wall_s > 0.0) ? static_cast<double>(ok) / wall_s : 0.0;
 
   std::cout << "\n=== results ===\n"
             << "  ok           : " << ok << "\n"
             << "  fail         : " << fail << "\n"
-            << "  bytes        : " << HumanBytes(bytes) << " (" << bytes << ")\n"
+            << "  bytes        : " << HumanBytes(bytes) << " (" << bytes
+            << ")\n"
             << "  wall time    : " << wall_ms << " ms\n"
-            << "  throughput   : " << throughput_mbs << " MiB/s  (" << ops_per_sec
-            << " ops/s)\n";
+            << "  throughput   : " << throughput_mbs << " MiB/s  ("
+            << ops_per_sec << " ops/s)\n";
   if (!lat.empty()) {
     std::cout << "  latency (ms) : avg=" << avg_lat << "  min=" << lat.front()
-              << "  p50=" << Percentile(lat, 50.0) << "  p95=" << Percentile(lat, 95.0)
-              << "  p99=" << Percentile(lat, 99.0) << "  max=" << lat.back() << "\n";
+              << "  p50=" << Percentile(lat, 50.0)
+              << "  p95=" << Percentile(lat, 95.0)
+              << "  p99=" << Percentile(lat, 99.0) << "  max=" << lat.back()
+              << "\n";
   }
   std::cout.flush();
 

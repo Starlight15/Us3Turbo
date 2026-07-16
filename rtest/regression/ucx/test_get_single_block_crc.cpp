@@ -26,7 +26,8 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t size = 2ULL * 1024 * 1024;  // 默认 2M（< 4M 单块，≤16M 单步上限）
+  std::uint64_t size =
+      2ULL * 1024 * 1024;  // 默认 2M（< 4M 单块，≤16M 单步上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -60,7 +61,8 @@ int main(int argc, char** argv) {
   }
 
   const std::string bucket = "test-bucket";
-  const std::string key = std::string("rtest-t21-ucx-") + rtest::MakeTimestampSuffix();
+  const std::string key =
+      std::string("rtest-t21-ucx-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.1 UCX " << kTestName << " ===\n"
             << "  proxy : " << proxy_addr << "\n"
@@ -93,7 +95,8 @@ int main(int argc, char** argv) {
     put_req.path = PutDataPath::kUcx;
 
     ClientProxyPutResponse put_resp;
-    if (!client.PutObject(put_req, ConstBufferView{.data = put_buf.data(), .size = size},
+    if (!client.PutObject(put_req,
+                          ConstBufferView{.data = put_buf.data(), .size = size},
                           put_resp)) {
       fail_reason = "PutObject FAILED";
       goto cleanup;
@@ -109,7 +112,8 @@ int main(int argc, char** argv) {
   {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(bucket, key, obj_size, stat_err) || obj_size != size) {
+    if (!client.StatObject(bucket, key, obj_size, stat_err) ||
+        obj_size != size) {
       fail_reason = "StatObject failed or size mismatch";
       goto cleanup;
     }
@@ -120,15 +124,16 @@ int main(int argc, char** argv) {
     std::vector<std::byte> get_buf(size);
     std::memset(get_buf.data(), 0xAA, size);
     GetPathResult get_res;
-    if (!client.GetObjectUcx(bucket, key,
-                             MutableBufferView{.data = get_buf.data(), .size = size},
-                             get_res) ||
+    if (!client.GetObjectUcx(
+            bucket, key,
+            MutableBufferView{.data = get_buf.data(), .size = size}, get_res) ||
         !get_res.ok) {
       fail_reason = "GetObjectUcx FAILED: " + get_res.error_message;
       goto cleanup;
     }
-    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
-              << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
+    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x"
+              << std::hex << get_res.crc32c << std::dec
+              << " hash=" << get_res.hash << "\n";
 
     if (get_res.crc32c == 0) {
       fail_reason = "crc32c == 0 (expected non-zero for single block)";
@@ -138,10 +143,12 @@ int main(int argc, char** argv) {
       fail_reason = "crc32c mismatch: get=0x" + std::to_string(get_res.crc32c) +
                     " put=0x" + std::to_string(put_crc);
     } else if (get_res.hash != put_etag) {
-      fail_reason = "hash != put.etag: get=" + get_res.hash + " put=" + put_etag;
+      fail_reason =
+          "hash != put.etag: get=" + get_res.hash + " put=" + put_etag;
     } else if (get_res.bytes_read != size) {
-      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) +
-                    " want " + std::to_string(size);
+      fail_reason = "bytes_read mismatch: got " +
+                    std::to_string(get_res.bytes_read) + " want " +
+                    std::to_string(size);
     } else {
       test_passed = true;
     }

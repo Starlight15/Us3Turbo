@@ -33,13 +33,16 @@ class GetObject {
       : index_(index), client_(client) {}
 
   /* 查询 object 布局信息，返回 size/block_size/hash 供 client 分配 buffer。 */
-  [[nodiscard]] int StatObject(const StatObjectRequest& request, StatObjectOutput& out);
+  [[nodiscard]] int StatObject(const StatObjectRequest& request,
+                               StatObjectOutput& out);
 
   /* GDS 路径 GET：按块 RDMA 读取 + crc32c 重组校验。 */
-  [[nodiscard]] int GetGds(const ClientProxyGetRequest& request, GetOutput& out);
+  [[nodiscard]] int GetGds(const ClientProxyGetRequest& request,
+                           GetOutput& out);
 
   /* UCX 路径 GET：按块 UCX 读取 + crc32c 重组校验。 */
-  [[nodiscard]] int GetUcx(const ClientProxyGetRequest& request, GetOutput& out);
+  [[nodiscard]] int GetUcx(const ClientProxyGetRequest& request,
+                           GetOutput& out);
 
  private:
   /* 校验 GDS GET 请求合法性。 */

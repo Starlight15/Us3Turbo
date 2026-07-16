@@ -29,7 +29,8 @@ class Logger {
  public:
   /* Initialize the rotating file + console dual-sink logger. */
   static void Init(spdlog::level::level_enum level = spdlog::level::info,
-                   std::size_t max_file_size_mb = 50, std::size_t max_files = 10);
+                   std::size_t max_file_size_mb = 50,
+                   std::size_t max_files = 10);
 
   /* 请求日志（带 request_id）：[函数名][req=rid] 消息 */
 
@@ -67,25 +68,29 @@ class Logger {
   template <typename... Args>
   static void SysInfo(std::string_view func, fmt::format_string<Args...> fmt,
                       Args&&... args) {
-    spdlog::info("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
+    spdlog::info("[{}] {}", func,
+                 fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
   static void SysWarn(std::string_view func, fmt::format_string<Args...> fmt,
                       Args&&... args) {
-    spdlog::warn("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
+    spdlog::warn("[{}] {}", func,
+                 fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
   static void SysError(std::string_view func, fmt::format_string<Args...> fmt,
                        Args&&... args) {
-    spdlog::error("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
+    spdlog::error("[{}] {}", func,
+                  fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
   static void SysDebug(std::string_view func, fmt::format_string<Args...> fmt,
                        Args&&... args) {
-    spdlog::debug("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
+    spdlog::debug("[{}] {}", func,
+                  fmt::format(fmt, std::forward<Args>(args)...));
   }
 };
 

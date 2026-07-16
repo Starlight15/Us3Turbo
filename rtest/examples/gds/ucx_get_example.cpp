@@ -66,13 +66,16 @@ std::string HumanBytes(std::uint64_t b) {
   constexpr double K = 1024.0;
   char buf[64];
   if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f GiB",
+                  static_cast<double>(b) / (K * K * K));
   else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f MiB",
+                  static_cast<double>(b) / (K * K));
   else if (b >= static_cast<std::uint64_t>(K))
     std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
   else
-    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
+    std::snprintf(buf, sizeof(buf), "%llu B",
+                  static_cast<unsigned long long>(b));
   return buf;
 }
 
@@ -102,20 +105,23 @@ bool VerifyGet(const void* host_buf, std::size_t size,
   }
   if (mismatches > 0) {
     std::cerr << "[" << tag << "] DATA MISMATCH: " << mismatches
-              << " bytes differ, first at offset " << first_mismatch << " (got 0x"
-              << std::hex << static_cast<unsigned>(read[first_mismatch]) << " want 0x"
-              << static_cast<unsigned>(expected[first_mismatch]) << std::dec << ")\n";
+              << " bytes differ, first at offset " << first_mismatch
+              << " (got 0x" << std::hex
+              << static_cast<unsigned>(read[first_mismatch]) << " want 0x"
+              << static_cast<unsigned>(expected[first_mismatch]) << std::dec
+              << ")\n";
     return false;
   }
-  std::cout << "[" << tag << "] data VERIFIED OK (" << HumanBytes(size) << ")\n";
+  std::cout << "[" << tag << "] data VERIFIED OK (" << HumanBytes(size)
+            << ")\n";
   return true;
 }
 
 // ========== 单步 PUT + GET 验证 ==========
 
-bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& bucket,
-                      const std::string& key, std::uint64_t single_size,
-                      bool verify_crc32c) {
+bool TestSinglePutGet(us3_turbo::client::Client& client,
+                      const std::string& bucket, const std::string& key,
+                      std::uint64_t single_size, bool verify_crc32c) {
   using namespace us3_turbo::client;
 
   std::cout << "\n========== Single UCX PUT + GET ==========\n"
@@ -136,7 +142,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   ClientProxyPutResponse put_resp;
   const auto t0 = clk::now();
   bool put_ok = client.PutObject(
-      put_req, ConstBufferView{.data = put_data.data(), .size = single_size}, put_resp);
+      put_req, ConstBufferView{.data = put_data.data(), .size = single_size},
+      put_resp);
   const auto t1 = clk::now();
 
   if (!put_ok) {
@@ -145,12 +152,13 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   }
   const auto& pr = put_resp.ucx_result.value();
   const double put_ms = ms_double(t1 - t0).count();
-  const double put_mbs = (put_ms > 0.0) ? static_cast<double>(single_size) /
-                                              (put_ms / 1000.0) / (1024.0 * 1024.0)
-                                        : 0.0;
+  const double put_mbs = (put_ms > 0.0)
+                             ? static_cast<double>(single_size) /
+                                   (put_ms / 1000.0) / (1024.0 * 1024.0)
+                             : 0.0;
   std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << pr.etag
-            << " crc32c=0x" << std::hex << pr.crc32c << std::dec << " wall=" << put_ms
-            << "ms"
+            << " crc32c=0x" << std::hex << pr.crc32c << std::dec
+            << " wall=" << put_ms << "ms"
             << " throughput=" << put_mbs << " MiB/s\n";
 
   // ---- StatObject ----
@@ -160,7 +168,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
     std::cerr << "StatObject FAILED: " << stat_error << "\n";
     return false;
   }
-  std::cout << "  StatObject OK: object_size=" << HumanBytes(object_size) << "\n";
+  std::cout << "  StatObject OK: object_size=" << HumanBytes(object_size)
+            << "\n";
   if (object_size != single_size) {
     std::cerr << "  StatObject size mismatch: got " << object_size << " want "
               << single_size << "\n";
@@ -174,7 +183,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   GetPathResult get_result;
   const auto t2 = clk::now();
   bool get_ok = client.GetObjectUcx(
-      bucket, key, MutableBufferView{.data = get_data.data(), .size = object_size},
+      bucket, key,
+      MutableBufferView{.data = get_data.data(), .size = object_size},
       get_result);
   const auto t3 = clk::now();
 
@@ -183,26 +193,28 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
     return false;
   }
   const double get_ms = ms_double(t3 - t2).count();
-  const double get_mbs = (get_ms > 0.0) ? static_cast<double>(object_size) /
-                                              (get_ms / 1000.0) / (1024.0 * 1024.0)
-                                        : 0.0;
+  const double get_mbs = (get_ms > 0.0)
+                             ? static_cast<double>(object_size) /
+                                   (get_ms / 1000.0) / (1024.0 * 1024.0)
+                             : 0.0;
   std::cout << "  GET OK: bytes_read=" << get_result.bytes_read << " crc32c=0x"
-            << std::hex << get_result.crc32c << std::dec << " hash=" << get_result.hash
-            << " wall=" << get_ms << "ms"
+            << std::hex << get_result.crc32c << std::dec
+            << " hash=" << get_result.hash << " wall=" << get_ms << "ms"
             << " throughput=" << get_mbs << " MiB/s\n";
 
   if (get_result.bytes_read != object_size) {
-    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read << " want "
-              << object_size << "\n";
+    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read
+              << " want " << object_size << "\n";
     return false;
   }
 
   // ---- 逐字节比对 ----
-  bool verified = VerifyGet(get_data.data(), object_size, put_data, "single-ucx");
+  bool verified =
+      VerifyGet(get_data.data(), object_size, put_data, "single-ucx");
 
   if (verify_crc32c && get_result.crc32c != 0) {
-    std::cout << "  remote crc32c=0x" << std::hex << get_result.crc32c << std::dec
-              << "\n";
+    std::cout << "  remote crc32c=0x" << std::hex << get_result.crc32c
+              << std::dec << "\n";
   }
 
   return verified;
@@ -210,9 +222,10 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
 
 // ========== 分段 PUT + GET 验证 ==========
 
-bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& bucket,
-                         const std::string& key, std::uint64_t part_size,
-                         std::uint32_t num_parts, bool verify_crc32c) {
+bool TestMultipartPutGet(us3_turbo::client::Client& client,
+                         const std::string& bucket, const std::string& key,
+                         std::uint64_t part_size, std::uint32_t num_parts,
+                         bool verify_crc32c) {
   using namespace us3_turbo::client;
 
   const std::uint64_t total = part_size * num_parts;
@@ -236,7 +249,8 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
 
   // ---- CreateMultipartUpload ----
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kUcx, upload_id, error)) {
+  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kUcx, upload_id,
+                                    error)) {
     std::cerr << "CreateMultipartUpload failed: " << error << "\n";
     return false;
   }
@@ -252,9 +266,10 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
     FillPattern(put_buf, static_cast<std::uint64_t>(i - 1) * part_size);
 
     std::string etag;
-    if (!client.UploadPartUcx(upload_id, i,
-                              ConstBufferView{.data = put_buf.data(), .size = part_size},
-                              etag, error)) {
+    if (!client.UploadPartUcx(
+            upload_id, i,
+            ConstBufferView{.data = put_buf.data(), .size = part_size}, etag,
+            error)) {
       std::cerr << "UploadPartUcx " << i << " failed: " << error << "\n";
       return false;
     }
@@ -271,17 +286,18 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
   const auto t1 = clk::now();
   const double put_ms = ms_double(t1 - t0).count();
   const double put_mbs =
-      (put_ms > 0.0) ? static_cast<double>(total) / (put_ms / 1000.0) / (1024.0 * 1024.0)
-                     : 0.0;
+      (put_ms > 0.0)
+          ? static_cast<double>(total) / (put_ms / 1000.0) / (1024.0 * 1024.0)
+          : 0.0;
 
   std::cout << "  CompleteMultipartUpload: object_id=" << done.object_id
-            << " size=" << done.object_size << " etag=" << done.etag << " wall=" << put_ms
-            << "ms"
+            << " size=" << done.object_size << " etag=" << done.etag
+            << " wall=" << put_ms << "ms"
             << " throughput=" << put_mbs << " MiB/s\n";
 
   if (done.object_size != total) {
-    std::cerr << "  Complete size mismatch: got " << done.object_size << " want " << total
-              << "\n";
+    std::cerr << "  Complete size mismatch: got " << done.object_size
+              << " want " << total << "\n";
     return false;
   }
 
@@ -292,10 +308,11 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
     std::cerr << "StatObject FAILED: " << stat_error << "\n";
     return false;
   }
-  std::cout << "  StatObject OK: object_size=" << HumanBytes(object_size) << "\n";
+  std::cout << "  StatObject OK: object_size=" << HumanBytes(object_size)
+            << "\n";
   if (object_size != total) {
-    std::cerr << "  StatObject size mismatch: got " << object_size << " want " << total
-              << "\n";
+    std::cerr << "  StatObject size mismatch: got " << object_size << " want "
+              << total << "\n";
     return false;
   }
 
@@ -305,7 +322,8 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
   GetPathResult get_result;
   const auto t2 = clk::now();
   bool get_ok = client.GetObjectUcx(
-      bucket, key, MutableBufferView{.data = get_buf.data(), .size = object_size},
+      bucket, key,
+      MutableBufferView{.data = get_buf.data(), .size = object_size},
       get_result);
   const auto t3 = clk::now();
 
@@ -314,26 +332,28 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
     return false;
   }
   const double get_ms = ms_double(t3 - t2).count();
-  const double get_mbs = (get_ms > 0.0) ? static_cast<double>(object_size) /
-                                              (get_ms / 1000.0) / (1024.0 * 1024.0)
-                                        : 0.0;
+  const double get_mbs = (get_ms > 0.0)
+                             ? static_cast<double>(object_size) /
+                                   (get_ms / 1000.0) / (1024.0 * 1024.0)
+                             : 0.0;
   std::cout << "  GET OK: bytes_read=" << get_result.bytes_read << " crc32c=0x"
-            << std::hex << get_result.crc32c << std::dec << " hash=" << get_result.hash
-            << " wall=" << get_ms << "ms"
+            << std::hex << get_result.crc32c << std::dec
+            << " hash=" << get_result.hash << " wall=" << get_ms << "ms"
             << " throughput=" << get_mbs << " MiB/s\n";
 
   if (get_result.bytes_read != object_size) {
-    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read << " want "
-              << object_size << "\n";
+    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read
+              << " want " << object_size << "\n";
     return false;
   }
 
   // ---- 逐字节比对 ----
-  bool verified = VerifyGet(get_buf.data(), object_size, host_full, "multipart-ucx");
+  bool verified =
+      VerifyGet(get_buf.data(), object_size, host_full, "multipart-ucx");
 
   if (verify_crc32c && get_result.crc32c != 0) {
-    std::cout << "  remote crc32c=0x" << std::hex << get_result.crc32c << std::dec
-              << "\n";
+    std::cout << "  remote crc32c=0x" << std::hex << get_result.crc32c
+              << std::dec << "\n";
   }
 
   return verified;
@@ -341,7 +361,8 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
 
 // ========== 不存在的 key → 正确返回错误 ==========
 
-bool TestStatNonExistent(us3_turbo::client::Client& client, const std::string& bucket) {
+bool TestStatNonExistent(us3_turbo::client::Client& client,
+                         const std::string& bucket) {
   using namespace us3_turbo::client;
 
   std::cout << "\n========== StatObject on non-existent key ==========\n";
@@ -364,7 +385,8 @@ int main(int argc, char** argv) {
   std::string proxy_addr = "192.168.1.198:9100";
   std::uint64_t single_size = 4ULL * 1024 * 1024;  // 默认 4MiB
   std::uint64_t part_size =
-      16ULL * 1024 * 1024;  // 默认 16MiB per part（须与 proxy multipart_part_size 一致）
+      16ULL * 1024 *
+      1024;  // 默认 16MiB per part（须与 proxy multipart_part_size 一致）
   std::uint32_t num_parts = 2;  // 默认 2 parts = 32MiB
   bool verify = false;
 
@@ -395,7 +417,8 @@ int main(int argc, char** argv) {
     } else if (arg == "--num-parts") {
       std::string v;
       if (!need(v)) return 2;
-      num_parts = static_cast<std::uint32_t>(std::strtoull(v.c_str(), nullptr, 10));
+      num_parts =
+          static_cast<std::uint32_t>(std::strtoull(v.c_str(), nullptr, 10));
       if (num_parts == 0) {
         std::cerr << "bad --num-parts\n";
         return 2;
@@ -413,8 +436,8 @@ int main(int argc, char** argv) {
   std::cout << "=== UCX PUT+GET E2E Verification ===\n"
             << "  proxy       : " << proxy_addr << "\n"
             << "  single size : " << HumanBytes(single_size) << "\n"
-            << "  multipart   : " << HumanBytes(part_size) << " x " << num_parts << " = "
-            << HumanBytes(part_size * num_parts) << "\n"
+            << "  multipart   : " << HumanBytes(part_size) << " x " << num_parts
+            << " = " << HumanBytes(part_size * num_parts) << "\n"
             << "  verify-crc  : " << (verify ? "on" : "off") << "\n"
             << std::endl;
 
@@ -431,9 +454,10 @@ int main(int argc, char** argv) {
   int failures = 0;
 
   // 使用时间戳后缀避免与上次运行残留数据冲突
-  const auto ts = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
-                                     std::chrono::system_clock::now().time_since_epoch())
-                                     .count());
+  const auto ts =
+      std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count());
 
   // 1. 不存在的 key → 正确报错
   if (!TestStatNonExistent(client, bucket)) ++failures;
@@ -451,7 +475,7 @@ int main(int argc, char** argv) {
 
   client.Shutdown();
 
-  std::cout << "\n=== Result: " << (failures == 0 ? "ALL PASSED" : "FAILED") << " ("
-            << failures << " failure(s)) ===\n";
+  std::cout << "\n=== Result: " << (failures == 0 ? "ALL PASSED" : "FAILED")
+            << " (" << failures << " failure(s)) ===\n";
   return failures == 0 ? 0 : 1;
 }

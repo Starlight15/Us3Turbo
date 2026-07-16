@@ -32,7 +32,8 @@ struct BlockResult {
 class UfileAcClient {
  public:
   UfileAcClient(const std::string& backend_endpoint, int timeout_ms)
-      : timeout_ms_(timeout_ms), setid_(static_cast<std::uint32_t>(FLAGS_backend_setid)) {
+      : timeout_ms_(timeout_ms),
+        setid_(static_cast<std::uint32_t>(FLAGS_backend_setid)) {
     if (backend_endpoint.empty()) {
       LOG_SYS_WARN(
           "backend_endpoint empty, single-step PUT will reject as "
@@ -47,7 +48,8 @@ class UfileAcClient {
       return;
     }
 
-    const std::size_t pool_size = static_cast<std::size_t>(FLAGS_backend_conn_pool_size);
+    const std::size_t pool_size =
+        static_cast<std::size_t>(FLAGS_backend_conn_pool_size);
     conns_.reserve(pool_size);
     conn_mutexes_.reserve(pool_size);
     std::size_t connected = 0;
@@ -67,10 +69,12 @@ class UfileAcClient {
   /* GDS 写一个 block 到 backend。 */
   [[nodiscard]] BlockResult PutBlockGds(const std::string& key,
                                         const std::string& rdma_token,
-                                        std::uint64_t gpu_offset, std::uint64_t data_len);
+                                        std::uint64_t gpu_offset,
+                                        std::uint64_t data_len);
 
   /* UCX 写一个 block 到 backend。 */
-  [[nodiscard]] BlockResult PutBlockUcx(const std::string& key, std::uint64_t remote_addr,
+  [[nodiscard]] BlockResult PutBlockUcx(const std::string& key,
+                                        std::uint64_t remote_addr,
                                         const std::string& packed_rkey,
                                         const std::string& client_ucx_addr,
                                         std::uint64_t source_offset,
@@ -84,21 +88,22 @@ class UfileAcClient {
   [[nodiscard]] BlockResult GetBlockGds(const std::string& key,
                                         const std::string& rdma_token,
                                         std::uint64_t gpu_offset,
-                                        std::uint64_t read_offset, std::uint64_t data_len,
+                                        std::uint64_t read_offset,
+                                        std::uint64_t data_len,
                                         std::uint64_t request_id);
 
   /* UCX 读一个 block 到 client buffer。request_id 透传进 backend 供日志关联。
    */
-  [[nodiscard]] BlockResult GetBlockUcx(const std::string& key, std::uint64_t remote_addr,
-                                        const std::string& packed_rkey,
-                                        const std::string& client_ucx_addr,
-                                        std::uint64_t dest_offset,
-                                        std::uint64_t read_offset, std::uint64_t data_len,
-                                        std::uint64_t request_id);
+  [[nodiscard]] BlockResult GetBlockUcx(
+      const std::string& key, std::uint64_t remote_addr,
+      const std::string& packed_rkey, const std::string& client_ucx_addr,
+      std::uint64_t dest_offset, std::uint64_t read_offset,
+      std::uint64_t data_len, std::uint64_t request_id);
 
  private:
   /* 拆分 "host:port" 为 host + port；失败返回 false。 */
-  static bool ParseEndpoint(const std::string& endpoint, std::string& host, int& port);
+  static bool ParseEndpoint(const std::string& endpoint, std::string& host,
+                            int& port);
   /* 惰性取连接：轮询跳过/重连坏连接，返回 {idx, conn*}；全坏返回 {npos,
    * nullptr}。 */
   std::pair<std::size_t, TcpConnection*> AcquireConn();
@@ -127,7 +132,7 @@ class UfileAcClient {
   int port_{0};
   std::vector<std::unique_ptr<TcpConnection>> conns_;
   std::vector<std::unique_ptr<std::mutex>> conn_mutexes_;
-  std::atomic<std::uint64_t> next_idx_{0};     // 轮询计数器
+  std::atomic<std::uint64_t> next_idx_{0};  // 轮询计数器
   std::atomic<std::uint64_t> session_seq_{0};  // sessionIdLow_ 自增（统计用）
 };
 

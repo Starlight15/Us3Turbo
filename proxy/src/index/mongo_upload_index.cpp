@@ -12,12 +12,13 @@ namespace us3_turbo::proxy {
 
 namespace mgo = ::us3_turbo::proxy::mongo;
 
-std::string MongoUploadIndex::Create(const std::string& bucket, const std::string& key,
-                                     PutDataPath path) {
+std::string MongoUploadIndex::Create(const std::string& bucket,
+                                     const std::string& key, PutDataPath path) {
   const std::string upload_id = utils::GenUuid();
   const std::string obj_id = utils::GenUuid();
 
-  int ret = client_->InsertMinit(upload_id, static_cast<std::uint32_t>(FLAGS_bucket_id),
+  int ret = client_->InsertMinit(upload_id,
+                                 static_cast<std::uint32_t>(FLAGS_bucket_id),
                                  key, obj_id, static_cast<int>(path));
   if (ret != 0) {
     LOG_SYS_ERROR("InsertMinit failed: upload_id={} ret={}", upload_id, ret);
@@ -62,7 +63,8 @@ bool MongoUploadIndex::Get(const std::string& upload_id, UploadRecord& out) {
   }
 }
 
-bool MongoUploadIndex::AddPart(const std::string& upload_id, const PartRecord& part) {
+bool MongoUploadIndex::AddPart(const std::string& upload_id,
+                               const PartRecord& part) {
   int ret = client_->InsertPart(upload_id, part.part_number, part.file_offset,
                                 part.part_size, part.etag, part.block_crcs);
   return ret == 0;
@@ -128,24 +130,27 @@ bool MongoUploadIndex::UpdateLastMergedPart(const std::string& upload_id,
 bool MongoUploadIndex::InsertFileIdx(const std::string& /*bucket*/,
                                      const std::string& key,
                                      const std::string& first_object,
-                                     std::uint64_t block_size, std::uint64_t filesize,
+                                     std::uint64_t block_size,
+                                     std::uint64_t filesize,
                                      const std::string& hash) {
-  int ret = client_->UpsertFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id), key,
-                                   first_object, block_size, filesize, hash);
+  int ret =
+      client_->UpsertFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id), key,
+                             first_object, block_size, filesize, hash);
   return ret == 0;
 }
 
-bool MongoUploadIndex::GetFileIdx(const std::string& /*bucket*/, const std::string& key,
-                                  FileIdxRecord& out) {
+bool MongoUploadIndex::GetFileIdx(const std::string& /*bucket*/,
+                                  const std::string& key, FileIdxRecord& out) {
   std::string doc_json;
-  int ret =
-      client_->QueryFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id), key, doc_json);
+  int ret = client_->QueryFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id),
+                                  key, doc_json);
   if (ret != 0) return false;  // not found or query failed — treat as 404
 
   try {
     auto doc = nlohmann::json::parse(doc_json);
     out.first_object = doc[mgo::f::kFirstObject].get<std::string>();
-    out.block_size = doc[mgo::f::kFileIdxBlockSize].get<std::uint64_t>();  // 无下划线
+    out.block_size =
+        doc[mgo::f::kFileIdxBlockSize].get<std::uint64_t>();  // 无下划线
     out.filesize = doc[mgo::f::kFilesize].get<std::uint64_t>();
     out.hash = doc.value(mgo::f::kHash, "");
     return true;

@@ -1,11 +1,12 @@
 // test_get_multi_block_hash.cpp — T2.2 GET 多块对象 hash
 //
 // 验证: 20MB 对象经 multipart 上传 [16M,4M]（multipart 存 block_size=16MB =
-// part_size → 2 块） 后 GET 读回，result.crc32c==0、hash 非空、bytes_read==20MB。
-// 关键修正: single PUT 不可能传 20MB（>max_single_put_bytes=16MB 被拒；且 single
-// PUT 存 block_size=filesize → 恒单块 → crc32c 永非 0）。故必须用 multipart。 PUT
-// 无 hash 字段、公开 StatObject 不返回 hash，故无 hash_put/hash_get 直比。
-// 失败条件: crc32c!=0、hash 空、bytes_read!=total。
+// part_size → 2 块） 后 GET 读回，result.crc32c==0、hash
+// 非空、bytes_read==20MB。 关键修正: single PUT 不可能传
+// 20MB（>max_single_put_bytes=16MB 被拒；且 single PUT 存 block_size=filesize →
+// 恒单块 → crc32c 永非 0）。故必须用 multipart。 PUT 无 hash 字段、公开
+// StatObject 不返回 hash，故无 hash_put/hash_get 直比。 失败条件:
+// crc32c!=0、hash 空、bytes_read!=total。
 
 #include <cstdint>
 #include <iostream>
@@ -52,7 +53,8 @@ int main(int argc, char** argv) {
   }
 
   if (total <= kPartSizeLimit) {
-    std::cerr << "[FAIL] " << kTestName << ": size must be > 16M for multi-block, got "
+    std::cerr << "[FAIL] " << kTestName
+              << ": size must be > 16M for multi-block, got "
               << rtest::HumanBytes(total) << "\n";
     return 2;
   }
@@ -60,12 +62,14 @@ int main(int argc, char** argv) {
   const std::uint64_t part2 = total - kPartSizeLimit;  // last（<= 上限）
 
   const std::string bucket = "test-bucket";
-  const std::string key = std::string("rtest-t22-ucx-") + rtest::MakeTimestampSuffix();
+  const std::string key =
+      std::string("rtest-t22-ucx-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.2 UCX " << kTestName << " ===\n"
             << "  proxy : " << proxy_addr << "\n"
             << "  total : " << rtest::HumanBytes(total) << " ("
-            << rtest::HumanBytes(part1) << " + " << rtest::HumanBytes(part2) << ")\n";
+            << rtest::HumanBytes(part1) << " + " << rtest::HumanBytes(part2)
+            << ")\n";
 
   // 完整期望数据（各 part 不同 offset_base pattern）。
   std::vector<std::byte> host_full(total);
@@ -95,7 +99,8 @@ int main(int argc, char** argv) {
 
   // ---- CreateMultipartUpload ----
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kUcx, upload_id, error)) {
+  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kUcx, upload_id,
+                                    error)) {
     fail_reason = "CreateMultipartUpload failed: " + error;
     goto cleanup;
   }
@@ -106,17 +111,19 @@ int main(int argc, char** argv) {
     std::string etag1, etag2;
     // Part 1
     std::memcpy(put_buf.data(), host_full.data(), part1);
-    if (!client.UploadPartUcx(upload_id, 1,
-                              ConstBufferView{.data = put_buf.data(), .size = part1},
-                              etag1, error)) {
+    if (!client.UploadPartUcx(
+            upload_id, 1,
+            ConstBufferView{.data = put_buf.data(), .size = part1}, etag1,
+            error)) {
       fail_reason = "UploadPartUcx 1 failed: " + error;
       goto cleanup;
     }
     // Part 2
     std::memcpy(put_buf.data(), host_full.data() + part1, part2);
-    if (!client.UploadPartUcx(upload_id, 2,
-                              ConstBufferView{.data = put_buf.data(), .size = part2},
-                              etag2, error)) {
+    if (!client.UploadPartUcx(
+            upload_id, 2,
+            ConstBufferView{.data = put_buf.data(), .size = part2}, etag2,
+            error)) {
       fail_reason = "UploadPartUcx 2 failed: " + error;
       goto cleanup;
     }
@@ -128,8 +135,9 @@ int main(int argc, char** argv) {
       goto cleanup;
     }
     if (done.object_size != total) {
-      fail_reason = "object_size mismatch: got " + std::to_string(done.object_size) +
-                    " want " + std::to_string(total);
+      fail_reason = "object_size mismatch: got " +
+                    std::to_string(done.object_size) + " want " +
+                    std::to_string(total);
       goto cleanup;
     }
     std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size
@@ -140,30 +148,34 @@ int main(int argc, char** argv) {
   {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(bucket, key, obj_size, stat_err) || obj_size != total) {
+    if (!client.StatObject(bucket, key, obj_size, stat_err) ||
+        obj_size != total) {
       fail_reason = "StatObject failed or size mismatch";
       goto cleanup;
     }
     std::vector<std::byte> get_buf(total);
     std::memset(get_buf.data(), 0xBB, total);
     GetPathResult get_res;
-    if (!client.GetObjectUcx(bucket, key,
-                             MutableBufferView{.data = get_buf.data(), .size = total},
-                             get_res) ||
+    if (!client.GetObjectUcx(
+            bucket, key,
+            MutableBufferView{.data = get_buf.data(), .size = total},
+            get_res) ||
         !get_res.ok) {
       fail_reason = "GetObjectUcx FAILED: " + get_res.error_message;
       goto cleanup;
     }
-    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
-              << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
+    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x"
+              << std::hex << get_res.crc32c << std::dec
+              << " hash=" << get_res.hash << "\n";
 
     if (get_res.crc32c != 0) {
       fail_reason = "crc32c != 0 (expected 0 for multi-block)";
     } else if (get_res.hash.empty()) {
       fail_reason = "hash is empty";
     } else if (get_res.bytes_read != total) {
-      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) +
-                    " want " + std::to_string(total);
+      fail_reason = "bytes_read mismatch: got " +
+                    std::to_string(get_res.bytes_read) + " want " +
+                    std::to_string(total);
     } else {
       test_passed = true;
     }

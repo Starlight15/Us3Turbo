@@ -50,30 +50,34 @@ class DBGateClient {
   // ========== fileidx_col ==========
 
   /* Upsert fileidx_col 文档（single_put / multipart Complete） */
-  [[nodiscard]] int UpsertFileIdx(std::uint32_t bucket_id, const std::string& key,
+  [[nodiscard]] int UpsertFileIdx(std::uint32_t bucket_id,
+                                  const std::string& key,
                                   const std::string& first_object,
-                                  std::uint64_t block_size, std::uint64_t filesize,
+                                  std::uint64_t block_size,
+                                  std::uint64_t filesize,
                                   const std::string& hash);
 
   /* Query fileidx_col 文档（GetObject 第一步）; Returns 0=ok, -1=not found,
    * other=error */
-  [[nodiscard]] int QueryFileIdx(std::uint32_t bucket_id, const std::string& key,
-                                 std::string& out_doc);
+  [[nodiscard]] int QueryFileIdx(std::uint32_t bucket_id,
+                                 const std::string& key, std::string& out_doc);
 
   // ========== minit_col ==========
 
   /* Insert minit_col 文档（CreateUpload） */
-  [[nodiscard]] int InsertMinit(const std::string& upload_id, std::uint32_t bucket_id,
-                                const std::string& key, const std::string& first_object,
-                                int path);
+  [[nodiscard]] int InsertMinit(const std::string& upload_id,
+                                std::uint32_t bucket_id, const std::string& key,
+                                const std::string& first_object, int path);
 
   /* Query minit_col 文档（GetUpload）; Returns 0=ok, -1=not found, other=error
    */
-  [[nodiscard]] int QueryMinit(const std::string& upload_id, std::string& out_doc);
+  [[nodiscard]] int QueryMinit(const std::string& upload_id,
+                               std::string& out_doc);
 
   /* Update minit_col 字段（merged_size / last_merged_part） */
   [[nodiscard]] int UpdateMinit(const std::string& upload_id,
-                                const std::string& field_name, std::uint64_t value);
+                                const std::string& field_name,
+                                std::uint64_t value);
 
   /* Delete minit_col 文档（AbortUpload/CompleteUpload） */
   [[nodiscard]] int DeleteMinit(const std::string& upload_id);
@@ -81,13 +85,14 @@ class DBGateClient {
   // ========== part_col ==========
 
   /* Insert part_col 文档（UploadPart）; block_crcs 序列化为 JSON 数组 */
-  [[nodiscard]] int InsertPart(const std::string& upload_id, std::uint32_t part_number,
-                               std::uint64_t offset, std::uint64_t size,
-                               const std::string& etag,
+  [[nodiscard]] int InsertPart(const std::string& upload_id,
+                               std::uint32_t part_number, std::uint64_t offset,
+                               std::uint64_t size, const std::string& etag,
                                const std::vector<std::uint32_t>& block_crcs);
 
   /* Query part_col 文档列表（CompleteUpload） */
-  [[nodiscard]] int QueryParts(const std::string& upload_id, std::string& out_docs);
+  [[nodiscard]] int QueryParts(const std::string& upload_id,
+                               std::string& out_docs);
 
   /* Delete part_col 文档（AbortUpload/CompleteUpload） */
   [[nodiscard]] int DeleteParts(const std::string& upload_id);
@@ -100,13 +105,15 @@ class DBGateClient {
 
  private:
   // 拆分 "host:port" → {host, port}
-  static bool ParseEndpoint(const std::string& endpoint, std::string& host, int& port);
+  static bool ParseEndpoint(const std::string& endpoint, std::string& host,
+                            int& port);
 
   // 轮询取连接（跳过坏连接，惰性重连）
   std::pair<std::size_t, TcpConnection*> AcquireConn();
 
   // 通用收发骨架：[4字节长度][UMessage] 协议
-  int SendAndRecv(const std::vector<char>& req_buf, std::vector<char>& out_rsp_buf);
+  int SendAndRecv(const std::vector<char>& req_buf,
+                  std::vector<char>& out_rsp_buf);
 
   int timeout_ms_;
   std::string host_;

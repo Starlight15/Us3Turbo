@@ -39,7 +39,8 @@ namespace us3_turbo::proxy::utils {
 /* 组合多个 block CRC32C 生成 part 级 ETag：
  * 空→空串；单→Crc32cToETag；多→MD5(大端拼接)十六进制。
  * 大端字节序保证跨平台一致；MD5 走 EVP 与 Sha1 同栈。 */
-[[nodiscard]] std::string CombineBlockCRC32s(const std::vector<std::uint32_t>& crcs);
+[[nodiscard]] std::string CombineBlockCRC32s(
+    const std::vector<std::uint32_t>& crcs);
 
 /* 计算从 start 到现在的耗时（毫秒）。
  * steady_clock 单调，不受系统时钟跳变影响。

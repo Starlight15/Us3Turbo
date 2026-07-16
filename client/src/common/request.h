@@ -21,7 +21,8 @@ inline PutDataPath operator|(PutDataPath a, PutDataPath b) {
 }
 
 inline bool HasPath(PutDataPath flags, PutDataPath check) {
-  return (static_cast<std::uint8_t>(flags) & static_cast<std::uint8_t>(check)) != 0;
+  return (static_cast<std::uint8_t>(flags) &
+          static_cast<std::uint8_t>(check)) != 0;
 }
 
 /** @brief GDS 通路数据源:cuObj RDMA token(显存地址 + remote key 自描述串)。 */

@@ -40,7 +40,8 @@ using detail::TraceLatency;
     spdlog::info(
         "UcxPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
         "bucket={}/{} bytes={}",
-        request_id, local, remote, request.bucket, request.key, host_buffer.size);
+        request_id, local, remote, request.bucket, request.key,
+        host_buffer.size);
     return true;
   }
   spdlog::error(
@@ -53,7 +54,8 @@ using detail::TraceLatency;
 }  // namespace
 
 // UCX 链路单次尝试:AcquireDescriptor → UcxPut。与 GdsPutChannel 独立,不复用。
-bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request, ConstBufferView buffer,
+bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request,
+                            ConstBufferView buffer,
                             PutPathResult& result) const {
   assert(ucx_mgr_ != nullptr);
   const std::string request_id = MakeRequestId();  // 每次新生成,跨端日志关联
@@ -68,8 +70,8 @@ bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request, ConstBufferVie
   UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};
   auto t_desc = trace ? clk::now() : clk::time_point{};
 
-  if (!proxy_.UcxPut(request_id, request.bucket, request.key, request.object_size,
-                     ucx_source, result)) {
+  if (!proxy_.UcxPut(request_id, request.bucket, request.key,
+                     request.object_size, ucx_source, result)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};
@@ -81,7 +83,8 @@ bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request, ConstBufferVie
   }
 
   if (trace) {
-    const LatencyStage stages[] = {{"start", t0}, {"desc", t_desc}, {"put", t_put}};
+    const LatencyStage stages[] = {
+        {"start", t0}, {"desc", t_desc}, {"put", t_put}};
     TraceLatency(request_id, "UcxPut", stages, buffer.size);
   }
 

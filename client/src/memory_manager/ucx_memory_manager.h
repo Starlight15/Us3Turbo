@@ -46,7 +46,8 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
   ~UcxMemoryManager() override;
 
   // BufferRegistry<ucp_mem_h> 钩子:真正 ucp_mem_map / ucp_mem_unmap。
-  [[nodiscard]] bool DoRegister(void* ptr, std::size_t size, ucp_mem_h& out) override;
+  [[nodiscard]] bool DoRegister(void* ptr, std::size_t size,
+                                ucp_mem_h& out) override;
   void DoUnregister(void* ptr, ucp_mem_h& handle) override;
 
   /** @brief 分阶段 init:任一失败按反向顺序回滚。 */

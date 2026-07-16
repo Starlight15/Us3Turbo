@@ -55,13 +55,16 @@ inline std::string HumanBytes(std::uint64_t b) {
   constexpr double K = 1024.0;
   char buf[64];
   if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f GiB",
+                  static_cast<double>(b) / (K * K * K));
   else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
+    std::snprintf(buf, sizeof(buf), "%.2f MiB",
+                  static_cast<double>(b) / (K * K));
   else if (b >= static_cast<std::uint64_t>(K))
     std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
   else
-    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
+    std::snprintf(buf, sizeof(buf), "%llu B",
+                  static_cast<unsigned long long>(b));
   return buf;
 }
 
@@ -74,7 +77,8 @@ inline std::string MakeTimestampSuffix() {
 
 // 确定性 i%251 pattern 填入 host buffer（GDS 作 H2D 暂存，UCX 直接作上传/读回
 // buffer）。offset_base 让多 part 对象各段填不同 pattern。
-inline void FillHostPattern(std::vector<std::byte>& buf, std::uint64_t offset_base = 0) {
+inline void FillHostPattern(std::vector<std::byte>& buf,
+                            std::uint64_t offset_base = 0) {
   for (std::size_t i = 0; i < buf.size(); ++i)
     buf[i] = static_cast<std::byte>((i + offset_base) % 251U);
 }
@@ -99,12 +103,13 @@ inline bool VerifyHostBuffer(const void* read, std::size_t size,
   }
   if (mism > 0) {
     std::cerr << "[" << tag << "] DATA MISMATCH: " << mism
-              << " bytes differ, first at offset " << first << " (got 0x" << std::hex
-              << static_cast<unsigned>(p[first]) << " want 0x"
+              << " bytes differ, first at offset " << first << " (got 0x"
+              << std::hex << static_cast<unsigned>(p[first]) << " want 0x"
               << static_cast<unsigned>(expected[first]) << std::dec << ")\n";
     return false;
   }
-  std::cout << "[" << tag << "] data VERIFIED OK (" << HumanBytes(size) << ")\n";
+  std::cout << "[" << tag << "] data VERIFIED OK (" << HumanBytes(size)
+            << ")\n";
   return true;
 }
 

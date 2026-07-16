@@ -56,20 +56,26 @@ class ProxyRpc {
   ~ProxyRpc() = default;
 
   /** @brief RPC 层是否就绪(channel + stub 初始化成功)。 */
-  [[nodiscard]] bool ok() const { return channel_ != nullptr && stub_ != nullptr; }
+  [[nodiscard]] bool ok() const {
+    return channel_ != nullptr && stub_ != nullptr;
+  }
 
   /** @brief 初始化失败时的错误描述(ok() 为 true 时为空)。 */
   [[nodiscard]] const std::string& init_error() const { return init_error_; }
 
   /** @brief GDS 通路:cuObj RDMA token 随 RPC 透传,backend 反向 RDMA-READ。 */
-  [[nodiscard]] bool GdsPut(std::string_view request_id, const std::string& bucket,
-                            const std::string& key, std::uint64_t object_size,
-                            const GdsDataSource& gds_source, PutPathResult& result) const;
+  [[nodiscard]] bool GdsPut(std::string_view request_id,
+                            const std::string& bucket, const std::string& key,
+                            std::uint64_t object_size,
+                            const GdsDataSource& gds_source,
+                            PutPathResult& result) const;
 
   /** @brief UCX 通路:描述符随 RPC 透传,backend ucp_get_nbx 反向拉取。 */
-  [[nodiscard]] bool UcxPut(std::string_view request_id, const std::string& bucket,
-                            const std::string& key, std::uint64_t object_size,
-                            const UcxDataSource& ucx_source, PutPathResult& result) const;
+  [[nodiscard]] bool UcxPut(std::string_view request_id,
+                            const std::string& bucket, const std::string& key,
+                            std::uint64_t object_size,
+                            const UcxDataSource& ucx_source,
+                            PutPathResult& result) const;
 
   // ===== 分段上传接口（client → proxy）=====
 
@@ -84,18 +90,17 @@ class ProxyRpc {
   /** @brief GDS 路径上传单个 part：rdma_token 随 RPC 透传。 */
   [[nodiscard]] bool UploadPartGds(std::string_view request_id,
                                    const std::string& upload_id,
-                                   std::uint32_t part_number, std::uint64_t part_size,
+                                   std::uint32_t part_number,
+                                   std::uint64_t part_size,
                                    const std::string& rdma_token,
                                    PutPathResult& result) const;
 
   /** @brief UCX 路径上传单个 part：描述符随 RPC 透传。 */
-  [[nodiscard]] bool UploadPartUcx(std::string_view request_id,
-                                   const std::string& upload_id,
-                                   std::uint32_t part_number, std::uint64_t part_size,
-                                   std::uint64_t remote_addr,
-                                   const std::string& packed_rkey,
-                                   const std::string& client_ucx_addr,
-                                   PutPathResult& result) const;
+  [[nodiscard]] bool UploadPartUcx(
+      std::string_view request_id, const std::string& upload_id,
+      std::uint32_t part_number, std::uint64_t part_size,
+      std::uint64_t remote_addr, const std::string& packed_rkey,
+      const std::string& client_ucx_addr, PutPathResult& result) const;
 
   /** @brief 完成分段上传，返回最终 object_id/etag/size。 */
   struct CompletedMultipart {
@@ -118,28 +123,36 @@ class ProxyRpc {
   // ===== GET 接口（client → proxy）=====
 
   /** @brief 查对象布局。 */
-  [[nodiscard]] bool StatObject(std::string_view request_id, const std::string& bucket,
-                                const std::string& key, std::uint64_t& out_object_size,
+  [[nodiscard]] bool StatObject(std::string_view request_id,
+                                const std::string& bucket,
+                                const std::string& key,
+                                std::uint64_t& out_object_size,
                                 std::string& out_error) const;
 
   /** @brief GDS 通路 GET：cuObj RDMA token(CUOBJ_GET) 随 RPC 透传，
    * backend RDMA_WRITE 推数据到 client。 */
-  [[nodiscard]] bool GdsGet(std::string_view request_id, const std::string& bucket,
-                            const std::string& key, std::uint64_t object_size,
-                            const GdsDataSource& gds_source, GetPathResult& result) const;
+  [[nodiscard]] bool GdsGet(std::string_view request_id,
+                            const std::string& bucket, const std::string& key,
+                            std::uint64_t object_size,
+                            const GdsDataSource& gds_source,
+                            GetPathResult& result) const;
 
   /** @brief UCX 通路 GET：描述符随 RPC 透传，backend ucp_put_nbx 推数据到
    * client。 */
-  [[nodiscard]] bool UcxGet(std::string_view request_id, const std::string& bucket,
-                            const std::string& key, std::uint64_t object_size,
-                            const UcxDataSource& ucx_source, GetPathResult& result) const;
+  [[nodiscard]] bool UcxGet(std::string_view request_id,
+                            const std::string& bucket, const std::string& key,
+                            std::uint64_t object_size,
+                            const UcxDataSource& ucx_source,
+                            GetPathResult& result) const;
 
  private:
   void ApplyTimeout(brpc::Controller& controller) const {
     controller.set_timeout_ms(static_cast<int>(default_timeout_.count()));
   }
 
-  [[nodiscard]] us3_turbo::proxy::Control_Stub* stub() const { return stub_.get(); }
+  [[nodiscard]] us3_turbo::proxy::Control_Stub* stub() const {
+    return stub_.get();
+  }
 
   // 默认 RPC 超时(用 options.default_timeout)。
   std::chrono::milliseconds default_timeout_{};

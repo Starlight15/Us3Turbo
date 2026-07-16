@@ -24,9 +24,10 @@ bool TcpConnection::Connect() {
   ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-  /* TCP_NODELAY：禁用 Nagle。dbgate 客户端把请求拆成 [4B长度头][body] 两次 send，
-   * 无 NODELAY 时 body 小包会被 Nagle 卡住等头部的 ACK，叠加对端 delayed-ACK，
-   * 每条 RPC 固定多 ~40ms（5 条串行 RPC ≈ 200ms，实测即 Complete 的 210ms）。 */
+  /* TCP_NODELAY：禁用 Nagle。dbgate 客户端把请求拆成 [4B长度头][body] 两次
+   * send， 无 NODELAY 时 body 小包会被 Nagle 卡住等头部的 ACK，叠加对端
+   * delayed-ACK， 每条 RPC 固定多 ~40ms（5 条串行 RPC ≈ 200ms，实测即 Complete
+   * 的 210ms）。 */
   int flag = 1;
   ::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
@@ -37,7 +38,8 @@ bool TcpConnection::Connect() {
     Close();
     return false;
   }
-  if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+  if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
+      0) {
     Close();
     return false;
   }
@@ -54,7 +56,8 @@ void TcpConnection::Close() {
 }
 
 int TcpConnection::SendAll(const void* buf, std::size_t len) {
-  if (!alive_.load(std::memory_order_acquire)) return -1;  // 须先经 AcquireConn->Connect
+  if (!alive_.load(std::memory_order_acquire))
+    return -1;  // 须先经 AcquireConn->Connect
   std::size_t sent = 0;
   const auto* p = static_cast<const char*>(buf);
   while (sent < len) {
@@ -75,8 +78,9 @@ int TcpConnection::RecvAll(void* buf, std::size_t len) {
   std::size_t got = 0;
   auto* p = static_cast<char*>(buf);
   while (got < len) {
-    ssize_t n = ::recv(fd_, p + got, len - got,
-                       0);  // 不用 MSG_WAITALL: 超时算无数据而非未收满, 避免误杀慢对端
+    ssize_t n =
+        ::recv(fd_, p + got, len - got,
+               0);  // 不用 MSG_WAITALL: 超时算无数据而非未收满, 避免误杀慢对端
     if (n < 0) {
       if (errno == EINTR) continue;
       set_dead();

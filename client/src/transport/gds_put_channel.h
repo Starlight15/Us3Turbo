@@ -20,7 +20,8 @@ class GdsPutChannel final : public PutChannel {
                 GdsMemoryManager* gds_mgr)
       : options_(options), proxy_(proxy), gds_mgr_(gds_mgr) {}
 
-  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& request, ConstBufferView buffer,
+  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& request,
+                             ConstBufferView buffer,
                              PutPathResult& result) const override;
 
  private:

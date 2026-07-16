@@ -75,8 +75,10 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::vector<std::byte> host(bytes);
-  for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
-  if (cudaError_t e = cudaMemcpy(dev, host.data(), bytes, cudaMemcpyHostToDevice);
+  for (std::size_t i = 0; i < bytes; ++i)
+    host[i] = static_cast<std::byte>(i % 251U);
+  if (cudaError_t e =
+          cudaMemcpy(dev, host.data(), bytes, cudaMemcpyHostToDevice);
       e != cudaSuccess) {
     std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
@@ -100,7 +102,8 @@ int main(int argc, char** argv) {
   req.path = PutDataPath::kGds;
 
   ClientProxyPutResponse resp;
-  bool put_ok = client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, resp);
+  bool put_ok =
+      client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, resp);
 
   cudaFree(dev);
 

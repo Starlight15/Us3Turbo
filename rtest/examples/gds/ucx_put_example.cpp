@@ -89,7 +89,8 @@ int main(int argc, char** argv) {
   }
 
   std::vector<std::byte> host(bytes);
-  for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
+  for (std::size_t i = 0; i < bytes; ++i)
+    host[i] = static_cast<std::byte>(i % 251U);
 
   ClientOptions opts;
   opts.endpoint = proxy_addr;
@@ -108,8 +109,8 @@ int main(int argc, char** argv) {
   req.path = PutDataPath::kUcx;
 
   ClientProxyPutResponse resp;
-  bool ok =
-      client.PutObject(req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
+  bool ok = client.PutObject(
+      req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
 
   client.Shutdown();
 

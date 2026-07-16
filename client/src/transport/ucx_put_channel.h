@@ -20,7 +20,8 @@ class UcxPutChannel final : public PutChannel {
                 UcxMemoryManager* ucx_mgr)
       : options_(options), proxy_(proxy), ucx_mgr_(ucx_mgr) {}
 
-  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& request, ConstBufferView buffer,
+  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& request,
+                             ConstBufferView buffer,
                              PutPathResult& result) const override;
 
  private:

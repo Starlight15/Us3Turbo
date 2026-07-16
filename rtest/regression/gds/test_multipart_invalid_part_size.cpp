@@ -53,7 +53,8 @@ int main(int argc, char** argv) {
 
   constexpr std::uint32_t num_parts = 3;
   const std::string bucket = "test-bucket";
-  const std::string key = std::string("rtest-t11-gds-") + rtest::MakeTimestampSuffix();
+  const std::string key =
+      std::string("rtest-t11-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T1.1 GDS " << kTestName << " ===\n"
             << "  proxy     : " << proxy_addr << "\n"
@@ -63,16 +64,17 @@ int main(int argc, char** argv) {
   // GPU buffer（3 个 part 复用同一 8MB buffer）。
   void* dev = nullptr;
   if (cudaError_t e = cudaMalloc(&dev, part_size); e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName << ": cudaMalloc: " << cudaGetErrorString(e)
-              << "\n";
+    std::cerr << "[FAIL] " << kTestName
+              << ": cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
-  if (cudaError_t e = cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
+  if (cudaError_t e =
+          cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
       e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy: " << cudaGetErrorString(e)
-              << "\n";
+    std::cerr << "[FAIL] " << kTestName
+              << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return 1;
   }
@@ -92,7 +94,8 @@ int main(int argc, char** argv) {
 
   // ---- CreateMultipartUpload ----
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kGds, upload_id, error)) {
+  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kGds, upload_id,
+                                    error)) {
     fail_reason = "CreateMultipartUpload failed: " + error;
     goto cleanup;
   }
@@ -105,11 +108,11 @@ int main(int argc, char** argv) {
     for (std::uint32_t i = 1; i <= num_parts; ++i) {
       std::string etag;
       if (!client.UploadPartGds(upload_id, i,
-                                ConstBufferView{.data = dev, .size = part_size}, etag,
-                                error)) {
+                                ConstBufferView{.data = dev, .size = part_size},
+                                etag, error)) {
         // 8MB 不应被 UploadPart 拒；若被拒说明 UploadPart 行为变了，记录之。
-        std::cout << "  UploadPartGds " << i << " REJECTED (unexpected): " << error
-                  << "\n";
+        std::cout << "  UploadPartGds " << i
+                  << " REJECTED (unexpected): " << error << "\n";
       } else {
         std::cout << "  UploadPartGds " << i << " ok etag=" << etag << "\n";
         parts.push_back({i, etag});
@@ -118,16 +121,18 @@ int main(int argc, char** argv) {
 
     // ---- Complete（期望失败 + "invalid part size"）----
     Client::CompletedMultipart done;
-    const bool complete_ok = client.CompleteMultipartUpload(upload_id, parts, done);
+    const bool complete_ok =
+        client.CompleteMultipartUpload(upload_id, parts, done);
     std::cout << "  CompleteMultipartUpload: "
               << (complete_ok ? "succeeded" : "FAILED (expected)")
               << " error=" << done.error << "\n";
     if (complete_ok) {
-      fail_reason = "expected Complete to fail, but it succeeded (object_size=" +
-                    std::to_string(done.object_size) + ")";
-    } else if (done.error.find("invalid part size") == std::string::npos) {
       fail_reason =
-          "Complete failed but error lacks \"invalid part size\": " + done.error;
+          "expected Complete to fail, but it succeeded (object_size=" +
+          std::to_string(done.object_size) + ")";
+    } else if (done.error.find("invalid part size") == std::string::npos) {
+      fail_reason = "Complete failed but error lacks \"invalid part size\": " +
+                    done.error;
     } else {
       test_passed = true;
     }

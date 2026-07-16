@@ -24,8 +24,9 @@ class AccessLogger {
 
   /* 记录一次请求，handler 结束时调用 */
   void LogRequest(std::string_view method, std::string_view request_id,
-                  std::string_view bucket, std::string_view key, int status_code,
-                  std::uint64_t bytes, std::chrono::milliseconds latency);
+                  std::string_view bucket, std::string_view key,
+                  int status_code, std::uint64_t bytes,
+                  std::chrono::milliseconds latency);
 
  private:
   AccessLogger() {

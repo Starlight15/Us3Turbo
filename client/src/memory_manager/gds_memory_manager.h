@@ -31,7 +31,8 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
 
    private:
     friend class GdsMemoryManager;
-    Token(cuObjClient* client, char* tok) noexcept : client_(client), tok_(tok) {}
+    Token(cuObjClient* client, char* tok) noexcept
+        : client_(client), tok_(tok) {}
     void Reset() noexcept;
 
     cuObjClient* client_{nullptr};
@@ -62,7 +63,8 @@ class GdsMemoryManager : public BufferRegistry<std::size_t> {
   ~GdsMemoryManager() override;
 
   /** @brief BufferRegistry<size_t> 钩子:真正 pin 进 BAR1。 */
-  [[nodiscard]] bool DoRegister(void* ptr, std::size_t size, std::size_t& out) override;
+  [[nodiscard]] bool DoRegister(void* ptr, std::size_t size,
+                                std::size_t& out) override;
   /** @brief BufferRegistry<size_t> 钩子:释放 pin(调 cuMemObjPutDescriptor)。 */
   void DoUnregister(void* ptr, std::size_t& handle) override;
 

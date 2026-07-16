@@ -27,7 +27,8 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t part_size = 16ULL * 1024 * 1024;  // 默认 16M（== proxy part 上限）
+  std::uint64_t part_size =
+      16ULL * 1024 * 1024;  // 默认 16M（== proxy part 上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -54,8 +55,10 @@ int main(int argc, char** argv) {
   }
 
   const std::string bucket = "test-bucket";
-  const std::string key_a = std::string("rtest-t12a-ucx-") + rtest::MakeTimestampSuffix();
-  const std::string key_b = std::string("rtest-t12b-ucx-") + rtest::MakeTimestampSuffix();
+  const std::string key_a =
+      std::string("rtest-t12a-ucx-") + rtest::MakeTimestampSuffix();
+  const std::string key_b =
+      std::string("rtest-t12b-ucx-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T1.2 UCX " << kTestName << " ===\n"
             << "  proxy     : " << proxy_addr << "\n"
@@ -74,18 +77,19 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto upload_part = [&](const std::string& upload_id, std::uint32_t part_no,
-                               std::string& etag, std::string& err,
-                               int retries = 1) -> bool {
+  const auto upload_part = [&](const std::string& upload_id,
+                               std::uint32_t part_no, std::string& etag,
+                               std::string& err, int retries = 1) -> bool {
     // backend 数据面偶发单 block 超时(见 TEST_FINDINGS.md P4)；对正常
     // UploadPart 做有限重试，仅在重试后仍失败才算真正失败，避免把环境抖动当作
     // part 上传 失败而误判跳号检测。注意: 重复 part 场景须传
     // retries=0——重复上传应只尝试 一次(重试会覆写 block 后再走
     // AddPart，改变重复检测语义)。
     for (int attempt = 0; attempt <= retries; ++attempt) {
-      if (client.UploadPartUcx(upload_id, part_no,
-                               ConstBufferView{.data = host.data(), .size = part_size},
-                               etag, err)) {
+      if (client.UploadPartUcx(
+              upload_id, part_no,
+              ConstBufferView{.data = host.data(), .size = part_size}, etag,
+              err)) {
         return true;
       }
     }
@@ -99,8 +103,8 @@ int main(int argc, char** argv) {
   std::string scene_a_reason;
   {
     std::string upload_id, error;
-    if (!client.CreateMultipartUpload(bucket, key_a, PutDataPath::kUcx, upload_id,
-                                      error)) {
+    if (!client.CreateMultipartUpload(bucket, key_a, PutDataPath::kUcx,
+                                      upload_id, error)) {
       scene_a_reason = "CreateMultipartUpload failed: " + error;
       std::cerr << "  " << scene_a_reason << "\n";
     } else {
@@ -112,8 +116,8 @@ int main(int argc, char** argv) {
       std::string e2r, e2_err;
       const bool up2_ok = upload_part(upload_id, 2, e2v, e2_err);
 
-      std::cout << "  up1 ok=" << up1_ok << " | dup up1' ok=" << up1b_ok << " err=\""
-                << e1b_err2 << "\" | up2 ok=" << up2_ok << "\n";
+      std::cout << "  up1 ok=" << up1_ok << " | dup up1' ok=" << up1b_ok
+                << " err=\"" << e1b_err2 << "\" | up2 ok=" << up2_ok << "\n";
 
       std::vector<Client::PartInfo> parts;
       if (up1_ok) parts.push_back({1, e1});
@@ -121,14 +125,16 @@ int main(int argc, char** argv) {
       if (up2_ok) parts.push_back({2, e2v});
 
       Client::CompletedMultipart done;
-      const bool complete_ok =
-          parts.empty() ? false : client.CompleteMultipartUpload(upload_id, parts, done);
+      const bool complete_ok = parts.empty() ? false
+                                             : client.CompleteMultipartUpload(
+                                                   upload_id, parts, done);
       std::cout << "  Complete ok=" << complete_ok << " error=\"" << done.error
                 << "\" size=" << done.object_size << "\n";
 
       if (complete_ok) {
         scene_a_pass = (done.object_size != 0);
-        if (!scene_a_pass) scene_a_reason = "Complete succeeded but object_size==0";
+        if (!scene_a_pass)
+          scene_a_reason = "Complete succeeded but object_size==0";
       } else if (!done.error.empty()) {
         scene_a_pass = true;
       } else if (!up1b_ok && !e1b_err2.empty()) {
@@ -152,8 +158,8 @@ int main(int argc, char** argv) {
   std::string scene_b_reason;
   {
     std::string upload_id, error;
-    if (!client.CreateMultipartUpload(bucket, key_b, PutDataPath::kUcx, upload_id,
-                                      error)) {
+    if (!client.CreateMultipartUpload(bucket, key_b, PutDataPath::kUcx,
+                                      upload_id, error)) {
       scene_b_reason = "CreateMultipartUpload failed: " + error;
       std::cerr << "  " << scene_b_reason << "\n";
     } else {
@@ -168,9 +174,11 @@ int main(int argc, char** argv) {
       if (up3_ok) parts.push_back({3, e3});
 
       Client::CompletedMultipart done;
-      const bool complete_ok =
-          parts.empty() ? false : client.CompleteMultipartUpload(upload_id, parts, done);
-      std::cout << "  Complete ok=" << complete_ok << " error=\"" << done.error << "\"\n";
+      const bool complete_ok = parts.empty() ? false
+                                             : client.CompleteMultipartUpload(
+                                                   upload_id, parts, done);
+      std::cout << "  Complete ok=" << complete_ok << " error=\"" << done.error
+                << "\"\n";
       // 关键约束: 跳号检测只在 part1 与 part3 都成功上传后才有意义——此时
       // merged_size(=part1+part3, 48M) != sum(=32M) 必须在 Complete 被拒。若
       // up3 因 backend 数据面超时(见 TEST_FINDINGS.md P4)上传失败，实际只剩
@@ -186,7 +194,8 @@ int main(int argc, char** argv) {
         scene_b_skipped = true;
       } else if (complete_ok) {
         scene_b_pass = false;
-        scene_b_reason = "expected Complete to fail on gapped upload, but it succeeded";
+        scene_b_reason =
+            "expected Complete to fail on gapped upload, but it succeeded";
       } else if (!done.error.empty()) {
         scene_b_pass = true;
       } else {
@@ -209,7 +218,8 @@ int main(int argc, char** argv) {
   }
   const bool test_passed = scene_a_pass && scene_b_pass;
   if (test_passed) {
-    std::cout << "\n[PASS] " << kTestName << " (scene A + scene B both non-silent)\n";
+    std::cout << "\n[PASS] " << kTestName
+              << " (scene A + scene B both non-silent)\n";
     return 0;
   }
   std::cerr << "\n[FAIL] " << kTestName << ": ";
