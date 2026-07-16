@@ -62,16 +62,16 @@ int main(int argc, char** argv) {
             << "  part_size : " << rtest::HumanBytes(part_size) << "\n";
 
   void* dev_put = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev_put, part_size); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev_put, part_size);
+  if (e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName
               << ": cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
-  if (cudaError_t e =
-          cudaMemcpy(dev_put, host.data(), part_size, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev_put, host.data(), part_size, cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName
               << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_put);
@@ -134,8 +134,7 @@ int main(int argc, char** argv) {
         obj_size != part_size) {
       std::cout << "  (optional GET skipped: StatObject failed or size "
                    "mismatch)\n";
-    } else if (cudaError_t e = cudaMalloc(&dev_get, obj_size);
-               e != cudaSuccess) {
+    } else if (cudaMalloc(&dev_get, obj_size) != cudaSuccess) {
       std::cout << "  (optional GET skipped: cudaMalloc(get) failed)\n";
     } else {
       cudaMemset(dev_get, 0xAA, obj_size);

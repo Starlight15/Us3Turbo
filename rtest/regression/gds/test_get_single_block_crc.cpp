@@ -71,16 +71,16 @@ int main(int argc, char** argv) {
             << "  size  : " << rtest::HumanBytes(size) << "\n";
 
   void* dev_put = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev_put, size); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev_put, size);
+  if (e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName
               << ": cudaMalloc(put): " << cudaGetErrorString(e) << "\n";
     return 1;
   }
   std::vector<std::byte> host(size);
   rtest::FillHostPattern(host);
-  if (cudaError_t e =
-          cudaMemcpy(dev_put, host.data(), size, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev_put, host.data(), size, cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName
               << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_put);
@@ -139,7 +139,8 @@ int main(int argc, char** argv) {
   // ---- GET（单独分配 dev_get，保持 dev_put 存活，避免 cuObj descriptor
   // 失效）----
   {
-    if (cudaError_t e = cudaMalloc(&dev_get, size); e != cudaSuccess) {
+    e = cudaMalloc(&dev_get, size);
+    if (e != cudaSuccess) {
       fail_reason = std::string("cudaMalloc(get): ") + cudaGetErrorString(e);
       goto cleanup;
     }

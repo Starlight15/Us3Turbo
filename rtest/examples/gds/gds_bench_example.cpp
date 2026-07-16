@@ -225,14 +225,14 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
 
   // 1) 分配并填充 device buffer(每个 worker 独立)。
   void* dev = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev, a.size); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev, a.size);
+  if (e != cudaSuccess) {
     std::cerr << "[worker " << wid << "] cudaMalloc(" << HumanBytes(a.size)
               << ") failed: " << cudaGetErrorString(e) << "\n";
     return;
   }
-  if (cudaError_t e =
-          cudaMemcpy(dev, host_pattern, a.size, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev, host_pattern, a.size, cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "[worker " << wid
               << "] cudaMemcpy failed: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);

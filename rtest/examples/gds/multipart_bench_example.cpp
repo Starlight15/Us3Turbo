@@ -185,7 +185,8 @@ int main(int argc, char** argv) {
             << std::endl;
 
   void* dev = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev, total); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev, total);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return 1;
   }
@@ -293,7 +294,8 @@ int main(int argc, char** argv) {
   auto worker = [&](std::size_t wid) {
     // 每 worker 独立 device buffer（避免单 buffer 多线程并发注册冲突）。
     void* wdev = nullptr;
-    if (cudaError_t e = cudaMalloc(&wdev, part_size); e != cudaSuccess) return;
+    cudaError_t e = cudaMalloc(&wdev, part_size);
+    if (e != cudaSuccess) return;
     cudaMemcpy(wdev, dev, part_size, cudaMemcpyDeviceToDevice);
     ConstBufferView buf{.data = wdev, .size = part_size};
 

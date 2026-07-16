@@ -225,14 +225,14 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
   // buffer 分配：GDS 用 device 显存（H2D 填充 pattern），UCX 直接用 host。
 #if defined(BENCH_GDS)
   void* dev = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev, a.total); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev, a.total);
+  if (e != cudaSuccess) {
     std::cerr << "[w" << wid << "] cudaMalloc(" << rtest::HumanBytes(a.total)
               << ") failed: " << cudaGetErrorString(e) << "\n";
     return;
   }
-  if (cudaError_t e =
-          cudaMemcpy(dev, host_pattern.data(), a.total, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev, host_pattern.data(), a.total, cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "[w" << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e)
               << "\n";
     cudaFree(dev);

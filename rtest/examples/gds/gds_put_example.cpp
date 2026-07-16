@@ -70,16 +70,16 @@ int main(int argc, char** argv) {
   }
 
   void* dev = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev, bytes); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev, bytes);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return 1;
   }
   std::vector<std::byte> host(bytes);
   for (std::size_t i = 0; i < bytes; ++i)
     host[i] = static_cast<std::byte>(i % 251U);
-  if (cudaError_t e =
-          cudaMemcpy(dev, host.data(), bytes, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev, host.data(), bytes, cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return 1;

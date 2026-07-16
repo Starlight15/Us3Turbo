@@ -28,8 +28,10 @@ namespace us3_turbo::client {
 
 namespace {
 
-// client 侧对 part 数据算 CRC32C，与 proxy 返回的 PutPathResult.crc32c 比对，
-// 做端到端校验（options.verify_crc32c 开启时）。
+/**
+ * @brief client 侧对 part 数据算 CRC32C，与 proxy 返回的 PutPathResult.crc32c
+ * 比对做端到端校验（options.verify_crc32c 开启时）。
+ */
 [[nodiscard]] bool VerifyPartCrc32c(std::string_view request_id,
                                     ConstBufferView buffer,
                                     std::uint32_t remote_crc32c, bool is_device,
@@ -37,9 +39,9 @@ namespace {
   std::uint32_t local = 0;
   if (is_device) {
     std::vector<std::byte> host(buffer.size);
-    if (cudaError_t e = cudaMemcpy(host.data(), buffer.data, buffer.size,
-                                   cudaMemcpyDeviceToHost);
-        e != cudaSuccess) {
+    cudaError_t e = cudaMemcpy(host.data(), buffer.data, buffer.size,
+                               cudaMemcpyDeviceToHost);
+    if (e != cudaSuccess) {
       spdlog::error("{} (req={}): verify D2H failed: {}", request_id, tag,
                     cudaGetErrorString(e));
       return false;
@@ -59,12 +61,13 @@ namespace {
   return false;
 }
 
+/**
+ * @brief 判断指针是否位于 device 显存。失败按 host 指针处理。
+ */
 [[nodiscard]] bool IsDevicePointer(const void* ptr) {
   cudaPointerAttributes attr{};
-  if (cudaError_t e = cudaPointerGetAttributes(&attr, ptr); e != cudaSuccess) {
-    return false;  // 当 host 指针处理
-  }
-  return attr.type == cudaMemoryTypeDevice;
+  cudaError_t e = cudaPointerGetAttributes(&attr, ptr);
+  return e == cudaSuccess && attr.type == cudaMemoryTypeDevice;
 }
 
 }  // namespace

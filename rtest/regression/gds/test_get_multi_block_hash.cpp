@@ -88,7 +88,8 @@ int main(int argc, char** argv) {
   // 失效）。
   void* dev_put = nullptr;
   void* dev_get = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev_put, part1); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev_put, part1);
+  if (e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName
               << ": cudaMalloc(put): " << cudaGetErrorString(e) << "\n";
     return 1;
@@ -120,9 +121,8 @@ int main(int argc, char** argv) {
   {
     std::string etag1, etag2;
     // Part 1
-    if (cudaError_t e = cudaMemcpy(dev_put, host_full.data(), part1,
-                                   cudaMemcpyHostToDevice);
-        e != cudaSuccess) {
+    e = cudaMemcpy(dev_put, host_full.data(), part1, cudaMemcpyHostToDevice);
+    if (e != cudaSuccess) {
       fail_reason = std::string("cudaMemcpy p1: ") + cudaGetErrorString(e);
       goto cleanup;
     }
@@ -133,9 +133,9 @@ int main(int argc, char** argv) {
       goto cleanup;
     }
     // Part 2
-    if (cudaError_t e = cudaMemcpy(dev_put, host_full.data() + part1, part2,
-                                   cudaMemcpyHostToDevice);
-        e != cudaSuccess) {
+    e = cudaMemcpy(dev_put, host_full.data() + part1, part2,
+                   cudaMemcpyHostToDevice);
+    if (e != cudaSuccess) {
       fail_reason = std::string("cudaMemcpy p2: ") + cudaGetErrorString(e);
       goto cleanup;
     }
@@ -171,7 +171,8 @@ int main(int argc, char** argv) {
       fail_reason = "StatObject failed or size mismatch";
       goto cleanup;
     }
-    if (cudaError_t e = cudaMalloc(&dev_get, total); e != cudaSuccess) {
+    e = cudaMalloc(&dev_get, total);
+    if (e != cudaSuccess) {
       fail_reason = std::string("cudaMalloc(get): ") + cudaGetErrorString(e);
       goto cleanup;
     }

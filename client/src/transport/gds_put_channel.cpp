@@ -31,15 +31,17 @@ using detail::LatencyStage;
 using detail::MakeRequestId;
 using detail::TraceLatency;
 
-// CRC32C 校验(options.verify_crc32c):GDS 需 D2H 拷贝后计算。
+/**
+ * @brief CRC32C 校验（options.verify_crc32c）：GDS 需 D2H 拷贝后计算。
+ */
 [[nodiscard]] bool VerifyGdsCrc32c(const std::string& request_id,
                                    ConstBufferView device_buffer,
                                    std::uint32_t remote_crc32c,
                                    const ClientProxyPutRequest& request) {
   std::vector<std::byte> host(device_buffer.size);
-  if (cudaError_t e = cudaMemcpy(host.data(), device_buffer.data,
-                                 device_buffer.size, cudaMemcpyDeviceToHost);
-      e != cudaSuccess) {
+  cudaError_t e = cudaMemcpy(host.data(), device_buffer.data,
+                             device_buffer.size, cudaMemcpyDeviceToHost);
+  if (e != cudaSuccess) {
     spdlog::error("GdsPut (req={}): verify_crc32c D2H copy failed: {}",
                   request_id, cudaGetErrorString(e));
     return false;

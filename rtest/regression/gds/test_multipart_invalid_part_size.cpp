@@ -63,16 +63,16 @@ int main(int argc, char** argv) {
 
   // GPU buffer（3 个 part 复用同一 8MB buffer）。
   void* dev = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev, part_size); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev, part_size);
+  if (e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName
               << ": cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
-  if (cudaError_t e =
-          cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName
               << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);

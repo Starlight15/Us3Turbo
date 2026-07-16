@@ -92,9 +92,9 @@ void FillPattern(std::vector<std::byte>& buf, std::uint64_t offset_base = 0) {
 bool VerifyGet(const void* dev_buf, std::size_t size,
                const std::vector<std::byte>& expected, const std::string& tag) {
   std::vector<std::byte> host_read(size);
-  if (cudaError_t e =
-          cudaMemcpy(host_read.data(), dev_buf, size, cudaMemcpyDeviceToHost);
-      e != cudaSuccess) {
+  cudaError_t e =
+      cudaMemcpy(host_read.data(), dev_buf, size, cudaMemcpyDeviceToHost);
+  if (e != cudaSuccess) {
     std::cerr << "[" << tag << "] D2H failed: " << cudaGetErrorString(e)
               << "\n";
     return false;
@@ -141,7 +141,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client,
 
   // 分配一个 GPU buffer，PUT 和 GET 共用，中间不释放
   void* dev_buf = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev_buf, single_size); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev_buf, single_size);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return false;
   }
@@ -149,9 +150,9 @@ bool TestSinglePutGet(us3_turbo::client::Client& client,
   // ---- PUT ----
   std::vector<std::byte> host_data(single_size);
   FillPattern(host_data);
-  if (cudaError_t e = cudaMemcpy(dev_buf, host_data.data(), single_size,
-                                 cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev_buf, host_data.data(), single_size,
+                 cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMemcpy H2D: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_buf);
     return false;
@@ -203,8 +204,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client,
   }
 
   // ---- GET：清零同一 buffer，然后读回 ----
-  if (cudaError_t e = cudaMemset(dev_buf, 0xAA, single_size);
-      e != cudaSuccess) {
+  e = cudaMemset(dev_buf, 0xAA, single_size);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMemset: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_buf);
     return false;
@@ -279,11 +280,13 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client,
   // ---- 同时分配 PUT buffer（part_size）和 GET buffer（total）----
   void* dev_put = nullptr;
   void* dev_get = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev_put, part_size); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev_put, part_size);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMalloc(put): " << cudaGetErrorString(e) << "\n";
     return false;
   }
-  if (cudaError_t e = cudaMalloc(&dev_get, total); e != cudaSuccess) {
+  e = cudaMalloc(&dev_get, total);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMalloc(get): " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_put);
     return false;
@@ -308,9 +311,8 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client,
     // 准备该 part 数据到 GPU
     std::vector<std::byte> part_buf(part_size);
     FillPattern(part_buf, static_cast<std::uint64_t>(i - 1) * part_size);
-    if (cudaError_t e = cudaMemcpy(dev_put, part_buf.data(), part_size,
-                                   cudaMemcpyHostToDevice);
-        e != cudaSuccess) {
+    e = cudaMemcpy(dev_put, part_buf.data(), part_size, cudaMemcpyHostToDevice);
+    if (e != cudaSuccess) {
       std::cerr << "cudaMemcpy H2D part " << i << ": " << cudaGetErrorString(e)
                 << "\n";
       cudaFree(dev_put);
@@ -376,8 +378,8 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client,
   }
 
   // ---- GET：dev_get 已预先分配 ----
-  if (cudaError_t e = cudaMemset(dev_get, 0xBB, object_size);
-      e != cudaSuccess) {
+  e = cudaMemset(dev_get, 0xBB, object_size);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMemset: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_put);
     cudaFree(dev_get);

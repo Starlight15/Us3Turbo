@@ -140,16 +140,16 @@ int main(int argc, char** argv) {
 
   // GPU buffer（复用上传 num_parts 次）。
   void* dev = nullptr;
-  if (cudaError_t e = cudaMalloc(&dev, part_size); e != cudaSuccess) {
+  cudaError_t e = cudaMalloc(&dev, part_size);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMalloc: " << cudaGetErrorString(e) << "\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   for (std::size_t i = 0; i < part_size; ++i)
     host[i] = static_cast<std::byte>(i % 251U);
-  if (cudaError_t e =
-          cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
-      e != cudaSuccess) {
+  e = cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
+  if (e != cudaSuccess) {
     std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return 1;
