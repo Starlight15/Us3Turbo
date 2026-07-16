@@ -36,26 +36,22 @@ class Client {
   Client(Client&&) = delete;
   Client& operator=(Client&&) = delete;
 
+ /** @brief 关闭client。 */
+  void Shutdown();
+
+  /** @brief 是否完成初始化。 */
+  [[nodiscard]] bool initialized() const;
+
   /** @brief 初始化 brpc 与 GDS/UCX channel,幂等。 */
   [[nodiscard]] bool Initialize();
 
-  void Shutdown();
-
-  [[nodiscard]] bool initialized() const;
-
-  /**
-   * @brief 统一 PUT 入口:按 request.path 选 GDS/UCX 通路。
-   */
+  /**  @brief 统一 PUT 入口:按 request.path 选 GDS/UCX 通路。*/
   [[nodiscard]] bool PutObject(const ClientProxyPutRequest& request,
                                ConstBufferView buffer,
                                ClientProxyPutResponse& response) const;
 
   // ===== 分段上传接口 =====
-  // 设计：client 只管 part 级（每 part 独立注册 token/descriptor），proxy 负责
-  // 把 part 切成 4MB block 串行调 backend。part_number 从 1 开始、客户端分配。
 
-  // 完成后由 CompleteMultipartUpload 返回的元信息复用 ProxyRpc 的同名结构，
-  // 避免两处字段重复定义与逐字段拷贝。
   using CompletedMultipart = ProxyRpc::CompletedMultipart;
 
   /** @brief client 侧 part 信息（part_number + etag），用于 Complete 校验。 */
@@ -96,27 +92,19 @@ class Client {
 
   // ===== GET 接口 =====
 
-  /**
-   * @brief 查对象布局（GetObject 第一步），返回 object_size 供调用方分配
-   * buffer。
-   */
+  /** @brief 查对象布局（GetObject 第一步），返回 object_size 供调用方分配buffer。 */
   [[nodiscard]] bool StatObject(const std::string& bucket,
                                 const std::string& key,
                                 std::uint64_t& out_object_size,
                                 std::string& out_error) const;
 
-  /**
-   * @brief GDS 通路 GET：buffer 须已按 StatObject 返回的 size 分配。
-   */
+  /**  @brief GDS 通路 GET：buffer 须已按 StatObject 返回的 size 分配。 */
   [[nodiscard]] bool GetObjectGds(const std::string& bucket,
                                   const std::string& key,
                                   MutableBufferView buffer,
                                   GetPathResult& result) const;
 
-  /**
-   * @brief UCX 通路 GET：buffer 须已按 StatObject 返回的 size 分配（host
-   * 内存）。
-   */
+  /** @brief UCX 通路 GET：buffer 须已按 StatObject 返回的 size 分配（host内存）。 */
   [[nodiscard]] bool GetObjectUcx(const std::string& bucket,
                                   const std::string& key,
                                   MutableBufferView buffer,

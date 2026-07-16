@@ -31,8 +31,10 @@ namespace {
 // retry-once 退避。
 constexpr auto kRetryBackoff = std::chrono::milliseconds(100);
 
-// client 侧对 part 数据算 CRC32C（GDS 需 D2H；UCX 直算），与 proxy 返回的
-// PutPathResult.crc32c 比对做端到端校验（options.verify_crc32c 开启时）。
+/**
+ * client 侧对 part 数据算 CRC32C，与 proxy 返回的 PutPathResult.crc32c 比对，
+ * 做端到端校验（options.verify_crc32c 开启时）。
+ */ 
 [[nodiscard]] bool VerifyPartCrc32c(std::string_view request_id,
                                     ConstBufferView buffer,
                                     std::uint32_t remote_crc32c, bool is_device,
@@ -95,9 +97,7 @@ bool Client::Initialize() {
     gds_get_channel_ =
         std::make_unique<GdsGetChannel>(options_, *proxy_, gds_mgr);
   } else {
-    spdlog::warn(
-        "Client::Initialize: GDS manager unavailable, "
-        "path=kGds will fail");
+    spdlog::warn("Client::Initialize: GDS manager unavailable, path=kGds will fail");
     gds_channel_.reset();
     gds_get_channel_.reset();
   }
@@ -109,9 +109,7 @@ bool Client::Initialize() {
     ucx_get_channel_ =
         std::make_unique<UcxGetChannel>(options_, *proxy_, ucx_mgr);
   } else {
-    spdlog::warn(
-        "Client::Initialize: UCX manager unavailable, "
-        "path=kUcx will fail");
+    spdlog::warn("Client::Initialize: UCX manager unavailable, path=kUcx will fail");
     ucx_channel_.reset();
     ucx_get_channel_.reset();
   }
