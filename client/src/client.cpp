@@ -32,7 +32,7 @@ namespace {
  * @brief client 侧对 part 数据算 CRC32C，与 proxy 返回的 PutPathResult.crc32c
  * 比对做端到端校验（options.verify_crc32c 开启时）。
  */
-[[nodiscard]] bool VerifyPartCrc32c(std::string_view request_id,
+[[nodiscard]] bool VerifyPartCrc32c(std::string_view req_id,
                                     ConstBufferView buffer,
                                     std::uint32_t remote_crc32c, bool is_device,
                                     const std::string& tag) {
@@ -42,7 +42,7 @@ namespace {
     cudaError_t e = cudaMemcpy(host.data(), buffer.data, buffer.size,
                                cudaMemcpyDeviceToHost);
     if (e != cudaSuccess) {
-      spdlog::error("{} (req={}): verify D2H failed: {}", request_id, tag,
+      spdlog::error("{} (req={}): verify D2H failed: {}", req_id, tag,
                     cudaGetErrorString(e));
       return false;
     }
@@ -52,12 +52,12 @@ namespace {
         static_cast<const std::byte*>(buffer.data), buffer.size));
   }
   if (local == remote_crc32c) {
-    spdlog::info("{} (req={}): crc32c MATCH local={:08x} remote={:08x}",
-                 request_id, tag, local, remote_crc32c);
+    spdlog::info("{} (req={}): crc32c MATCH local={:08x} remote={:08x}", req_id,
+                 tag, local, remote_crc32c);
     return true;
   }
   spdlog::error("{} (req={}): crc32c MISMATCH local={:08x} remote={:08x}",
-                request_id, tag, local, remote_crc32c);
+                req_id, tag, local, remote_crc32c);
   return false;
 }
 
@@ -127,11 +127,11 @@ bool Client::initialized() const { return initialized_; }
 // path 校验:kNone / kAll 拒绝(单 buffer 无法双路)。
 bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
   if (req.path == PutDataPath::kNone) {
-    spdlog::error("PutObject: path not specified (req={})", req.request_id);
+    spdlog::error("PutObject: path not specified (req={})", req.req_id);
     return false;
   }
   if (req.path == PutDataPath::kAll) {
-    spdlog::error("PutObject: kAll not supported yet (req={})", req.request_id);
+    spdlog::error("PutObject: kAll not supported yet (req={})", req.req_id);
     return false;
   }
   return true;
@@ -149,15 +149,13 @@ PutChannel* Client::SelectChannel(PutDataPath path) const noexcept {
   }
 }
 
-bool Client::PutObject(const ClientProxyPutRequest& request,
-                       ConstBufferView buffer,
-                       ClientProxyPutResponse& response) const {
+bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
+                       ClientProxyPutResponse& resp) const {
   if (!initialized_) {
-    spdlog::error("PutObject: Client is not initialized(req={})",
-        request.request_id);
+    spdlog::error("PutObject: Client is not initialized(req={})", req.req_id);
     return false;
   }
-  if (!ValidatePutPath(request)) {
+  if (!ValidatePutPath(req)) {
     return false;
   }
 
@@ -167,34 +165,33 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
     spdlog::warn(
         "PutObject: bucket={}/{} body size {} exceeds put_single_max_bytes {}; "
         "use multipart upload",
-        request.bucket, request.key, buffer.size, max_put);
+        req.bucket, req.key, buffer.size, max_put);
     return false;
   }
 
-  PutChannel* ch = SelectChannel(request.path);
+  PutChannel* ch = SelectChannel(req.path);
   if (ch == nullptr) {
     spdlog::error("PutObject: {} channel not initialized (req={})",
-                  request.path == PutDataPath::kGds ? "GDS" : "UCX",
-                  request.request_id);
+                  req.path == PutDataPath::kGds ? "GDS" : "UCX", req.req_id);
     return false;
   }
 
-  PutPathResult result;
+  PutPathResult res;
 
   // retry-once:首次失败等 opts_.retry_backoff（默认
   // 100ms）再试一次,接受最终结果。
-  if (!ch->PutOnce(request, buffer, result)) {
+  if (!ch->PutOnce(req, buffer, res)) {
     std::this_thread::sleep_for(opts_.retry_backoff);
-    ch->PutOnce(request, buffer, result);
+    ch->PutOnce(req, buffer, res);
   }
 
   // 按 path 回填结果到对应字段。
-  if (request.path == PutDataPath::kGds)
-    response.gds_result = result;
+  if (req.path == PutDataPath::kGds)
+    resp.gds_result = res;
   else
-    response.ucx_result = result;
+    resp.ucx_result = res;
 
-  return result.ok;
+  return res.ok;
 }
 
 // ===========================================================================
@@ -220,11 +217,11 @@ bool Client::CreateMultipartUpload(const std::string& bucket,
     out_error = "Client not initialized";
     return false;
   }
-  const std::string request_id = detail::MakeRequestId();
+  const std::string req_id = detail::MakeReqId();
   const ::us3_turbo::proxy::PutDataPath proto_path =
       (path == PutDataPath::kGds) ? ::us3_turbo::proxy::PATH_GDS
                                   : ::us3_turbo::proxy::PATH_UCX;
-  return proxy_->CreateMultipartUpload(request_id, bucket, key, proto_path,
+  return proxy_->CreateMultipartUpload(req_id, bucket, key, proto_path,
                                        out_upload_id, out_error);
 }
 
@@ -252,7 +249,7 @@ bool Client::UploadPartGds(const std::string& upload_id,
     return false;
   }
 
-  const std::string request_id = detail::MakeRequestId();
+  const std::string req_id = detail::MakeReqId();
 
   // 为本 part 独立注册 token（offset=0，相对本 part buffer）。
   GdsMemoryManager::Token token;
@@ -262,26 +259,26 @@ bool Client::UploadPartGds(const std::string& upload_id,
   }
   const std::string rdma_token(token.str());
 
-  PutPathResult result;
-  const bool rpc_ok = proxy_->UploadPartGds(request_id, upload_id, part_number,
-                                            buffer.size, rdma_token, result);
+  PutPathResult res;
+  const bool rpc_ok = proxy_->UploadPartGds(req_id, upload_id, part_number,
+                                            buffer.size, rdma_token, res);
   // Token 析构自动释放（RAII），无需显式 ReleaseToken。
 
-  if (!rpc_ok || !result.ok) {
-    out_error = result.ok ? result.error_message : result.error_message;
+  if (!rpc_ok || !res.ok) {
+    out_error = res.ok ? res.error_message : res.error_message;
     if (out_error.empty()) out_error = "UploadPartGds rpc failed";
     return false;
   }
 
   // 可选 CRC 校验（仅当 server 返回了 crc32c）。
-  if (opts_.verify_crc32c && result.crc32c != 0) {
-    VerifyPartCrc32c(request_id, buffer, result.crc32c,
-                     IsDevicePointer(buffer.data), "UploadPartGds");
+  if (opts_.verify_crc32c && res.crc32c != 0) {
+    VerifyPartCrc32c(req_id, buffer, res.crc32c, IsDevicePointer(buffer.data),
+                     "UploadPartGds");
   }
 
-  out_etag = result.etag;
+  out_etag = res.etag;
   spdlog::info("UploadPartGds (req={}): upload={} part={} size={} etag={}",
-               request_id, upload_id, part_number, buffer.size, out_etag);
+               req_id, upload_id, part_number, buffer.size, out_etag);
   return true;
 }
 
@@ -309,7 +306,7 @@ bool Client::UploadPartUcx(const std::string& upload_id,
     return false;
   }
 
-  const std::string request_id = detail::MakeRequestId();
+  const std::string req_id = detail::MakeReqId();
 
   UcxMemoryManager::Descriptor desc;
   if (!mgr->AcquireDescriptor(buffer.data, buffer.size, desc)) {
@@ -317,23 +314,23 @@ bool Client::UploadPartUcx(const std::string& upload_id,
     return false;
   }
 
-  PutPathResult result;
+  PutPathResult res;
   const bool rpc_ok = proxy_->UploadPartUcx(
-      request_id, upload_id, part_number, buffer.size, desc.remote_addr,
-      desc.rkey, desc.client_ucx_addr, result);
-  if (!rpc_ok || !result.ok) {
-    out_error = result.error_message;
+      req_id, upload_id, part_number, buffer.size, desc.remote_addr, desc.rkey,
+      desc.client_ucx_addr, res);
+  if (!rpc_ok || !res.ok) {
+    out_error = res.error_message;
     if (out_error.empty()) out_error = "UploadPartUcx rpc failed";
     return false;
   }
 
-  if (opts_.verify_crc32c && result.crc32c != 0) {
-    VerifyPartCrc32c(request_id, buffer, result.crc32c, false, "UploadPartUcx");
+  if (opts_.verify_crc32c && res.crc32c != 0) {
+    VerifyPartCrc32c(req_id, buffer, res.crc32c, false, "UploadPartUcx");
   }
 
-  out_etag = result.etag;
+  out_etag = res.etag;
   spdlog::info("UploadPartUcx (req={}): upload={} part={} size={} etag={}",
-               request_id, upload_id, part_number, buffer.size, out_etag);
+               req_id, upload_id, part_number, buffer.size, out_etag);
   return true;
 }
 
@@ -344,14 +341,14 @@ bool Client::CompleteMultipartUpload(const std::string& upload_id,
     out.error = "Client not initialized";
     return false;
   }
-  const std::string request_id = detail::MakeRequestId();
+  const std::string req_id = detail::MakeReqId();
   std::vector<std::pair<std::uint32_t, std::string>> proto_parts;
   proto_parts.reserve(parts.size());
   for (const auto& p : parts) {
     proto_parts.emplace_back(p.part_number, p.etag);
   }
   ProxyRpc::CompletedMultipart rpc_out;
-  if (!proxy_->CompleteMultipartUpload(request_id, upload_id, proto_parts,
+  if (!proxy_->CompleteMultipartUpload(req_id, upload_id, proto_parts,
                                        rpc_out)) {
     out = rpc_out;  // 失败时也拷贝 error
     return false;
@@ -366,8 +363,8 @@ bool Client::AbortMultipartUpload(const std::string& upload_id,
     out_error = "Client not initialized";
     return false;
   }
-  const std::string request_id = detail::MakeRequestId();
-  return proxy_->AbortMultipartUpload(request_id, upload_id, out_error);
+  const std::string req_id = detail::MakeReqId();
+  return proxy_->AbortMultipartUpload(req_id, upload_id, out_error);
 }
 
 // ===========================================================================
@@ -389,8 +386,7 @@ bool Client::StatObject(const std::string& bucket, const std::string& key,
 }
 
 bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
-                          MutableBufferView buffer,
-                          GetPathResult& result) const {
+                          MutableBufferView buffer, GetPathResult& res) const {
   if (!initialized_) {
     spdlog::error("GetObjectGds: Client not initialized");
     return false;
@@ -399,12 +395,11 @@ bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
     spdlog::error("GetObjectGds: GDS get channel not initialized");
     return false;
   }
-  return gds_get_channel_->GetOnce(bucket, key, buffer, result);
+  return gds_get_channel_->GetOnce(bucket, key, buffer, res);
 }
 
 bool Client::GetObjectUcx(const std::string& bucket, const std::string& key,
-                          MutableBufferView buffer,
-                          GetPathResult& result) const {
+                          MutableBufferView buffer, GetPathResult& res) const {
   if (!initialized_) {
     spdlog::error("GetObjectUcx: Client not initialized");
     return false;
@@ -413,7 +408,7 @@ bool Client::GetObjectUcx(const std::string& bucket, const std::string& key,
     spdlog::error("GetObjectUcx: UCX get channel not initialized");
     return false;
   }
-  return ucx_get_channel_->GetOnce(bucket, key, buffer, result);
+  return ucx_get_channel_->GetOnce(bucket, key, buffer, res);
 }
 
 }  // namespace us3_turbo::client

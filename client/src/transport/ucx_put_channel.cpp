@@ -25,14 +25,14 @@ namespace {
 
 using detail::clk;
 using detail::LatencyStage;
-using detail::MakeRequestId;
+using detail::MakeReqId;
 using detail::TraceLatency;
 
 // CRC32C 校验(options.verify_crc32c):UCX 对 host buffer 直算,无需 D2H。
-[[nodiscard]] bool VerifyUcxCrc32c(const std::string& request_id,
+[[nodiscard]] bool VerifyUcxCrc32c(const std::string& req_id,
                                    ConstBufferView host_buffer,
                                    std::uint32_t remote_crc32c,
-                                   const ClientProxyPutRequest& request) {
+                                   const ClientProxyPutRequest& req) {
   const std::uint32_t local = Crc32c(std::span<const std::byte>(
       static_cast<const std::byte*>(host_buffer.data), host_buffer.size));
   const std::uint32_t remote = remote_crc32c;
@@ -40,25 +40,23 @@ using detail::TraceLatency;
     spdlog::info(
         "UcxPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
         "bucket={}/{} bytes={}",
-        request_id, local, remote, request.bucket, request.key,
-        host_buffer.size);
+        req_id, local, remote, req.bucket, req.key, host_buffer.size);
     return true;
   }
   spdlog::error(
       "UcxPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
       "bucket={}/{} bytes={}",
-      request_id, local, remote, request.bucket, request.key, host_buffer.size);
+      req_id, local, remote, req.bucket, req.key, host_buffer.size);
   return false;
 }
 
 }  // namespace
 
 // UCX 链路单次尝试:AcquireDescriptor → UcxPut。与 GdsPutChannel 独立,不复用。
-bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request,
-                            ConstBufferView buffer,
-                            PutPathResult& result) const {
+bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& req,
+                            ConstBufferView buffer, PutPathResult& res) const {
   assert(ucx_mgr_ != nullptr);
-  const std::string request_id = MakeRequestId();  // 每次新生成,跨端日志关联
+  const std::string req_id = MakeReqId();  // 每次新生成,跨端日志关联
 
   const bool trace = opts_.latency_trace;
   auto t0 = trace ? clk::now() : clk::time_point{};
@@ -70,14 +68,14 @@ bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request,
   UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};
   auto t_desc = trace ? clk::now() : clk::time_point{};
 
-  if (!proxy_.UcxPut(request_id, request.bucket, request.key,
-                     request.object_size, ucx_source, result)) {
+  if (!proxy_.UcxPut(req_id, req.bucket, req.key, req.object_size, ucx_source,
+                     res)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};
 
   if (opts_.verify_crc32c) {
-    if (!VerifyUcxCrc32c(request_id, buffer, result.crc32c, request)) {
+    if (!VerifyUcxCrc32c(req_id, buffer, res.crc32c, req)) {
       return false;
     }
   }
@@ -85,7 +83,7 @@ bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request,
   if (trace) {
     const LatencyStage stages[] = {
         {"start", t0}, {"desc", t_desc}, {"put", t_put}};
-    TraceLatency(request_id, "UcxPut", stages, buffer.size);
+    TraceLatency(req_id, "UcxPut", stages, buffer.size);
   }
 
   return true;

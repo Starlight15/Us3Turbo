@@ -1,6 +1,6 @@
 #pragma once
 
-// trace.h — 链路无关通用工具(MakeRequestId / TraceLatency / LatencyStage)。
+// trace.h — 链路无关通用工具(MakeReqId / TraceLatency / LatencyStage)。
 
 #include <chrono>
 #include <cstddef>
@@ -21,8 +21,8 @@ namespace detail {
 
 using clk = std::chrono::steady_clock;
 
-/** @brief 生成新 request_id,用于跨端日志关联(每次重试都新生成)。*/
-[[nodiscard]] inline std::string MakeRequestId() {
+/** @brief 生成新 req_id,用于跨端日志关联(每次重试都新生成)。*/
+[[nodiscard]] inline std::string MakeReqId() {
   static thread_local std::mt19937_64 rng{
       static_cast<std::uint64_t>(std::random_device{}()) ^
       static_cast<std::uint64_t>(
@@ -39,7 +39,7 @@ struct LatencyStage {
 };
 
 /** @brief 打印相邻阶段耗时 + 首→末总耗时(latency_trace 开启时调用)。*/
-inline void TraceLatency(const std::string& request_id,
+inline void TraceLatency(const std::string& req_id,
                          std::string_view operation_name,
                          std::span<const LatencyStage> stages,
                          std::size_t bytes) {
@@ -57,7 +57,7 @@ inline void TraceLatency(const std::string& request_id,
                          : 0.0;
 
   spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name,
-               request_id, parts, total, bytes);
+               req_id, parts, total, bytes);
 }
 
 }  // namespace detail

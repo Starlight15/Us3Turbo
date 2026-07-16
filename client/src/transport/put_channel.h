@@ -13,10 +13,10 @@ class PutChannel {
  public:
   virtual ~PutChannel() = default;
 
-  /** @brief 单次 PUT 尝试:result 回填链路结果,失败返回 false 供上层重试。 */
-  [[nodiscard]] virtual bool PutOnce(const ClientProxyPutRequest& request,
+  /** @brief 单次 PUT 尝试:res 回填链路结果,失败返回 false 供上层重试。 */
+  [[nodiscard]] virtual bool PutOnce(const ClientProxyPutRequest& req,
                                      ConstBufferView buffer,
-                                     PutPathResult& result) const = 0;
+                                     PutPathResult& res) const = 0;
 };
 
 }  // namespace us3_turbo::client

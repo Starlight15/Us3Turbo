@@ -41,7 +41,7 @@ struct UcxDataSource {
 /** @brief client → proxy 统一 PUT 请求;对应通路 source 由 PutObject 内部按 path
  * 填充。 */
 struct ClientProxyPutRequest {
-  std::string request_id;
+  std::string req_id;
   std::string bucket;
   std::string key;
   std::uint64_t object_size{0};

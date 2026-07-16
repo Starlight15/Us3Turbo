@@ -28,7 +28,7 @@ class UcxGetChannel final {
   /** @brief 单次 GET 尝试：buffer 须已按 StatObject 返回的 size 分配。 */
   [[nodiscard]] bool GetOnce(const std::string& bucket, const std::string& key,
                              MutableBufferView buffer,
-                             GetPathResult& result) const;
+                             GetPathResult& res) const;
 
  private:
   const ClientOptions& opts_;

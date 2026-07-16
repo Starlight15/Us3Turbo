@@ -45,10 +45,10 @@ class Client {
   /** @brief 初始化 brpc 与 GDS/UCX channel,幂等。 */
   [[nodiscard]] bool Initialize();
 
-  /**  @brief 统一 PUT 入口:按 request.path 选 GDS/UCX 通路。*/
-  [[nodiscard]] bool PutObject(const ClientProxyPutRequest& request,
+  /**  @brief 统一 PUT 入口:按 req.path 选 GDS/UCX 通路。*/
+  [[nodiscard]] bool PutObject(const ClientProxyPutRequest& req,
                                ConstBufferView buffer,
-                               ClientProxyPutResponse& response) const;
+                               ClientProxyPutResponse& resp) const;
 
   // ===== 分段上传接口 =====
 
@@ -103,14 +103,14 @@ class Client {
   [[nodiscard]] bool GetObjectGds(const std::string& bucket,
                                   const std::string& key,
                                   MutableBufferView buffer,
-                                  GetPathResult& result) const;
+                                  GetPathResult& res) const;
 
   /** @brief UCX 通路 GET：buffer 须已按 StatObject 返回的 size
    * 分配（host内存）。 */
   [[nodiscard]] bool GetObjectUcx(const std::string& bucket,
                                   const std::string& key,
                                   MutableBufferView buffer,
-                                  GetPathResult& result) const;
+                                  GetPathResult& res) const;
 
  private:
   ClientOptions opts_;
