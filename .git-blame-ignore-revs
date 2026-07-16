@@ -7,4 +7,6 @@
 # 一次性 clang-format 全量格式化 C++ 源码（61 文件，ColumnLimit=80，纯空白/续行调整）。
 
 48271620dc833e84666c0ef6b148ae1b63a09063
+8da27af57c3a59aca3f503220825a944b7278970
+# ColumnLimit 120→100 全量重排（60 文件）。
 # ColumnLimit 80→120 全量重排（73 文件）+ kRetryBackoff 改 ClientOptions::retry_backoff。
