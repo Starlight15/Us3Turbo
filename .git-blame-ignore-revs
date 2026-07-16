@@ -6,6 +6,8 @@
 32eca5a532f2482a10fb5bbd33635c0136f44a51
 # 一次性 clang-format 全量格式化 C++ 源码（61 文件，ColumnLimit=80，纯空白/续行调整）。
 
+156d5e6ea82c14c158effaf9da87795bd0b50034
+# 消除 cuda init-statement if 写法 + 补全注释。
 7da375c9e5de86a6a0e666d2274d8547cef66343
 # ColumnLimit 90→80 全量重排（68 文件）。
 aae68b3b80682450564cf3b695690bc9a57bb471
