@@ -93,8 +93,7 @@ bool Client::Initialize() {
     gds_channel_ = std::make_unique<GdsPutChannel>(opts_, *proxy_, gds_mgr);
     gds_get_channel_ = std::make_unique<GdsGetChannel>(opts_, *proxy_, gds_mgr);
   } else {
-    spdlog::warn(
-        "Client::Initialize: GDS manager unavailable, path=kGds will fail");
+    spdlog::warn("Client::Initialize: GDS manager unavailable");
     gds_channel_.reset();
     gds_get_channel_.reset();
   }
@@ -105,8 +104,7 @@ bool Client::Initialize() {
     ucx_channel_ = std::make_unique<UcxPutChannel>(opts_, *proxy_, ucx_mgr);
     ucx_get_channel_ = std::make_unique<UcxGetChannel>(opts_, *proxy_, ucx_mgr);
   } else {
-    spdlog::warn(
-        "Client::Initialize: UCX manager unavailable, path=kUcx will fail");
+    spdlog::warn("Client::Initialize: UCX manager unavailable");
     ucx_channel_.reset();
     ucx_get_channel_.reset();
   }
@@ -155,9 +153,7 @@ bool Client::PutObject(const ClientProxyPutRequest& request,
                        ConstBufferView buffer,
                        ClientProxyPutResponse& response) const {
   if (!initialized_) {
-    spdlog::error(
-        "PutObject: Client is not initialized. Call Client::Initialize first. "
-        "(req={})",
+    spdlog::error("PutObject: Client is not initialized(req={})",
         request.request_id);
     return false;
   }
