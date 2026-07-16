@@ -12,6 +12,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "us3_turbo/common/logger.h"
+
 #include <netdb.h>
 
 namespace us3_turbo::client {
@@ -41,8 +43,7 @@ void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   ucp_ep_h ep = nullptr;
   ucs_status_t st = ucp_ep_create(self->worker_, &ep_params, &ep);
   if (st != UCS_OK) {
-    spdlog::warn("UcxMemoryManager: conn cb ucp_ep_create failed: {}",
-                 ucs_status_string(st));
+    LOG_SYS_WARN("conn cb ucp_ep_create failed: {}", ucs_status_string(st));
   }
 }
 
@@ -51,7 +52,7 @@ void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
 bool UcxMemoryManager::InitContext() {
   ucp_config_t* config = nullptr;
   if (ucp_config_read(nullptr, nullptr, &config) != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_config_read failed");
+    LOG_SYS_ERROR("ucp_config_read failed");
     return false;
   }
 
@@ -63,8 +64,7 @@ bool UcxMemoryManager::InitContext() {
   ucp_config_release(config);
 
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_init failed: {}",
-                  ucs_status_string(st));
+    LOG_SYS_ERROR("ucp_init failed: {}", ucs_status_string(st));
     context_ = nullptr;
     return false;
   }
@@ -82,8 +82,7 @@ bool UcxMemoryManager::InitWorker() {
 
   ucs_status_t st = ucp_worker_create(context_, &wparams, &worker_);
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_worker_create failed: {}",
-                  ucs_status_string(st));
+    LOG_SYS_ERROR("ucp_worker_create failed: {}", ucs_status_string(st));
     worker_ = nullptr;
     return false;
   }
@@ -99,7 +98,7 @@ bool UcxMemoryManager::InitListener() {
   addr.sin_family = AF_INET;
   addr.sin_port = 0;  // 系统分配
   if (inet_pton(AF_INET, kDefaultBindIp, &addr.sin_addr) != 1) {
-    spdlog::error("UcxMemoryManager: invalid bind ip {}", kDefaultBindIp);
+    LOG_SYS_ERROR("invalid bind ip {}", kDefaultBindIp);
     return false;
   }
 
@@ -113,8 +112,7 @@ bool UcxMemoryManager::InitListener() {
 
   ucs_status_t st = ucp_listener_create(worker_, &lparams, &listener_);
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_listener_create failed: {}",
-                  ucs_status_string(st));
+    LOG_SYS_ERROR("ucp_listener_create failed: {}", ucs_status_string(st));
     listener_ = nullptr;
     return false;
   }
@@ -123,7 +121,7 @@ bool UcxMemoryManager::InitListener() {
   ucp_listener_attr_t lattr{};
   lattr.field_mask = UCP_LISTENER_ATTR_FIELD_SOCKADDR;
   if (ucp_listener_query(listener_, &lattr) != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_listener_query failed");
+    LOG_SYS_ERROR("ucp_listener_query failed");
     return false;
   }
   char host[NI_MAXHOST] = {};
@@ -131,12 +129,12 @@ bool UcxMemoryManager::InitListener() {
   if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr),
                   sizeof(lattr.sockaddr), host, sizeof(host), serv,
                   sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
-    spdlog::error("UcxMemoryManager: getnameinfo failed");
+    LOG_SYS_ERROR("getnameinfo failed");
     return false;
   }
   listen_addr_ = std::string(host) + ":" + std::string(serv);
 
-  spdlog::info("UcxMemoryManager: listener at {}", listen_addr_);
+  LOG_SYS_INFO("listener at {}", listen_addr_);
   return true;
 }
 
@@ -216,7 +214,7 @@ bool UcxMemoryManager::Instance(UcxMemoryManager*& out) {
   static UcxMemoryManager mgr;
   static bool init_ok = [&]() -> bool {
     if (mgr.started_) return true;
-    spdlog::error("UcxMemoryManager: not started (UCX listener unavailable)");
+    LOG_SYS_ERROR("not started (UCX listener unavailable)");
     return false;
   }();
   if (!init_ok) return false;
@@ -233,8 +231,8 @@ bool UcxMemoryManager::DoRegister(void* ptr, std::size_t size, ucp_mem_h& out) {
   ucp_mem_h memh = nullptr;
   ucs_status_t st = ucp_mem_map(context_, &mparams, &memh);
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_mem_map failed (ptr={} size={} {})",
-                  ptr, size, ucs_status_string(st));
+    LOG_SYS_ERROR("ucp_mem_map failed (ptr={} size={} {})", ptr, size,
+                  ucs_status_string(st));
     return false;
   }
   out = memh;
@@ -251,9 +249,7 @@ void UcxMemoryManager::DoUnregister(void* /*ptr*/, ucp_mem_h& handle) {
 bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
                                          Descriptor& out) {
   if (ptr == nullptr || size == 0U) {
-    spdlog::warn(
-        "UcxMemoryManager::AcquireDescriptor: requires non-null ptr and "
-        "positive size");
+    LOG_SYS_WARN("requires non-null ptr and positive size");
     return false;
   }
   void* mut_ptr = const_cast<void*>(ptr);
@@ -277,8 +273,7 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   size_t rkey_size = 0;
   ucs_status_t st = ucp_rkey_pack(context_, memh, &rkey_buf, &rkey_size);
   if (st != UCS_OK || rkey_buf == nullptr) {
-    spdlog::error("UcxMemoryManager: ucp_rkey_pack failed: {}",
-                  ucs_status_string(st));
+    LOG_SYS_ERROR("ucp_rkey_pack failed: {}", ucs_status_string(st));
     return false;
   }
   out.remote_addr = reinterpret_cast<std::uint64_t>(mut_ptr);
@@ -286,10 +281,9 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   out.client_ucx_addr = listen_addr_;
   ucp_rkey_buffer_release(rkey_buf);
 
-  spdlog::info(
-      "UcxMemoryManager::AcquireDescriptor: ptr={} size={} "
-      "remote_addr=0x{:x} rkey_bytes={} ucx_addr={}",
-      ptr, size, out.remote_addr, out.rkey.size(), out.client_ucx_addr);
+  LOG_SYS_INFO("ptr={} size={} remote_addr=0x{:x} rkey_bytes={} ucx_addr={}",
+               ptr, size, out.remote_addr, out.rkey.size(),
+               out.client_ucx_addr);
   return true;
 }
 

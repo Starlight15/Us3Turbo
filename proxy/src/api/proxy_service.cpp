@@ -12,7 +12,7 @@
 #include "proxy/src/common/flags.h"
 #include "proxy/src/common/utils.h"
 #include "proxy/src/logging/access_logger.h"
-#include "proxy/src/logging/logger.h"
+#include "us3_turbo/common/logger.h"
 
 namespace us3_turbo::proxy {
 

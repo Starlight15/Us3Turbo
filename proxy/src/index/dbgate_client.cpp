@@ -9,9 +9,9 @@
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
 #include "proxy/src/index/mongo_schema.h"
-#include "proxy/src/logging/logger.h"
 #include "ucloud.pb.h"
 #include "umgogate.pb.h"
+#include "us3_turbo/common/logger.h"
 
 namespace us3_turbo::proxy {
 

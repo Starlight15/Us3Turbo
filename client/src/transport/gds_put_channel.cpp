@@ -19,6 +19,7 @@
 #include "client/src/rpc/proxy_rpc.h"
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"
+#include "us3_turbo/common/logger.h"
 
 #include <cuda_runtime.h>
 
@@ -42,24 +43,22 @@ using detail::TraceLatency;
   cudaError_t e = cudaMemcpy(host.data(), device_buffer.data,
                              device_buffer.size, cudaMemcpyDeviceToHost);
   if (e != cudaSuccess) {
-    spdlog::error("GdsPut (req={}): verify_crc32c D2H copy failed: {}", req_id,
-                  cudaGetErrorString(e));
+    LOG_ERROR(req_id, "verify_crc32c D2H copy failed: {}",
+              cudaGetErrorString(e));
     return false;
   }
   const std::uint32_t local =
       Crc32c(std::span<const std::byte>(host.data(), host.size()));
   const std::uint32_t remote = remote_crc32c;
   if (local == remote) {
-    spdlog::info(
-        "GdsPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
-        "bucket={}/{} bytes={}",
-        req_id, local, remote, req.bucket, req.key, device_buffer.size);
+    LOG_INFO(req_id,
+             "crc32c MATCH local={:08x} remote={:08x} bucket={}/{} bytes={}",
+             local, remote, req.bucket, req.key, device_buffer.size);
     return true;
   }
-  spdlog::error(
-      "GdsPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
-      "bucket={}/{} bytes={}",
-      req_id, local, remote, req.bucket, req.key, device_buffer.size);
+  LOG_ERROR(req_id,
+            "crc32c MISMATCH local={:08x} remote={:08x} bucket={}/{} bytes={}",
+            local, remote, req.bucket, req.key, device_buffer.size);
   return false;
 }
 

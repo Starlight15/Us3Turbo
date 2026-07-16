@@ -18,6 +18,7 @@
 #include "client/src/rpc/proxy_rpc.h"
 #include "us3_turbo/client/options.h"
 #include "us3_turbo/client/types.h"
+#include "us3_turbo/common/logger.h"
 
 namespace us3_turbo::client {
 
@@ -37,16 +38,14 @@ using detail::TraceLatency;
       static_cast<const std::byte*>(host_buffer.data), host_buffer.size));
   const std::uint32_t remote = remote_crc32c;
   if (local == remote) {
-    spdlog::info(
-        "UcxPut (req={}): crc32c MATCH local={:08x} remote={:08x} "
-        "bucket={}/{} bytes={}",
-        req_id, local, remote, req.bucket, req.key, host_buffer.size);
+    LOG_INFO(req_id,
+             "crc32c MATCH local={:08x} remote={:08x} bucket={}/{} bytes={}",
+             local, remote, req.bucket, req.key, host_buffer.size);
     return true;
   }
-  spdlog::error(
-      "UcxPut (req={}): crc32c MISMATCH local={:08x} remote={:08x} "
-      "bucket={}/{} bytes={}",
-      req_id, local, remote, req.bucket, req.key, host_buffer.size);
+  LOG_ERROR(req_id,
+            "crc32c MISMATCH local={:08x} remote={:08x} bucket={}/{} bytes={}",
+            local, remote, req.bucket, req.key, host_buffer.size);
   return false;
 }
 

@@ -4,7 +4,6 @@ add_executable(us3_turbo_proxy
   src/main.cpp
   src/common/flags.cpp
   src/common/utils.cpp
-  src/logging/logger.cpp
   src/logging/access_logger.cpp
   src/api/proxy_service.cpp
   src/service/single_put.cpp

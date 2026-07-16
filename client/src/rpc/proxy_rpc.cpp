@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include "control_plane.pb.h"
+#include "us3_turbo/common/logger.h"
 
 namespace us3_turbo::client {
 
@@ -21,9 +22,8 @@ bool FailResult(PutPathResult& res, const brpc::Controller& cntl,
                           (cntl.ErrorCode() == ETIMEDOUT);
   res.ok = false;
   res.error_message = cntl.ErrorText();
-  spdlog::error("{} (req={}): failed to execute {} RPC: {}",
-                is_timeout ? "timeout" : "data-plane", req_id, op,
-                cntl.ErrorText());
+  LOG_ERROR(req_id, "{} RPC failed: {} (error={})", op, cntl.ErrorText(),
+            is_timeout ? "timeout" : "data-plane");
   return false;
 }
 
@@ -34,8 +34,7 @@ bool ProxyRpc::GdsPut(std::string_view req_id, const std::string& bucket,
                       const GdsDataSource& gds_source,
                       PutPathResult& res) const {
   if (!ok()) {
-    spdlog::error("GdsPut (req={}): proxy channel not ready: {}", req_id,
-                  init_error());
+    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
     res.ok = false;
     res.error_message = std::string{"proxy channel not ready: "} + init_error();
     return false;
@@ -73,8 +72,7 @@ bool ProxyRpc::UcxPut(std::string_view req_id, const std::string& bucket,
                       const UcxDataSource& ucx_source,
                       PutPathResult& res) const {
   if (!ok()) {
-    spdlog::error("UcxPut (req={}): proxy channel not ready: {}", req_id,
-                  init_error());
+    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
     res.ok = false;
     res.error_message = std::string{"proxy channel not ready: "} + init_error();
     return false;
@@ -138,8 +136,7 @@ bool ProxyRpc::CreateMultipartUpload(std::string_view req_id,
   stub()->CreateMultipartUpload(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     out_error = controller.ErrorText();
-    spdlog::error("CreateMultipartUpload (req={}): rpc failed: {}", req_id,
-                  controller.ErrorText());
+    LOG_ERROR(req_id, "rpc failed: {}", controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
@@ -244,8 +241,7 @@ bool ProxyRpc::CompleteMultipartUpload(
   stub()->CompleteMultipartUpload(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     out.error = controller.ErrorText();
-    spdlog::error("CompleteMultipartUpload (req={}): rpc failed: {}", req_id,
-                  controller.ErrorText());
+    LOG_ERROR(req_id, "rpc failed: {}", controller.ErrorText());
     return false;
   }
   out.ok = resp.ok();
@@ -274,8 +270,7 @@ bool ProxyRpc::AbortMultipartUpload(std::string_view req_id,
   stub()->AbortMultipartUpload(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     out_error = controller.ErrorText();
-    spdlog::error("AbortMultipartUpload (req={}): rpc failed: {}", req_id,
-                  controller.ErrorText());
+    LOG_ERROR(req_id, "rpc failed: {}", controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
@@ -309,8 +304,7 @@ bool ProxyRpc::StatObject(std::string_view req_id, const std::string& bucket,
   stub()->StatObject(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     out_error = controller.ErrorText();
-    spdlog::error("StatObject (req={}): rpc failed: {}", req_id,
-                  controller.ErrorText());
+    LOG_ERROR(req_id, "rpc failed: {}", controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
@@ -326,8 +320,7 @@ bool ProxyRpc::GdsGet(std::string_view req_id, const std::string& bucket,
                       const GdsDataSource& gds_source,
                       GetPathResult& res) const {
   if (!ok()) {
-    spdlog::error("GdsGet (req={}): proxy channel not ready: {}", req_id,
-                  init_error());
+    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
     res.ok = false;
     res.error_message = std::string{"proxy channel not ready: "} + init_error();
     return false;
@@ -351,9 +344,8 @@ bool ProxyRpc::GdsGet(std::string_view req_id, const std::string& bucket,
                             (controller.ErrorCode() == ETIMEDOUT);
     res.ok = false;
     res.error_message = controller.ErrorText();
-    spdlog::error("{} (req={}): failed to execute GdsGet RPC: {}",
-                  is_timeout ? "timeout" : "data-plane", req_id,
-                  controller.ErrorText());
+    LOG_ERROR(req_id, "GdsGet RPC failed: {} (error={})",
+              controller.ErrorText(), is_timeout ? "timeout" : "data-plane");
     return false;
   }
 
@@ -371,8 +363,7 @@ bool ProxyRpc::UcxGet(std::string_view req_id, const std::string& bucket,
                       const UcxDataSource& ucx_source,
                       GetPathResult& res) const {
   if (!ok()) {
-    spdlog::error("UcxGet (req={}): proxy channel not ready: {}", req_id,
-                  init_error());
+    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
     res.ok = false;
     res.error_message = std::string{"proxy channel not ready: "} + init_error();
     return false;
@@ -399,9 +390,8 @@ bool ProxyRpc::UcxGet(std::string_view req_id, const std::string& bucket,
                             (controller.ErrorCode() == ETIMEDOUT);
     res.ok = false;
     res.error_message = controller.ErrorText();
-    spdlog::error("{} (req={}): failed to execute UcxGet RPC: {}",
-                  is_timeout ? "timeout" : "data-plane", req_id,
-                  controller.ErrorText());
+    LOG_ERROR(req_id, "UcxGet RPC failed: {} (error={})",
+              controller.ErrorText(), is_timeout ? "timeout" : "data-plane");
     return false;
   }
 

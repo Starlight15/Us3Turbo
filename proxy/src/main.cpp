@@ -12,11 +12,11 @@
 #include "proxy/src/index/dbgate_client.h"
 #include "proxy/src/index/mongo_upload_index.h"
 #include "proxy/src/logging/access_logger.h"
-#include "proxy/src/logging/logger.h"
 #include "proxy/src/service/get_object.h"
 #include "proxy/src/service/multipart.h"
 #include "proxy/src/service/single_put.h"
 #include "proxy/src/storage/ufile_ac_client.h"
+#include "us3_turbo/common/logger.h"
 
 namespace {
 
@@ -29,8 +29,8 @@ void InitLogging() {
     level = spdlog::level::warn;
   else if (FLAGS_log_level == "error")
     level = spdlog::level::err;
-  us3_turbo::proxy::Logger::Init(
-      level, static_cast<std::size_t>(FLAGS_log_max_size_mb),
+  us3_turbo::common::Logger::Init(
+      level, "proxy", static_cast<std::size_t>(FLAGS_log_max_size_mb),
       static_cast<std::size_t>(FLAGS_log_max_files));
   us3_turbo::proxy::AccessLogger::Instance();
 }

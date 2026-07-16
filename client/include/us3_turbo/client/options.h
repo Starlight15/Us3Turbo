@@ -32,6 +32,9 @@ struct ClientOptions {
 
   // 单步 PUT 失败后的重试退避（retry-once），默认 100ms
   std::chrono::milliseconds retry_backoff{std::chrono::milliseconds(100)};
+
+  // 日志级别: "debug"/"info"/"warn"/"error"，默认 info
+  std::string log_level{"info"};
 };
 
 }  // namespace us3_turbo::client

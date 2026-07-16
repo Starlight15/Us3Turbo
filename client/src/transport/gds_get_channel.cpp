@@ -8,6 +8,7 @@
 #include "client/src/common/trace.h"
 #include "client/src/rpc/proxy_rpc.h"
 #include "us3_turbo/client/options.h"
+#include "us3_turbo/common/logger.h"
 
 #include <cuobjclient.h>
 
@@ -29,7 +30,7 @@ bool GdsGetChannel::GetOnce(const std::string& bucket, const std::string& key,
 
   GdsMemoryManager::Token token;
   if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token, CUOBJ_GET)) {
-    spdlog::error("GdsGet (req={}): AcquireToken(CUOBJ_GET) failed", req_id);
+    LOG_ERROR(req_id, "AcquireToken(CUOBJ_GET) failed");
     return false;
   }
   GdsDataSource gds_source{std::string(token.str())};

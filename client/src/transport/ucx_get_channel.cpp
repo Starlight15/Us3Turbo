@@ -8,6 +8,7 @@
 #include "client/src/common/trace.h"
 #include "client/src/rpc/proxy_rpc.h"
 #include "us3_turbo/client/options.h"
+#include "us3_turbo/common/logger.h"
 
 namespace us3_turbo::client {
 
@@ -28,7 +29,7 @@ bool UcxGetChannel::GetOnce(const std::string& bucket, const std::string& key,
   // AcquireDescriptor 注册 host buffer 并打包 rkey（方向无关，PUT/GET 共用）。
   UcxMemoryManager::Descriptor desc;
   if (!ucx_mgr_->AcquireDescriptor(buffer.data, buffer.size, desc)) {
-    spdlog::error("UcxGet (req={}): AcquireDescriptor failed", req_id);
+    LOG_ERROR(req_id, "AcquireDescriptor failed");
     return false;
   }
   UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};

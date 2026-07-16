@@ -8,9 +8,9 @@
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/utils.h"
 #include "proxy/src/index/upload_index.h"
-#include "proxy/src/logging/logger.h"
 #include "proxy/src/storage/ufile_ac_client.h"
 #include "proxy/src/storage/ufile_ac_protocol.h"
+#include "us3_turbo/common/logger.h"
 
 namespace us3_turbo::proxy {
 
