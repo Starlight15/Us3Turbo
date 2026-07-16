@@ -17,7 +17,8 @@ constexpr char kBase64Table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstu
 
 std::string GenUuid() {
   static thread_local std::mt19937_64 rng{
-      std::random_device{}() ^ static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
+      std::random_device{}() ^
+      static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
   std::uint64_t a = rng();
   std::uint64_t b = rng();
   unsigned char bytes[16];
@@ -29,8 +30,9 @@ std::string GenUuid() {
   std::snprintf(buf, sizeof(buf),
                 "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
                 "%02x%02x%02x%02x%02x%02x",
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
-                bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
+                bytes[15]);
   return std::string(buf);
 }
 
@@ -77,7 +79,8 @@ std::string Base64Encode(std::string_view data) {
 }
 
 std::int64_t NowMs() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
       .count();
 }
 

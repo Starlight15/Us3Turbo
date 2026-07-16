@@ -37,15 +37,19 @@ void InitLogging() {
 /* 依赖注入装配，自底向上：存储层最长命，接口层最上 */
 std::unique_ptr<us3_turbo::proxy::AssembledStack> AssembleServices() {
   auto stack = std::make_unique<us3_turbo::proxy::AssembledStack>();
-  stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(FLAGS_backend_endpoint, FLAGS_backend_timeout_ms);
-  stack->dbgate = std::make_unique<us3_turbo::proxy::DBGateClient>(FLAGS_dbgate_endpoint, FLAGS_dbgate_timeout_ms,
-                                                                   FLAGS_dbgate_conn_pool_size);
+  stack->ufile_ac = std::make_unique<us3_turbo::proxy::UfileAcClient>(FLAGS_backend_endpoint,
+                                                                      FLAGS_backend_timeout_ms);
+  stack->dbgate = std::make_unique<us3_turbo::proxy::DBGateClient>(
+      FLAGS_dbgate_endpoint, FLAGS_dbgate_timeout_ms, FLAGS_dbgate_conn_pool_size);
   stack->index = std::make_unique<us3_turbo::proxy::MongoUploadIndex>(stack->dbgate.get());
-  auto single_put = std::make_unique<us3_turbo::proxy::SinglePut>(stack->index.get(), stack->ufile_ac.get());
-  auto multipart = std::make_unique<us3_turbo::proxy::Multipart>(stack->index.get(), stack->ufile_ac.get());
-  auto get_object = std::make_unique<us3_turbo::proxy::GetObject>(stack->index.get(), stack->ufile_ac.get());
-  stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(std::move(single_put), std::move(multipart),
-                                                                    std::move(get_object), stack->index.get());
+  auto single_put =
+      std::make_unique<us3_turbo::proxy::SinglePut>(stack->index.get(), stack->ufile_ac.get());
+  auto multipart =
+      std::make_unique<us3_turbo::proxy::Multipart>(stack->index.get(), stack->ufile_ac.get());
+  auto get_object =
+      std::make_unique<us3_turbo::proxy::GetObject>(stack->index.get(), stack->ufile_ac.get());
+  stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(
+      std::move(single_put), std::move(multipart), std::move(get_object), stack->index.get());
   return stack;
 }
 

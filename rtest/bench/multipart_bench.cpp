@@ -106,7 +106,8 @@ double Median(std::vector<double> v) {
 double Percentile(std::vector<double> v, double p) {
   if (v.empty()) return 0.0;
   std::sort(v.begin(), v.end());
-  const std::size_t idx = std::min(v.size() - 1, static_cast<std::size_t>(p / 100.0 * (v.size() - 1)));
+  const std::size_t idx =
+      std::min(v.size() - 1, static_cast<std::size_t>(p / 100.0 * (v.size() - 1)));
   return v[idx];
 }
 
@@ -126,21 +127,23 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::
   RoundLatency lat;
   lat.bytes = a.total;
 
-  const std::string key = a.key_prefix + "-" + kPathName + "-w" + std::to_string(worker_idx) + "-r" +
-                          std::to_string(round_idx) + "-" + rtest::MakeTimestampSuffix();
+  const std::string key = a.key_prefix + "-" + kPathName + "-w" + std::to_string(worker_idx) +
+                          "-r" + std::to_string(round_idx) + "-" + rtest::MakeTimestampSuffix();
 
   std::string upload_id, error;
   const auto t_create0 = clk::now();
   const PutDataPath path = kIsGds ? PutDataPath::kGds : PutDataPath::kUcx;
   if (!client.CreateMultipartUpload(a.bucket, key, path, upload_id, error)) {
-    std::cerr << "[w" << worker_idx << " r" << round_idx << "] CreateMultipartUpload failed: " << error << "\n";
+    std::cerr << "[w" << worker_idx << " r" << round_idx
+              << "] CreateMultipartUpload failed: " << error << "\n";
     return lat;
   }
   const auto t_create1 = clk::now();
   lat.create_ms = ms_double(t_create1 - t_create0).count();
 
   // 切 part：除最后一段外每段 == part_size；总大小 <= part_size 时退化为单 part。
-  const std::uint32_t num_parts = static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
+  const std::uint32_t num_parts =
+      static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
 
   std::vector<Client::PartInfo> parts;
   parts.reserve(num_parts);
@@ -151,14 +154,17 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::
     std::string etag;
     bool ok = false;
 #if defined(BENCH_GDS)
-    ok = client.UploadPartGds(upload_id, i, ConstBufferView{.data = static_cast<char*>(data_buf) + off, .size = len},
-                              etag, error);
+    ok = client.UploadPartGds(
+        upload_id, i, ConstBufferView{.data = static_cast<char*>(data_buf) + off, .size = len},
+        etag, error);
 #else  // BENCH_UCX
     ok = client.UploadPartUcx(
-        upload_id, i, ConstBufferView{.data = static_cast<std::byte*>(data_buf) + off, .size = len}, etag, error);
+        upload_id, i, ConstBufferView{.data = static_cast<std::byte*>(data_buf) + off, .size = len},
+        etag, error);
 #endif
     if (!ok) {
-      std::cerr << "[w" << worker_idx << " r" << round_idx << "] UploadPart " << i << " failed: " << error << "\n";
+      std::cerr << "[w" << worker_idx << " r" << round_idx << "] UploadPart " << i
+                << " failed: " << error << "\n";
       std::string abort_err;
       (void)client.AbortMultipartUpload(upload_id, abort_err);
       return lat;
@@ -209,11 +215,12 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
 #if defined(BENCH_GDS)
   void* dev = nullptr;
   if (cudaError_t e = cudaMalloc(&dev, a.total); e != cudaSuccess) {
-    std::cerr << "[w" << wid << "] cudaMalloc(" << rtest::HumanBytes(a.total) << ") failed: " << cudaGetErrorString(e)
-              << "\n";
+    std::cerr << "[w" << wid << "] cudaMalloc(" << rtest::HumanBytes(a.total)
+              << ") failed: " << cudaGetErrorString(e) << "\n";
     return;
   }
-  if (cudaError_t e = cudaMemcpy(dev, host_pattern.data(), a.total, cudaMemcpyHostToDevice); e != cudaSuccess) {
+  if (cudaError_t e = cudaMemcpy(dev, host_pattern.data(), a.total, cudaMemcpyHostToDevice);
+      e != cudaSuccess) {
     std::cerr << "[w" << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return;
@@ -257,10 +264,11 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
 }
 
 // ---- 打印与 CSV ----
-void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail, std::uint64_t total_bytes, double wall_ms,
-                  const std::vector<RoundLatency>& all) {
+void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail, std::uint64_t total_bytes,
+                  double wall_ms, const std::vector<RoundLatency>& all) {
   const double wall_s = wall_ms / 1000.0;
-  const double tput = (wall_s > 0.0) ? static_cast<double>(total_bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
+  const double tput =
+      (wall_s > 0.0) ? static_cast<double>(total_bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
 
   std::vector<double> create_ms, upload_ms, complete_ms, total_ms;
   create_ms.reserve(all.size());
@@ -275,7 +283,8 @@ void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail, std::uint
     total_ms.push_back(r.total_ms);
   }
 
-  std::cout << "=== results (" << kPathName << " multipart, conc=" << a.concurrency << ", reps=" << a.reps << ") ===\n"
+  std::cout << "=== results (" << kPathName << " multipart, conc=" << a.concurrency
+            << ", reps=" << a.reps << ") ===\n"
             << "  ok          : " << ok << "\n"
             << "  fail        : " << fail << "\n"
             << "  bytes       : " << rtest::HumanBytes(total_bytes) << "\n"
@@ -289,13 +298,14 @@ void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail, std::uint
               << "  max=" << *std::max_element(create_ms.begin(), create_ms.end()) << "\n"
               << "    upload   : avg=" << Mean(upload_ms) << "  p50=" << Median(upload_ms)
               << "  p95=" << Percentile(upload_ms, 95)
-              << "  max=" << *std::max_element(upload_ms.begin(), upload_ms.end()) << "  (data-plane, " << data_pct
-              << "% of round)\n"
+              << "  max=" << *std::max_element(upload_ms.begin(), upload_ms.end())
+              << "  (data-plane, " << data_pct << "% of round)\n"
               << "    complete : avg=" << Mean(complete_ms) << "  p50=" << Median(complete_ms)
               << "  p95=" << Percentile(complete_ms, 95)
               << "  max=" << *std::max_element(complete_ms.begin(), complete_ms.end()) << "\n"
               << "    total    : avg=" << Mean(total_ms) << "  p50=" << Median(total_ms)
-              << "  p95=" << Percentile(total_ms, 95) << "  min=" << *std::min_element(total_ms.begin(), total_ms.end())
+              << "  p95=" << Percentile(total_ms, 95)
+              << "  min=" << *std::min_element(total_ms.begin(), total_ms.end())
               << "  max=" << *std::max_element(total_ms.begin(), total_ms.end()) << "\n";
   }
 }
@@ -304,12 +314,13 @@ void PrintCsv(const Args& a, const std::vector<RoundLatency>& all) {
   // 表头
   std::cout << "path,total_bytes,part_bytes,parts,concurrency,rep,"
                "create_ms,upload_ms,complete_ms,total_ms,ok\n";
-  const std::uint32_t num_parts = static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
+  const std::uint32_t num_parts =
+      static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
   std::uint32_t rep = 0;
   for (const auto& r : all) {
-    std::cout << kPathName << "," << a.total << "," << a.part_size << "," << num_parts << "," << a.concurrency << ","
-              << rep++ << "," << r.create_ms << "," << r.upload_ms << "," << r.complete_ms << "," << r.total_ms << ","
-              << (r.ok ? 1 : 0) << "\n";
+    std::cout << kPathName << "," << a.total << "," << a.part_size << "," << num_parts << ","
+              << a.concurrency << "," << rep++ << "," << r.create_ms << "," << r.upload_ms << ","
+              << r.complete_ms << "," << r.total_ms << "," << (r.ok ? 1 : 0) << "\n";
   }
 }
 
@@ -402,7 +413,8 @@ bool ParseArgs(int argc, char** argv, Args& a) {
   // proxy 约束：part_size 上限 16M。非 last part 必须恰好 == part_size，因此
   // part_size 应为 16M（除非刻意测更小 part 触发 Complete 拒绝，这里不做）。
   if (a.part_size > 16ULL * 1024 * 1024) {
-    std::cerr << "part-size " << rtest::HumanBytes(a.part_size) << " > 16M (proxy multipart_part_size)\n";
+    std::cerr << "part-size " << rtest::HumanBytes(a.part_size)
+              << " > 16M (proxy multipart_part_size)\n";
     return false;
   }
   return true;
@@ -416,7 +428,8 @@ int main(int argc, char** argv) {
   Args a;
   if (!ParseArgs(argc, argv, a)) return 2;
 
-  const std::uint32_t num_parts = static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
+  const std::uint32_t num_parts =
+      static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
 
   if (!a.csv) {
     std::cout << "=== " << kPathName << " multipart bench ===\n"
@@ -456,8 +469,9 @@ int main(int argc, char** argv) {
   std::vector<std::thread> threads;
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
-    threads.emplace_back(Worker, static_cast<std::uint32_t>(w), std::ref(a), std::ref(client), std::cref(host_pattern),
-                         std::ref(sync), std::ref(start), std::ref(stats[w]));
+    threads.emplace_back(Worker, static_cast<std::uint32_t>(w), std::ref(a), std::ref(client),
+                         std::cref(host_pattern), std::ref(sync), std::ref(start),
+                         std::ref(stats[w]));
   }
   for (auto& t : threads) t.join();
 

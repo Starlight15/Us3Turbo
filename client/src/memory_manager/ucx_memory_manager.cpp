@@ -122,8 +122,8 @@ bool UcxMemoryManager::InitListener() {
   }
   char host[NI_MAXHOST] = {};
   char serv[NI_MAXSERV] = {};
-  if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr), sizeof(lattr.sockaddr), host, sizeof(host), serv,
-                  sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+  if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr), sizeof(lattr.sockaddr), host,
+                  sizeof(host), serv, sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
     spdlog::error("UcxMemoryManager: getnameinfo failed");
     return false;
   }
@@ -225,7 +225,8 @@ bool UcxMemoryManager::DoRegister(void* ptr, std::size_t size, ucp_mem_h& out) {
   ucp_mem_h memh = nullptr;
   ucs_status_t st = ucp_mem_map(context_, &mparams, &memh);
   if (st != UCS_OK) {
-    spdlog::error("UcxMemoryManager: ucp_mem_map failed (ptr={} size={} {})", ptr, size, ucs_status_string(st));
+    spdlog::error("UcxMemoryManager: ucp_mem_map failed (ptr={} size={} {})", ptr, size,
+                  ucs_status_string(st));
     return false;
   }
   out = memh;

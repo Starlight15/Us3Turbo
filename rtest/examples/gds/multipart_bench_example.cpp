@@ -173,7 +173,8 @@ int main(int argc, char** argv) {
             << "  parts    : " << num_parts << "\n"
             << "  reps     : " << reps << "\n"
             << "  conc     : " << concurrency << "\n"
-            << "  mode     : " << (multipart_only ? "multipart-only" : "single vs multipart") << "\n"
+            << "  mode     : " << (multipart_only ? "multipart-only" : "single vs multipart")
+            << "\n"
             << std::endl;
 
   void* dev = nullptr;
@@ -220,7 +221,8 @@ int main(int argc, char** argv) {
       // 分段 PUT（num_parts 个 part_size）。
       {
         std::string upload_id, error;
-        if (!client.CreateMultipartUpload("bench", "multi-" + std::to_string(r), PutDataPath::kGds, upload_id, error)) {
+        if (!client.CreateMultipartUpload("bench", "multi-" + std::to_string(r), PutDataPath::kGds,
+                                          upload_id, error)) {
           std::cerr << "CreateMultipartUpload failed: " << error << "\n";
           cudaFree(dev);
           return 1;
@@ -229,7 +231,8 @@ int main(int argc, char** argv) {
         std::vector<Client::PartInfo> parts;
         for (std::uint32_t i = 1; i <= num_parts; ++i) {
           std::string etag;
-          if (!client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = part_size}, etag, error)) {
+          if (!client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = part_size},
+                                    etag, error)) {
             std::cerr << "UploadPartGds " << i << " failed: " << error << "\n";
             cudaFree(dev);
             return 1;
@@ -249,8 +252,10 @@ int main(int argc, char** argv) {
 
     const double sm = Median(single_ms);
     const double mm = Median(multi_ms);
-    const double s_mbs = (sm > 0.0) ? static_cast<double>(total) / (sm / 1000.0) / (1024.0 * 1024.0) : 0.0;
-    const double m_mbs = (mm > 0.0) ? static_cast<double>(total) / (mm / 1000.0) / (1024.0 * 1024.0) : 0.0;
+    const double s_mbs =
+        (sm > 0.0) ? static_cast<double>(total) / (sm / 1000.0) / (1024.0 * 1024.0) : 0.0;
+    const double m_mbs =
+        (mm > 0.0) ? static_cast<double>(total) / (mm / 1000.0) / (1024.0 * 1024.0) : 0.0;
     std::cout << "=== results (median of " << reps << " reps) ===\n"
               << "  single    : " << sm << " ms  " << s_mbs << " MiB/s\n"
               << "  multipart : " << mm << " ms  " << m_mbs << " MiB/s\n";
@@ -281,7 +286,8 @@ int main(int argc, char** argv) {
     sync.arrive_and_wait();
     for (std::uint32_t r = 0; r < reps; ++r) {
       std::string upload_id, error;
-      if (!client.CreateMultipartUpload("bench", "conc-" + std::to_string(wid) + "-" + std::to_string(r),
+      if (!client.CreateMultipartUpload("bench",
+                                        "conc-" + std::to_string(wid) + "-" + std::to_string(r),
                                         PutDataPath::kGds, upload_id, error)) {
         ++stats[wid].fail;
         continue;
@@ -333,7 +339,8 @@ int main(int argc, char** argv) {
   const clk::time_point t_start = start.load(std::memory_order_relaxed);
   const double wall_ms = ms_double(end_max - t_start).count();
   const double wall_s = wall_ms / 1000.0;
-  const double tput = (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
+  const double tput =
+      (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
   std::sort(lat.begin(), lat.end());
   const double avg = lat.empty() ? 0.0 : [&] {
     double s = 0;
@@ -351,8 +358,8 @@ int main(int argc, char** argv) {
     auto pct = [&](double p) {
       return lat[std::min(lat.size() - 1, static_cast<size_t>(p / 100.0 * (lat.size() - 1)))];
     };
-    std::cout << "  per-round(ms): avg=" << avg << "  min=" << lat.front() << "  p50=" << pct(50) << "  p95=" << pct(95)
-              << "  max=" << lat.back() << "\n";
+    std::cout << "  per-round(ms): avg=" << avg << "  min=" << lat.front() << "  p50=" << pct(50)
+              << "  p95=" << pct(95) << "  max=" << lat.back() << "\n";
   }
 
   client.Shutdown();

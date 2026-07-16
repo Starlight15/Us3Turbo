@@ -13,14 +13,14 @@
 
 namespace us3_turbo::client {
 
-bool GdsGetChannel::StatObject(const std::string& bucket, const std::string& key, std::uint64_t& out_object_size,
-                               std::string& out_error) const {
+bool GdsGetChannel::StatObject(const std::string& bucket, const std::string& key,
+                               std::uint64_t& out_object_size, std::string& out_error) const {
   const std::string request_id = detail::MakeRequestId();
   return proxy_.StatObject(request_id, bucket, key, out_object_size, out_error);
 }
 
-bool GdsGetChannel::GetOnce(const std::string& bucket, const std::string& key, MutableBufferView buffer,
-                            GetPathResult& result) const {
+bool GdsGetChannel::GetOnce(const std::string& bucket, const std::string& key,
+                            MutableBufferView buffer, GetPathResult& result) const {
   assert(gds_mgr_ != nullptr);
   const std::string request_id = detail::MakeRequestId();
 

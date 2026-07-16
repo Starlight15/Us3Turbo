@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   const auto& r = resp.ucx_result.value();
-  std::cout << "OK bytes=" << r.bytes_written << " etag=" << r.etag << " crc32c=" << std::hex << r.crc32c << std::dec
-            << "\n";
+  std::cout << "OK bytes=" << r.bytes_written << " etag=" << r.etag << " crc32c=" << std::hex
+            << r.crc32c << std::dec << "\n";
   return 0;
 }

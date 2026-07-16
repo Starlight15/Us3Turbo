@@ -139,7 +139,8 @@ int main(int argc, char** argv) {
   }
 
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload("test-bucket", "ucx-multipart.dat", PutDataPath::kUcx, upload_id, error)) {
+  if (!client.CreateMultipartUpload("test-bucket", "ucx-multipart.dat", PutDataPath::kUcx,
+                                    upload_id, error)) {
     std::cerr << "CreateMultipartUpload failed: " << error << "\n";
     return 1;
   }
@@ -151,7 +152,8 @@ int main(int argc, char** argv) {
   const auto t0 = clk::now();
   for (std::uint32_t i = 1; i <= num_parts; ++i) {
     std::string etag;
-    if (!client.UploadPartUcx(upload_id, i, ConstBufferView{.data = host.data(), .size = part_size}, etag, error)) {
+    if (!client.UploadPartUcx(upload_id, i, ConstBufferView{.data = host.data(), .size = part_size},
+                              etag, error)) {
       std::cerr << "UploadPartUcx " << i << " failed: " << error << "\n";
       return 1;
     }
@@ -167,8 +169,8 @@ int main(int argc, char** argv) {
   const auto t1 = clk::now();
   const double wall_ms = ms_double(t1 - t0).count();
 
-  std::cout << "CompleteMultipartUpload: object_id=" << done.object_id << " size=" << done.object_size
-            << " etag=" << done.etag << "\n";
+  std::cout << "CompleteMultipartUpload: object_id=" << done.object_id
+            << " size=" << done.object_size << " etag=" << done.etag << "\n";
   const double wall_s = wall_ms / 1000.0;
   const double mbs = (wall_s > 0.0) ? static_cast<double>(total) / wall_s / (1024.0 * 1024.0) : 0.0;
   std::cout << "wall=" << wall_ms << "ms throughput=" << mbs << " MiB/s\n";

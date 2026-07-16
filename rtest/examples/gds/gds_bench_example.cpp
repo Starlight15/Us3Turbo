@@ -210,19 +210,21 @@ struct WorkerStats {
   bool ready{false};  // buffer 分配/注册成功
 };
 
-void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client, const std::byte* host_pattern,
-            std::atomic<std::uint64_t>& next, std::uint64_t total, std::barrier<StartSetter>& sync,
-            std::atomic<clk::time_point>& start, WorkerStats& stats) {
+void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
+            const std::byte* host_pattern, std::atomic<std::uint64_t>& next, std::uint64_t total,
+            std::barrier<StartSetter>& sync, std::atomic<clk::time_point>& start,
+            WorkerStats& stats) {
   using namespace us3_turbo::client;
 
   // 1) 分配并填充 device buffer(每个 worker 独立)。
   void* dev = nullptr;
   if (cudaError_t e = cudaMalloc(&dev, a.size); e != cudaSuccess) {
-    std::cerr << "[worker " << wid << "] cudaMalloc(" << HumanBytes(a.size) << ") failed: " << cudaGetErrorString(e)
-              << "\n";
+    std::cerr << "[worker " << wid << "] cudaMalloc(" << HumanBytes(a.size)
+              << ") failed: " << cudaGetErrorString(e) << "\n";
     return;
   }
-  if (cudaError_t e = cudaMemcpy(dev, host_pattern, a.size, cudaMemcpyHostToDevice); e != cudaSuccess) {
+  if (cudaError_t e = cudaMemcpy(dev, host_pattern, a.size, cudaMemcpyHostToDevice);
+      e != cudaSuccess) {
     std::cerr << "[worker " << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return;
@@ -312,8 +314,8 @@ int main(int argc, char** argv) {
   std::vector<std::thread> threads;
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
-    threads.emplace_back(Worker, w, std::ref(a), std::ref(client), host.data(), std::ref(next), a.count, std::ref(sync),
-                         std::ref(start), std::ref(stats[w]));
+    threads.emplace_back(Worker, w, std::ref(a), std::ref(client), host.data(), std::ref(next),
+                         a.count, std::ref(sync), std::ref(start), std::ref(stats[w]));
   }
   for (auto& t : threads) t.join();
 
@@ -356,7 +358,8 @@ int main(int argc, char** argv) {
   for (double v : lat) sum_lat += v;
   const double avg_lat = lat.empty() ? 0.0 : sum_lat / static_cast<double>(lat.size());
 
-  const double throughput_mbs = (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
+  const double throughput_mbs =
+      (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
   const double ops_per_sec = (wall_s > 0.0) ? static_cast<double>(ok) / wall_s : 0.0;
 
   std::cout << "\n=== results ===\n"
@@ -366,9 +369,9 @@ int main(int argc, char** argv) {
             << "  wall time    : " << wall_ms << " ms\n"
             << "  throughput   : " << throughput_mbs << " MiB/s  (" << ops_per_sec << " ops/s)\n";
   if (!lat.empty()) {
-    std::cout << "  latency (ms) : avg=" << avg_lat << "  min=" << lat.front() << "  p50=" << Percentile(lat, 50.0)
-              << "  p95=" << Percentile(lat, 95.0) << "  p99=" << Percentile(lat, 99.0) << "  max=" << lat.back()
-              << "\n";
+    std::cout << "  latency (ms) : avg=" << avg_lat << "  min=" << lat.front()
+              << "  p50=" << Percentile(lat, 50.0) << "  p95=" << Percentile(lat, 95.0)
+              << "  p99=" << Percentile(lat, 99.0) << "  max=" << lat.back() << "\n";
   }
   std::cout.flush();
 

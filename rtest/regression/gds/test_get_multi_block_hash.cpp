@@ -54,8 +54,8 @@ int main(int argc, char** argv) {
   }
 
   if (total <= kPartSizeLimit) {
-    std::cerr << "[FAIL] " << kTestName << ": size must be > 16M for multi-block, got " << rtest::HumanBytes(total)
-              << "\n";
+    std::cerr << "[FAIL] " << kTestName << ": size must be > 16M for multi-block, got "
+              << rtest::HumanBytes(total) << "\n";
     return 2;
   }
   const std::uint64_t part1 = kPartSizeLimit;          // 16M（非 last，须 == 上限）
@@ -114,21 +114,25 @@ int main(int argc, char** argv) {
   {
     std::string etag1, etag2;
     // Part 1
-    if (cudaError_t e = cudaMemcpy(dev_put, host_full.data(), part1, cudaMemcpyHostToDevice); e != cudaSuccess) {
+    if (cudaError_t e = cudaMemcpy(dev_put, host_full.data(), part1, cudaMemcpyHostToDevice);
+        e != cudaSuccess) {
       fail_reason = std::string("cudaMemcpy p1: ") + cudaGetErrorString(e);
       goto cleanup;
     }
-    if (!client.UploadPartGds(upload_id, 1, ConstBufferView{.data = dev_put, .size = part1}, etag1, error)) {
+    if (!client.UploadPartGds(upload_id, 1, ConstBufferView{.data = dev_put, .size = part1}, etag1,
+                              error)) {
       fail_reason = "UploadPartGds 1 failed: " + error;
       goto cleanup;
     }
     // Part 2
-    if (cudaError_t e = cudaMemcpy(dev_put, host_full.data() + part1, part2, cudaMemcpyHostToDevice);
+    if (cudaError_t e =
+            cudaMemcpy(dev_put, host_full.data() + part1, part2, cudaMemcpyHostToDevice);
         e != cudaSuccess) {
       fail_reason = std::string("cudaMemcpy p2: ") + cudaGetErrorString(e);
       goto cleanup;
     }
-    if (!client.UploadPartGds(upload_id, 2, ConstBufferView{.data = dev_put, .size = part2}, etag2, error)) {
+    if (!client.UploadPartGds(upload_id, 2, ConstBufferView{.data = dev_put, .size = part2}, etag2,
+                              error)) {
       fail_reason = "UploadPartGds 2 failed: " + error;
       goto cleanup;
     }
@@ -140,10 +144,12 @@ int main(int argc, char** argv) {
       goto cleanup;
     }
     if (done.object_size != total) {
-      fail_reason = "object_size mismatch: got " + std::to_string(done.object_size) + " want " + std::to_string(total);
+      fail_reason = "object_size mismatch: got " + std::to_string(done.object_size) + " want " +
+                    std::to_string(total);
       goto cleanup;
     }
-    std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size << " etag=" << done.etag << "\n";
+    std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size
+              << " etag=" << done.etag << "\n";
   }
 
   // ---- StatObject + GET ----
@@ -160,19 +166,22 @@ int main(int argc, char** argv) {
     }
     cudaMemset(dev_get, 0xBB, total);
     GetPathResult get_res;
-    if (!client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_get, .size = total}, get_res) || !get_res.ok) {
+    if (!client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_get, .size = total},
+                             get_res) ||
+        !get_res.ok) {
       fail_reason = "GetObjectGds FAILED: " + get_res.error_message;
       goto cleanup;
     }
-    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex << get_res.crc32c << std::dec
-              << " hash=" << get_res.hash << "\n";
+    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
+              << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
 
     if (get_res.crc32c != 0) {
       fail_reason = "crc32c != 0 (expected 0 for multi-block)";
     } else if (get_res.hash.empty()) {
       fail_reason = "hash is empty";
     } else if (get_res.bytes_read != total) {
-      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) + " want " + std::to_string(total);
+      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) + " want " +
+                    std::to_string(total);
     } else {
       test_passed = true;
     }

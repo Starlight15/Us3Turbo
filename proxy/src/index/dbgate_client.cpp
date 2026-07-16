@@ -126,7 +126,8 @@ int DBGateClient::SendAndRecv(const std::vector<char>& req_buf, std::vector<char
   return PROXY_ERR_BACKEND_IO;
 }
 
-int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized, std::string& out_mgo_rsp_serialized) {
+int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized,
+                             std::string& out_mgo_rsp_serialized) {
   /* 反序列化请求 */
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   if (!mgo_req.ParseFromString(mgo_req_serialized)) {
@@ -145,7 +146,8 @@ int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized, std::string&
   head->set_version(1);
   head->set_magic_flag(0x12340987);
   head->set_random_num(dist(gen));
-  head->set_flow_no(static_cast<::google::protobuf::uint32>(flow_no_.fetch_add(1, std::memory_order_relaxed)));
+  head->set_flow_no(
+      static_cast<::google::protobuf::uint32>(flow_no_.fetch_add(1, std::memory_order_relaxed)));
   head->set_session_no("0");
   head->set_message_type(150000);  // EXECUTE_MGO_REQUEST
   head->set_worker_index(0);
@@ -175,7 +177,8 @@ int DBGateClient::ExecuteMgo(const std::string& mgo_req_serialized, std::string&
   }
 
   if (!rsp_msg.has_head() || rsp_msg.head().message_type() != 150001) {
-    LOG_SYS_ERROR("Unexpected message_type in response: {}", rsp_msg.has_head() ? rsp_msg.head().message_type() : 0);
+    LOG_SYS_ERROR("Unexpected message_type in response: {}",
+                  rsp_msg.has_head() ? rsp_msg.head().message_type() : 0);
     return PROXY_ERR_BACKEND_PROTOCOL;
   }
 
@@ -212,7 +215,9 @@ void SetTarget(ucloud::umgogate::ExecuteMgoRequest& r, const mgo::Target& t) {
 }
 
 /* 按 upload_id 构建 selector（JSON 字符串自动转义） */
-std::string SelByUpload(const std::string& upload_id) { return nlohmann::json{{mgo::f::kUploadId, upload_id}}.dump(); }
+std::string SelByUpload(const std::string& upload_id) {
+  return nlohmann::json{{mgo::f::kUploadId, upload_id}}.dump();
+}
 
 /* 按 bucket_id + key 构建 selector */
 std::string SelByBucketKey(std::uint32_t bucket_id, const std::string& key) {
@@ -242,8 +247,9 @@ int ExecuteMgoHelper(DBGateClient& client, ucloud::umgogate::ExecuteMgoRequest& 
 
 // ============================ fileidx_col ============================
 
-int DBGateClient::UpsertFileIdx(std::uint32_t bucket_id, const std::string& key, const std::string& first_object,
-                                std::uint64_t block_size, std::uint64_t filesize, const std::string& hash) {
+int DBGateClient::UpsertFileIdx(std::uint32_t bucket_id, const std::string& key,
+                                const std::string& first_object, std::uint64_t block_size,
+                                std::uint64_t filesize, const std::string& hash) {
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   SetTarget(mgo_req, mgo::kFileIdx);
   mgo_req.set_optype(ucloud::umgogate::OP_UPDATE);
@@ -272,7 +278,8 @@ int DBGateClient::UpsertFileIdx(std::uint32_t bucket_id, const std::string& key,
   return ExecuteMgoHelper(*this, mgo_req, rsp);
 }
 
-int DBGateClient::QueryFileIdx(std::uint32_t bucket_id, const std::string& key, std::string& out_doc) {
+int DBGateClient::QueryFileIdx(std::uint32_t bucket_id, const std::string& key,
+                               std::string& out_doc) {
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   SetTarget(mgo_req, mgo::kFileIdx);
   mgo_req.set_optype(ucloud::umgogate::OP_FIND);
@@ -294,8 +301,8 @@ int DBGateClient::QueryFileIdx(std::uint32_t bucket_id, const std::string& key, 
 
 // ============================ minit_col ============================
 
-int DBGateClient::InsertMinit(const std::string& upload_id, std::uint32_t bucket_id, const std::string& key,
-                              const std::string& first_object, int path) {
+int DBGateClient::InsertMinit(const std::string& upload_id, std::uint32_t bucket_id,
+                              const std::string& key, const std::string& first_object, int path) {
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   SetTarget(mgo_req, mgo::kMinit);
   mgo_req.set_optype(ucloud::umgogate::OP_INSERT);
@@ -339,7 +346,8 @@ int DBGateClient::QueryMinit(const std::string& upload_id, std::string& out_doc)
   return 0;
 }
 
-int DBGateClient::UpdateMinit(const std::string& upload_id, const std::string& field_name, std::uint64_t value) {
+int DBGateClient::UpdateMinit(const std::string& upload_id, const std::string& field_name,
+                              std::uint64_t value) {
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   SetTarget(mgo_req, mgo::kMinit);
   mgo_req.set_optype(ucloud::umgogate::OP_UPDATE);
@@ -372,15 +380,16 @@ int DBGateClient::DeleteMinit(const std::string& upload_id) {
 
 // ============================ partlist_col ============================
 
-int DBGateClient::InsertPart(const std::string& upload_id, std::uint32_t part_number, std::uint64_t offset,
-                             std::uint64_t size, const std::string& etag,
+int DBGateClient::InsertPart(const std::string& upload_id, std::uint32_t part_number,
+                             std::uint64_t offset, std::uint64_t size, const std::string& etag,
                              const std::vector<std::uint32_t>& block_crcs) {
   ucloud::umgogate::ExecuteMgoRequest mgo_req;
   SetTarget(mgo_req, mgo::kPartList);
   mgo_req.set_optype(ucloud::umgogate::OP_INSERT);
 
   nlohmann::json doc = {
-      {mgo::f::kUploadId, upload_id}, {mgo::f::kSeq, part_number}, {mgo::f::kOffset, offset}, {mgo::f::kSize, size},
+      {mgo::f::kUploadId, upload_id}, {mgo::f::kSeq, part_number},
+      {mgo::f::kOffset, offset},      {mgo::f::kSize, size},
       {mgo::f::kEtag, etag},          {mgo::f::kCrc, block_crcs},  // vector → JSON array 自动
   };
 

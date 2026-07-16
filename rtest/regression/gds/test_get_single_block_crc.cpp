@@ -74,7 +74,8 @@ int main(int argc, char** argv) {
   }
   std::vector<std::byte> host(size);
   rtest::FillHostPattern(host);
-  if (cudaError_t e = cudaMemcpy(dev_put, host.data(), size, cudaMemcpyHostToDevice); e != cudaSuccess) {
+  if (cudaError_t e = cudaMemcpy(dev_put, host.data(), size, cudaMemcpyHostToDevice);
+      e != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_put);
     return 1;
@@ -112,8 +113,8 @@ int main(int argc, char** argv) {
     const auto& pr = put_resp.gds_result.value();
     put_etag = pr.etag;
     put_crc = pr.crc32c;
-    std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << put_etag << " crc32c=0x" << std::hex << put_crc
-              << std::dec << "\n";
+    std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << put_etag << " crc32c=0x"
+              << std::hex << put_crc << std::dec << "\n";
   }
 
   // ---- StatObject ----
@@ -135,23 +136,27 @@ int main(int argc, char** argv) {
     }
     cudaMemset(dev_get, 0xAA, size);
     GetPathResult get_res;
-    if (!client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_get, .size = size}, get_res) || !get_res.ok) {
+    if (!client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_get, .size = size},
+                             get_res) ||
+        !get_res.ok) {
       fail_reason = "GetObjectGds FAILED: " + get_res.error_message;
       goto cleanup;
     }
-    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex << get_res.crc32c << std::dec
-              << " hash=" << get_res.hash << "\n";
+    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
+              << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
 
     if (get_res.crc32c == 0) {
       fail_reason = "crc32c == 0 (expected non-zero for single block)";
     } else if (get_res.hash.empty()) {
       fail_reason = "hash is empty";
     } else if (get_res.crc32c != put_crc) {
-      fail_reason = "crc32c mismatch: get=0x" + std::to_string(get_res.crc32c) + " put=0x" + std::to_string(put_crc);
+      fail_reason = "crc32c mismatch: get=0x" + std::to_string(get_res.crc32c) + " put=0x" +
+                    std::to_string(put_crc);
     } else if (get_res.hash != put_etag) {
       fail_reason = "hash != put.etag: get=" + get_res.hash + " put=" + put_etag;
     } else if (get_res.bytes_read != size) {
-      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) + " want " + std::to_string(size);
+      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) + " want " +
+                    std::to_string(size);
     } else {
       test_passed = true;
     }

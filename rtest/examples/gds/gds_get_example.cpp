@@ -86,14 +86,17 @@ void FillPattern(std::vector<std::byte>& buf, std::uint64_t offset_base = 0) {
 }
 
 // D2H 拷贝 + 逐字节比对。
-bool VerifyGet(const void* dev_buf, std::size_t size, const std::vector<std::byte>& expected, const std::string& tag) {
+bool VerifyGet(const void* dev_buf, std::size_t size, const std::vector<std::byte>& expected,
+               const std::string& tag) {
   std::vector<std::byte> host_read(size);
-  if (cudaError_t e = cudaMemcpy(host_read.data(), dev_buf, size, cudaMemcpyDeviceToHost); e != cudaSuccess) {
+  if (cudaError_t e = cudaMemcpy(host_read.data(), dev_buf, size, cudaMemcpyDeviceToHost);
+      e != cudaSuccess) {
     std::cerr << "[" << tag << "] D2H failed: " << cudaGetErrorString(e) << "\n";
     return false;
   }
   if (host_read.size() != expected.size()) {
-    std::cerr << "[" << tag << "] size mismatch: got " << host_read.size() << " want " << expected.size() << "\n";
+    std::cerr << "[" << tag << "] size mismatch: got " << host_read.size() << " want "
+              << expected.size() << "\n";
     return false;
   }
   std::size_t mismatches = 0;
@@ -105,8 +108,9 @@ bool VerifyGet(const void* dev_buf, std::size_t size, const std::vector<std::byt
     }
   }
   if (mismatches > 0) {
-    std::cerr << "[" << tag << "] DATA MISMATCH: " << mismatches << " bytes differ, first at offset " << first_mismatch
-              << " (got 0x" << std::hex << static_cast<unsigned>(host_read[first_mismatch]) << " want 0x"
+    std::cerr << "[" << tag << "] DATA MISMATCH: " << mismatches
+              << " bytes differ, first at offset " << first_mismatch << " (got 0x" << std::hex
+              << static_cast<unsigned>(host_read[first_mismatch]) << " want 0x"
               << static_cast<unsigned>(expected[first_mismatch]) << std::dec << ")\n";
     return false;
   }
@@ -118,8 +122,8 @@ bool VerifyGet(const void* dev_buf, std::size_t size, const std::vector<std::byt
 // 注意：GPU buffer 必须在 PUT 和 GET 之间保持存活（不 free 再 malloc），
 // 否则 cuObj descriptor 失效导致 RDMA_WRITE 写入旧物理页。
 
-bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& bucket, const std::string& key,
-                      std::uint64_t single_size, bool verify_crc32c) {
+bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& bucket,
+                      const std::string& key, std::uint64_t single_size, bool verify_crc32c) {
   using namespace us3_turbo::client;
 
   std::cout << "\n========== Single PUT + GET ==========\n"
@@ -136,7 +140,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   // ---- PUT ----
   std::vector<std::byte> host_data(single_size);
   FillPattern(host_data);
-  if (cudaError_t e = cudaMemcpy(dev_buf, host_data.data(), single_size, cudaMemcpyHostToDevice); e != cudaSuccess) {
+  if (cudaError_t e = cudaMemcpy(dev_buf, host_data.data(), single_size, cudaMemcpyHostToDevice);
+      e != cudaSuccess) {
     std::cerr << "cudaMemcpy H2D: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev_buf);
     return false;
@@ -150,7 +155,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
 
   ClientProxyPutResponse put_resp;
   const auto t0 = clk::now();
-  bool put_ok = client.PutObject(put_req, ConstBufferView{.data = dev_buf, .size = single_size}, put_resp);
+  bool put_ok =
+      client.PutObject(put_req, ConstBufferView{.data = dev_buf, .size = single_size}, put_resp);
   const auto t1 = clk::now();
 
   if (!put_ok) {
@@ -161,9 +167,10 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   const auto& pr = put_resp.gds_result.value();
   const double put_ms = ms_double(t1 - t0).count();
   const double put_mbs =
-      (put_ms > 0.0) ? static_cast<double>(single_size) / (put_ms / 1000.0) / (1024.0 * 1024.0) : 0.0;
-  std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << pr.etag << " crc32c=0x" << std::hex << pr.crc32c
-            << std::dec << " wall=" << put_ms << "ms"
+      (put_ms > 0.0) ? static_cast<double>(single_size) / (put_ms / 1000.0) / (1024.0 * 1024.0)
+                     : 0.0;
+  std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << pr.etag << " crc32c=0x"
+            << std::hex << pr.crc32c << std::dec << " wall=" << put_ms << "ms"
             << " throughput=" << put_mbs << " MiB/s\n";
 
   // ---- StatObject ----
@@ -176,7 +183,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   }
   std::cout << "  StatObject OK: object_size=" << HumanBytes(object_size) << "\n";
   if (object_size != single_size) {
-    std::cerr << "  StatObject size mismatch: got " << object_size << " want " << single_size << "\n";
+    std::cerr << "  StatObject size mismatch: got " << object_size << " want " << single_size
+              << "\n";
     cudaFree(dev_buf);
     return false;
   }
@@ -190,7 +198,8 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
 
   GetPathResult get_result;
   const auto t2 = clk::now();
-  bool get_ok = client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_buf, .size = object_size}, get_result);
+  bool get_ok = client.GetObjectGds(
+      bucket, key, MutableBufferView{.data = dev_buf, .size = object_size}, get_result);
   const auto t3 = clk::now();
 
   if (!get_ok || !get_result.ok) {
@@ -200,13 +209,16 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   }
   const double get_ms = ms_double(t3 - t2).count();
   const double get_mbs =
-      (get_ms > 0.0) ? static_cast<double>(object_size) / (get_ms / 1000.0) / (1024.0 * 1024.0) : 0.0;
-  std::cout << "  GET OK: bytes_read=" << get_result.bytes_read << " crc32c=0x" << std::hex << get_result.crc32c
-            << std::dec << " hash=" << get_result.hash << " wall=" << get_ms << "ms"
+      (get_ms > 0.0) ? static_cast<double>(object_size) / (get_ms / 1000.0) / (1024.0 * 1024.0)
+                     : 0.0;
+  std::cout << "  GET OK: bytes_read=" << get_result.bytes_read << " crc32c=0x" << std::hex
+            << get_result.crc32c << std::dec << " hash=" << get_result.hash << " wall=" << get_ms
+            << "ms"
             << " throughput=" << get_mbs << " MiB/s\n";
 
   if (get_result.bytes_read != object_size) {
-    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read << " want " << object_size << "\n";
+    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read << " want "
+              << object_size << "\n";
     cudaFree(dev_buf);
     return false;
   }
@@ -226,8 +238,9 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
 // 注意：PUT buffer 和 GET buffer 同时存活，避免 CUDA 地址重用导致
 // cuObj descriptor 失效。
 
-bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& bucket, const std::string& key,
-                         std::uint64_t part_size, std::uint32_t num_parts, bool verify_crc32c) {
+bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& bucket,
+                         const std::string& key, std::uint64_t part_size, std::uint32_t num_parts,
+                         bool verify_crc32c) {
   using namespace us3_turbo::client;
 
   const std::uint64_t total = part_size * num_parts;
@@ -276,14 +289,16 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
     // 准备该 part 数据到 GPU
     std::vector<std::byte> part_buf(part_size);
     FillPattern(part_buf, static_cast<std::uint64_t>(i - 1) * part_size);
-    if (cudaError_t e = cudaMemcpy(dev_put, part_buf.data(), part_size, cudaMemcpyHostToDevice); e != cudaSuccess) {
+    if (cudaError_t e = cudaMemcpy(dev_put, part_buf.data(), part_size, cudaMemcpyHostToDevice);
+        e != cudaSuccess) {
       std::cerr << "cudaMemcpy H2D part " << i << ": " << cudaGetErrorString(e) << "\n";
       cudaFree(dev_put);
       return false;
     }
 
     std::string etag;
-    if (!client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev_put, .size = part_size}, etag, error)) {
+    if (!client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev_put, .size = part_size},
+                              etag, error)) {
       std::cerr << "UploadPartGds " << i << " failed: " << error << "\n";
       cudaFree(dev_put);
       return false;
@@ -301,10 +316,11 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
   }
   const auto t1 = clk::now();
   const double put_ms = ms_double(t1 - t0).count();
-  const double put_mbs = (put_ms > 0.0) ? static_cast<double>(total) / (put_ms / 1000.0) / (1024.0 * 1024.0) : 0.0;
+  const double put_mbs =
+      (put_ms > 0.0) ? static_cast<double>(total) / (put_ms / 1000.0) / (1024.0 * 1024.0) : 0.0;
 
-  std::cout << "  CompleteMultipartUpload: object_id=" << done.object_id << " size=" << done.object_size
-            << " etag=" << done.etag << " wall=" << put_ms << "ms"
+  std::cout << "  CompleteMultipartUpload: object_id=" << done.object_id
+            << " size=" << done.object_size << " etag=" << done.etag << " wall=" << put_ms << "ms"
             << " throughput=" << put_mbs << " MiB/s\n";
 
   if (done.object_size != total) {
@@ -341,7 +357,8 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
 
   GetPathResult get_result;
   const auto t2 = clk::now();
-  bool get_ok = client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_get, .size = object_size}, get_result);
+  bool get_ok = client.GetObjectGds(
+      bucket, key, MutableBufferView{.data = dev_get, .size = object_size}, get_result);
   const auto t3 = clk::now();
 
   if (!get_ok || !get_result.ok) {
@@ -352,13 +369,16 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
   }
   const double get_ms = ms_double(t3 - t2).count();
   const double get_mbs =
-      (get_ms > 0.0) ? static_cast<double>(object_size) / (get_ms / 1000.0) / (1024.0 * 1024.0) : 0.0;
-  std::cout << "  GET OK: bytes_read=" << get_result.bytes_read << " crc32c=0x" << std::hex << get_result.crc32c
-            << std::dec << " hash=" << get_result.hash << " wall=" << get_ms << "ms"
+      (get_ms > 0.0) ? static_cast<double>(object_size) / (get_ms / 1000.0) / (1024.0 * 1024.0)
+                     : 0.0;
+  std::cout << "  GET OK: bytes_read=" << get_result.bytes_read << " crc32c=0x" << std::hex
+            << get_result.crc32c << std::dec << " hash=" << get_result.hash << " wall=" << get_ms
+            << "ms"
             << " throughput=" << get_mbs << " MiB/s\n";
 
   if (get_result.bytes_read != object_size) {
-    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read << " want " << object_size << "\n";
+    std::cerr << "  GET bytes_read mismatch: got " << get_result.bytes_read << " want "
+              << object_size << "\n";
     cudaFree(dev_put);
     cudaFree(dev_get);
     return false;
@@ -400,8 +420,9 @@ int main(int argc, char** argv) {
 
   std::string proxy_addr = "192.168.1.198:9100";
   std::uint64_t single_size = 4ULL * 1024 * 1024;  // 默认 4MiB（单步上限内）
-  std::uint64_t part_size = 16ULL * 1024 * 1024;   // 默认 16MiB per part（须与 proxy multipart_part_size 一致）
-  std::uint32_t num_parts = 2;                     // 默认 2 parts = 32MiB
+  std::uint64_t part_size =
+      16ULL * 1024 * 1024;  // 默认 16MiB per part（须与 proxy multipart_part_size 一致）
+  std::uint32_t num_parts = 2;  // 默认 2 parts = 32MiB
   bool verify = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -467,8 +488,9 @@ int main(int argc, char** argv) {
   int failures = 0;
 
   // 使用时间戳后缀避免与上次运行残留数据冲突
-  const auto ts = std::to_string(
-      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+  const auto ts = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                                     std::chrono::system_clock::now().time_since_epoch())
+                                     .count());
 
   // 1. 不存在的 key → 正确报错
   if (!TestStatNonExistent(client, bucket)) ++failures;

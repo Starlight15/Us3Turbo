@@ -16,7 +16,8 @@ namespace us3_turbo::client {
 [[nodiscard]] std::uint32_t Crc32c(std::string_view data) noexcept;
 
 [[nodiscard]] std::uint32_t Crc32cInit() noexcept;
-[[nodiscard]] std::uint32_t Crc32cUpdate(std::uint32_t state, const void* data, std::size_t n) noexcept;
+[[nodiscard]] std::uint32_t Crc32cUpdate(std::uint32_t state, const void* data,
+                                         std::size_t n) noexcept;
 [[nodiscard]] std::uint32_t Crc32cFinalize(std::uint32_t state) noexcept;
 
 }  // namespace us3_turbo::client

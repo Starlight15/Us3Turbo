@@ -44,17 +44,19 @@ class ProxyService final : public Control {
   }
 
   /* GDS 单块上传，委托 SinglePut。 */
-  void GdsPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request, PutPathResult* response,
-              google::protobuf::Closure* done) override;
+  void GdsPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request,
+              PutPathResult* response, google::protobuf::Closure* done) override;
 
   /* UCX 单块上传，委托 SinglePut。 */
-  void UcxPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request, PutPathResult* response,
-              google::protobuf::Closure* done) override;
+  void UcxPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request,
+              PutPathResult* response, google::protobuf::Closure* done) override;
 
   // ===== 分段上传接口（client → proxy） =====
   /* 创建分段上传会话，委托 Multipart。 */
-  void CreateMultipartUpload(google::protobuf::RpcController* cntl, const CreateMultipartUploadRequest* request,
-                             CreateMultipartUploadResponse* response, google::protobuf::Closure* done) override;
+  void CreateMultipartUpload(google::protobuf::RpcController* cntl,
+                             const CreateMultipartUploadRequest* request,
+                             CreateMultipartUploadResponse* response,
+                             google::protobuf::Closure* done) override;
 
   /* GDS 分段上传 part，委托 Multipart。 */
   void UploadPartGds(google::protobuf::RpcController* cntl, const UploadPartGdsRequest* request,
@@ -65,25 +67,29 @@ class ProxyService final : public Control {
                      UploadPartResponse* response, google::protobuf::Closure* done) override;
 
   /* 完成分段上传，委托 Multipart。 */
-  void CompleteMultipartUpload(google::protobuf::RpcController* cntl, const CompleteMultipartUploadRequest* request,
-                               CompleteMultipartUploadResponse* response, google::protobuf::Closure* done) override;
+  void CompleteMultipartUpload(google::protobuf::RpcController* cntl,
+                               const CompleteMultipartUploadRequest* request,
+                               CompleteMultipartUploadResponse* response,
+                               google::protobuf::Closure* done) override;
 
   /* 取消分段上传，委托 Multipart。 */
-  void AbortMultipartUpload(google::protobuf::RpcController* cntl, const AbortMultipartUploadRequest* request,
-                            AbortMultipartUploadResponse* response, google::protobuf::Closure* done) override;
+  void AbortMultipartUpload(google::protobuf::RpcController* cntl,
+                            const AbortMultipartUploadRequest* request,
+                            AbortMultipartUploadResponse* response,
+                            google::protobuf::Closure* done) override;
 
   // ===== GET 接口（client → proxy） =====
   /* 查询对象元数据，委托 GetObject。 */
-  void StatObject(google::protobuf::RpcController* cntl, const StatObjectRequest* request, StatObjectResponse* response,
-                  google::protobuf::Closure* done) override;
+  void StatObject(google::protobuf::RpcController* cntl, const StatObjectRequest* request,
+                  StatObjectResponse* response, google::protobuf::Closure* done) override;
 
   /* GDS 下载，委托 GetObject。 */
-  void GdsGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request, GetPathResult* response,
-              google::protobuf::Closure* done) override;
+  void GdsGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request,
+              GetPathResult* response, google::protobuf::Closure* done) override;
 
   /* UCX 下载，委托 GetObject。 */
-  void UcxGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request, GetPathResult* response,
-              google::protobuf::Closure* done) override;
+  void UcxGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request,
+              GetPathResult* response, google::protobuf::Closure* done) override;
 
  private:
   /* TTL 清理线程主函数，周期扫描删除过期 multipart 会话。 */

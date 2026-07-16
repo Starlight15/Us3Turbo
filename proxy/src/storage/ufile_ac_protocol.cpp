@@ -8,13 +8,15 @@ namespace us3_turbo::proxy {
 
 // ============================ GDS PUT ============================
 
-std::size_t EncodeGdsPutRequest(const std::string& key, const std::string& rdma_token, std::uint64_t gpu_offset,
-                                std::uint64_t data_len, std::uint32_t setid, std::uint64_t session_id,
+std::size_t EncodeGdsPutRequest(const std::string& key, const std::string& rdma_token,
+                                std::uint64_t gpu_offset, std::uint64_t data_len,
+                                std::uint32_t setid, std::uint64_t session_id,
                                 std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t tok_len = static_cast<std::uint32_t>(rdma_token.size());
   const std::uint32_t body_len = static_cast<std::uint32_t>(GDS_PUT_REQ_SIZE + key_len + tok_len);
-  const std::uint32_t msg_size_field = static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
   const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
 
   out_buffer.resize(total);
@@ -55,7 +57,8 @@ std::size_t EncodeGdsPutRequest(const std::string& key, const std::string& rdma_
   return total;
 }
 
-int DecodeGdsPutResponse(const char* buffer, std::size_t len, GdsPutRsp& out_rsp, std::string& out_err) {
+int DecodeGdsPutResponse(const char* buffer, std::size_t len, GdsPutRsp& out_rsp,
+                         std::string& out_err) {
   if (len < GDS_PUT_RSP_SIZE) {
     out_err = "GdsPut rsp body too short len=" + std::to_string(len);
     return -1;
@@ -65,8 +68,8 @@ int DecodeGdsPutResponse(const char* buffer, std::size_t len, GdsPutRsp& out_rsp
   const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
   const std::size_t var_len = len - GDS_PUT_RSP_SIZE;
   if (static_cast<std::size_t>(etag_len) + errmsg_len > var_len) {
-    out_err = "GdsPut rsp var overflow etag=" + std::to_string(etag_len) + " errmsg=" + std::to_string(errmsg_len) +
-              " var=" + std::to_string(var_len);
+    out_err = "GdsPut rsp var overflow etag=" + std::to_string(etag_len) +
+              " errmsg=" + std::to_string(errmsg_len) + " var=" + std::to_string(var_len);
     return -1;
   }
   out_err.assign(buffer + GDS_PUT_RSP_SIZE + etag_len, errmsg_len);
@@ -75,14 +78,18 @@ int DecodeGdsPutResponse(const char* buffer, std::size_t len, GdsPutRsp& out_rsp
 
 // ============================ UCX PUT ============================
 
-std::size_t EncodeUcxPutRequest(const std::string& key, std::uint64_t remote_addr, const std::string& packed_rkey,
-                                const std::string& client_ucx_addr, std::uint64_t source_offset, std::uint64_t data_len,
-                                std::uint32_t setid, std::uint64_t session_id, std::vector<char>& out_buffer) {
+std::size_t EncodeUcxPutRequest(const std::string& key, std::uint64_t remote_addr,
+                                const std::string& packed_rkey, const std::string& client_ucx_addr,
+                                std::uint64_t source_offset, std::uint64_t data_len,
+                                std::uint32_t setid, std::uint64_t session_id,
+                                std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t addr_len = static_cast<std::uint32_t>(client_ucx_addr.size());
   const std::uint32_t rkey_len = static_cast<std::uint32_t>(packed_rkey.size());
-  const std::uint32_t body_len = static_cast<std::uint32_t>(UCX_PUT_REQ_SIZE + key_len + addr_len + rkey_len);
-  const std::uint32_t msg_size_field = static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(UCX_PUT_REQ_SIZE + key_len + addr_len + rkey_len);
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
   const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
 
   out_buffer.resize(total);
@@ -128,7 +135,8 @@ std::size_t EncodeUcxPutRequest(const std::string& key, std::uint64_t remote_add
   return total;
 }
 
-int DecodeUcxPutResponse(const char* buffer, std::size_t len, UcxPutRsp& out_rsp, std::string& out_err) {
+int DecodeUcxPutResponse(const char* buffer, std::size_t len, UcxPutRsp& out_rsp,
+                         std::string& out_err) {
   if (len < UCX_PUT_RSP_SIZE) {
     out_err = "UcxPut rsp body too short len=" + std::to_string(len);
     return -1;
@@ -137,7 +145,8 @@ int DecodeUcxPutResponse(const char* buffer, std::size_t len, UcxPutRsp& out_rsp
   const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
   const std::size_t var_len = len - UCX_PUT_RSP_SIZE;
   if (static_cast<std::size_t>(errmsg_len) > var_len) {
-    out_err = "UcxPut rsp var overflow errmsg=" + std::to_string(errmsg_len) + " var=" + std::to_string(var_len);
+    out_err = "UcxPut rsp var overflow errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
     return -1;
   }
   out_err.assign(buffer + UCX_PUT_RSP_SIZE, errmsg_len);
@@ -150,7 +159,8 @@ std::size_t EncodeDelRequest(const std::string& key, std::uint32_t setid, std::u
                              std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t body_len = static_cast<std::uint32_t>(DEL_REQ_SIZE + key_len);
-  const std::uint32_t msg_size_field = static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
   const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
 
   out_buffer.resize(total);
@@ -192,7 +202,8 @@ int DecodeDelResponse(const char* buffer, std::size_t len, DelRsp& out_rsp, std:
   const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
   const std::size_t var_len = len - DEL_RSP_SIZE;
   if (static_cast<std::size_t>(errmsg_len) > var_len) {
-    out_err = "Del rsp var overflow errmsg=" + std::to_string(errmsg_len) + " var=" + std::to_string(var_len);
+    out_err = "Del rsp var overflow errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
     return -1;
   }
   out_err.assign(buffer + DEL_RSP_SIZE, errmsg_len);
@@ -201,13 +212,16 @@ int DecodeDelResponse(const char* buffer, std::size_t len, DelRsp& out_rsp, std:
 
 // ============================ GDS GET ============================
 
-std::size_t EncodeGdsGetRequest(const std::string& key, const std::string& rdma_token, std::uint64_t read_offset,
-                                std::uint64_t gpu_offset, std::uint64_t data_len, std::uint32_t setid,
-                                std::uint64_t session_id, std::uint64_t request_id, std::vector<char>& out_buffer) {
+std::size_t EncodeGdsGetRequest(const std::string& key, const std::string& rdma_token,
+                                std::uint64_t read_offset, std::uint64_t gpu_offset,
+                                std::uint64_t data_len, std::uint32_t setid,
+                                std::uint64_t session_id, std::uint64_t request_id,
+                                std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t tok_len = static_cast<std::uint32_t>(rdma_token.size());
   const std::uint32_t body_len = static_cast<std::uint32_t>(GDS_GET_REQ_SIZE + key_len + tok_len);
-  const std::uint32_t msg_size_field = static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
   const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
 
   out_buffer.resize(total);
@@ -249,7 +263,8 @@ std::size_t EncodeGdsGetRequest(const std::string& key, const std::string& rdma_
   return total;
 }
 
-int DecodeGdsGetResponse(const char* buffer, std::size_t len, GdsGetRsp& out_rsp, std::string& out_err) {
+int DecodeGdsGetResponse(const char* buffer, std::size_t len, GdsGetRsp& out_rsp,
+                         std::string& out_err) {
   if (len < GDS_GET_RSP_SIZE) {
     out_err = "GdsGet rsp body too short len=" + std::to_string(len);
     return -1;
@@ -258,7 +273,8 @@ int DecodeGdsGetResponse(const char* buffer, std::size_t len, GdsGetRsp& out_rsp
   const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
   const std::size_t var_len = len - GDS_GET_RSP_SIZE;
   if (static_cast<std::size_t>(errmsg_len) > var_len) {
-    out_err = "GdsGet rsp var overflow errmsg=" + std::to_string(errmsg_len) + " var=" + std::to_string(var_len);
+    out_err = "GdsGet rsp var overflow errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
     return -1;
   }
   out_err.assign(buffer + GDS_GET_RSP_SIZE, errmsg_len);
@@ -267,15 +283,19 @@ int DecodeGdsGetResponse(const char* buffer, std::size_t len, GdsGetRsp& out_rsp
 
 // ============================ UCX GET ============================
 
-std::size_t EncodeUcxGetRequest(const std::string& key, std::uint64_t remote_addr, const std::string& packed_rkey,
-                                const std::string& client_ucx_addr, std::uint64_t dest_offset,
-                                std::uint64_t read_offset, std::uint64_t data_len, std::uint32_t setid,
-                                std::uint64_t session_id, std::uint64_t request_id, std::vector<char>& out_buffer) {
+std::size_t EncodeUcxGetRequest(const std::string& key, std::uint64_t remote_addr,
+                                const std::string& packed_rkey, const std::string& client_ucx_addr,
+                                std::uint64_t dest_offset, std::uint64_t read_offset,
+                                std::uint64_t data_len, std::uint32_t setid,
+                                std::uint64_t session_id, std::uint64_t request_id,
+                                std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t addr_len = static_cast<std::uint32_t>(client_ucx_addr.size());
   const std::uint32_t rkey_len = static_cast<std::uint32_t>(packed_rkey.size());
-  const std::uint32_t body_len = static_cast<std::uint32_t>(UCX_GET_REQ_SIZE + key_len + addr_len + rkey_len);
-  const std::uint32_t msg_size_field = static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(UCX_GET_REQ_SIZE + key_len + addr_len + rkey_len);
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
   const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
 
   out_buffer.resize(total);
@@ -322,7 +342,8 @@ std::size_t EncodeUcxGetRequest(const std::string& key, std::uint64_t remote_add
   return total;
 }
 
-int DecodeUcxGetResponse(const char* buffer, std::size_t len, UcxGetRsp& out_rsp, std::string& out_err) {
+int DecodeUcxGetResponse(const char* buffer, std::size_t len, UcxGetRsp& out_rsp,
+                         std::string& out_err) {
   if (len < UCX_GET_RSP_SIZE) {
     out_err = "UcxGet rsp body too short len=" + std::to_string(len);
     return -1;
@@ -331,7 +352,8 @@ int DecodeUcxGetResponse(const char* buffer, std::size_t len, UcxGetRsp& out_rsp
   const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
   const std::size_t var_len = len - UCX_GET_RSP_SIZE;
   if (static_cast<std::size_t>(errmsg_len) > var_len) {
-    out_err = "UcxGet rsp var overflow errmsg=" + std::to_string(errmsg_len) + " var=" + std::to_string(var_len);
+    out_err = "UcxGet rsp var overflow errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
     return -1;
   }
   out_err.assign(buffer + UCX_GET_RSP_SIZE, errmsg_len);

@@ -142,7 +142,8 @@ int main(int argc, char** argv) {
   }
   std::vector<std::byte> host(part_size);
   for (std::size_t i = 0; i < part_size; ++i) host[i] = static_cast<std::byte>(i % 251U);
-  if (cudaError_t e = cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice); e != cudaSuccess) {
+  if (cudaError_t e = cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
+      e != cudaSuccess) {
     std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return 1;
@@ -160,7 +161,8 @@ int main(int argc, char** argv) {
   }
 
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload("test-bucket", "gds-multipart.dat", PutDataPath::kGds, upload_id, error)) {
+  if (!client.CreateMultipartUpload("test-bucket", "gds-multipart.dat", PutDataPath::kGds,
+                                    upload_id, error)) {
     std::cerr << "CreateMultipartUpload failed: " << error << "\n";
     cudaFree(dev);
     return 1;
@@ -173,7 +175,8 @@ int main(int argc, char** argv) {
   const auto t0 = clk::now();
   for (std::uint32_t i = 1; i <= num_parts; ++i) {
     std::string etag;
-    if (!client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = part_size}, etag, error)) {
+    if (!client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = part_size}, etag,
+                              error)) {
       std::cerr << "UploadPartGds " << i << " failed: " << error << "\n";
       cudaFree(dev);
       return 1;
@@ -191,8 +194,8 @@ int main(int argc, char** argv) {
   const auto t1 = clk::now();
   const double wall_ms = ms_double(t1 - t0).count();
 
-  std::cout << "CompleteMultipartUpload: object_id=" << done.object_id << " size=" << done.object_size
-            << " etag=" << done.etag << "\n";
+  std::cout << "CompleteMultipartUpload: object_id=" << done.object_id
+            << " size=" << done.object_size << " etag=" << done.etag << "\n";
   const double wall_s = wall_ms / 1000.0;
   const double mbs = (wall_s > 0.0) ? static_cast<double>(total) / wall_s / (1024.0 * 1024.0) : 0.0;
   std::cout << "wall=" << wall_ms << "ms throughput=" << mbs << " MiB/s\n";

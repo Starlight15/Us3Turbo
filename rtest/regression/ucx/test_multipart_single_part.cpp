@@ -82,7 +82,9 @@ int main(int argc, char** argv) {
   // ---- UploadPart (part 1) + Complete（同一作用域复用 etag）----
   {
     std::string etag;
-    if (!client.UploadPartUcx(upload_id, 1, ConstBufferView{.data = put_buf.data(), .size = part_size}, etag, error)) {
+    if (!client.UploadPartUcx(upload_id, 1,
+                              ConstBufferView{.data = put_buf.data(), .size = part_size}, etag,
+                              error)) {
       fail_reason = "UploadPartUcx 1 failed: " + error;
       goto cleanup;
     }
@@ -92,10 +94,11 @@ int main(int argc, char** argv) {
       fail_reason = "CompleteMultipartUpload failed: " + done.error;
       goto cleanup;
     }
-    std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size << " etag=" << done.etag << "\n";
+    std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size
+              << " etag=" << done.etag << "\n";
     if (done.object_size != part_size) {
-      fail_reason =
-          "object_size mismatch: got " + std::to_string(done.object_size) + " want " + std::to_string(part_size);
+      fail_reason = "object_size mismatch: got " + std::to_string(done.object_size) + " want " +
+                    std::to_string(part_size);
       goto cleanup;
     }
     test_passed = true;
@@ -112,10 +115,11 @@ int main(int argc, char** argv) {
       std::vector<std::byte> get_buf(obj_size);
       std::memset(get_buf.data(), 0xAA, obj_size);
       GetPathResult get_res;
-      if (client.GetObjectUcx(bucket, key, MutableBufferView{.data = get_buf.data(), .size = obj_size}, get_res) &&
+      if (client.GetObjectUcx(
+              bucket, key, MutableBufferView{.data = get_buf.data(), .size = obj_size}, get_res) &&
           get_res.ok) {
-        std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex << get_res.crc32c
-                  << std::dec << " hash=" << get_res.hash << "\n";
+        std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
+                  << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
         // 1 block/part: 16MB 单 part = 单块 → crc32c = 该块 crc（非 0）。
         if (!get_res.hash.empty() && get_res.bytes_read == obj_size) {
           std::cout << "  optional GET checks OK (hash non-empty)\n";

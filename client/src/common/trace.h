@@ -46,11 +46,14 @@ inline void TraceLatency(const std::string& request_id, std::string_view operati
 
   std::string parts;
   for (std::size_t i = 1; i < stages.size(); ++i) {
-    parts += fmt::format("{}={:.3f}ms ", stages[i].name, ms(stages[i - 1].timestamp, stages[i].timestamp));
+    parts += fmt::format("{}={:.3f}ms ", stages[i].name,
+                         ms(stages[i - 1].timestamp, stages[i].timestamp));
   }
-  const double total = stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp) : 0.0;
+  const double total =
+      stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp) : 0.0;
 
-  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name, request_id, parts, total, bytes);
+  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name, request_id, parts,
+               total, bytes);
 }
 
 }  // namespace detail

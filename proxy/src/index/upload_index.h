@@ -72,7 +72,8 @@ class IUploadIndex {
   // ============================
 
   /* 创建新会话，返回 upload_id（UUID） */
-  [[nodiscard]] virtual std::string Create(const std::string& bucket, const std::string& key, PutDataPath path) = 0;
+  [[nodiscard]] virtual std::string Create(const std::string& bucket, const std::string& key,
+                                           PutDataPath path) = 0;
 
   /* 读会话，不存在返回 false；纯读不含业务判断 */
   [[nodiscard]] virtual bool Get(const std::string& upload_id, UploadRecord& out) = 0;
@@ -81,7 +82,8 @@ class IUploadIndex {
   [[nodiscard]] virtual bool AddPart(const std::string& upload_id, const PartRecord& part) = 0;
 
   /* 列出会话所有 part（未排序，排序/校验由服务层做） */
-  [[nodiscard]] virtual bool ListParts(const std::string& upload_id, std::vector<PartRecord>& out) = 0;
+  [[nodiscard]] virtual bool ListParts(const std::string& upload_id,
+                                       std::vector<PartRecord>& out) = 0;
 
   /* 删除会话（幂等） */
   virtual void Remove(const std::string& upload_id) = 0;
@@ -91,21 +93,25 @@ class IUploadIndex {
 
   /* 更新已合并大小，对齐 s3proxy merged_size（Us3Turbo 无流式合并但保持兼容）
    */
-  [[nodiscard]] virtual bool UpdateMergedSize(const std::string& upload_id, std::uint64_t merged_size) = 0;
+  [[nodiscard]] virtual bool UpdateMergedSize(const std::string& upload_id,
+                                              std::uint64_t merged_size) = 0;
 
   /* 更新最后合并 part 号，对齐 s3proxy last_merged_part_num */
-  [[nodiscard]] virtual bool UpdateLastMergedPart(const std::string& upload_id, std::int32_t part_number) = 0;
+  [[nodiscard]] virtual bool UpdateLastMergedPart(const std::string& upload_id,
+                                                  std::int32_t part_number) = 0;
 
   // ============================ 单步上传 + GET（fileidx_col）
   // ============================
 
   /* 写 fileidx_col 对象元数据，single_put 和 Complete 均调用 */
   [[nodiscard]] virtual bool InsertFileIdx(const std::string& bucket, const std::string& key,
-                                           const std::string& first_object, std::uint64_t block_size,
-                                           std::uint64_t filesize, const std::string& hash) = 0;
+                                           const std::string& first_object,
+                                           std::uint64_t block_size, std::uint64_t filesize,
+                                           const std::string& hash) = 0;
 
   /* 读 fileidx_col 对象元数据，GetObject 第一步；未找到返回 false */
-  [[nodiscard]] virtual bool GetFileIdx(const std::string& bucket, const std::string& key, FileIdxRecord& out) = 0;
+  [[nodiscard]] virtual bool GetFileIdx(const std::string& bucket, const std::string& key,
+                                        FileIdxRecord& out) = 0;
 };
 
 }  // namespace us3_turbo::proxy

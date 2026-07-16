@@ -44,8 +44,10 @@ namespace us3_turbo::proxy::utils {
 /* 计算从 start 到现在的耗时（毫秒）。
  * steady_clock 单调，不受系统时钟跳变影响。
  * inline 定义在头文件，避免多翻译单元符号重复。 */
-[[nodiscard]] inline std::chrono::milliseconds ElapsedMs(std::chrono::steady_clock::time_point start) {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+[[nodiscard]] inline std::chrono::milliseconds ElapsedMs(
+    std::chrono::steady_clock::time_point start) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                               start);
 }
 
 }  // namespace us3_turbo::proxy::utils
