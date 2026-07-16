@@ -6,6 +6,8 @@
 32eca5a532f2482a10fb5bbd33635c0136f44a51
 # 一次性 clang-format 全量格式化 C++ 源码（61 文件，ColumnLimit=80，纯空白/续行调整）。
 
+aae68b3b80682450564cf3b695690bc9a57bb471
+# ColumnLimit 100→90 全量重排（68 文件）。
 48271620dc833e84666c0ef6b148ae1b63a09063
 8da27af57c3a59aca3f503220825a944b7278970
 # ColumnLimit 120→100 全量重排（60 文件）。
