@@ -4,7 +4,7 @@ BasedOnStyle: Google
 Language: Cpp
 Standard: c++17
 
-ColumnLimit: 100
+ColumnLimit: 90
 IndentWidth: 2
 DerivePointerAlignment: false   # 关掉自动推断，固定左贴
 PointerAlignment: Left          # char* p，与现有代码一致

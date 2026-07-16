@@ -81,11 +81,12 @@ inline void FillHostPattern(std::vector<std::byte>& buf, std::uint64_t offset_ba
 
 // 逐字节比对 host 读回 buffer 与期望；打印首处失配细节。GDS 调用前需 D2H。
 inline bool VerifyHostBuffer(const void* read, std::size_t size,
-                             const std::vector<std::byte>& expected, const std::string& tag) {
+                             const std::vector<std::byte>& expected,
+                             const std::string& tag) {
   const auto* p = static_cast<const std::byte*>(read);
   if (size != expected.size()) {
-    std::cerr << "[" << tag << "] size mismatch: got " << size << " want " << expected.size()
-              << "\n";
+    std::cerr << "[" << tag << "] size mismatch: got " << size << " want "
+              << expected.size() << "\n";
     return false;
   }
   std::size_t mism = 0;
@@ -97,8 +98,9 @@ inline bool VerifyHostBuffer(const void* read, std::size_t size,
     }
   }
   if (mism > 0) {
-    std::cerr << "[" << tag << "] DATA MISMATCH: " << mism << " bytes differ, first at offset "
-              << first << " (got 0x" << std::hex << static_cast<unsigned>(p[first]) << " want 0x"
+    std::cerr << "[" << tag << "] DATA MISMATCH: " << mism
+              << " bytes differ, first at offset " << first << " (got 0x" << std::hex
+              << static_cast<unsigned>(p[first]) << " want 0x"
               << static_cast<unsigned>(expected[first]) << std::dec << ")\n";
     return false;
   }

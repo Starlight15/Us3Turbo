@@ -25,7 +25,8 @@ using clk = std::chrono::steady_clock;
 [[nodiscard]] inline std::string MakeRequestId() {
   static thread_local std::mt19937_64 rng{
       static_cast<std::uint64_t>(std::random_device{}()) ^
-      static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
+      static_cast<std::uint64_t>(
+          std::chrono::steady_clock::now().time_since_epoch().count())};
   char buf[17];
   std::snprintf(buf, sizeof(buf), "%016lx", rng());
   return std::string("req-") + buf;
@@ -52,8 +53,8 @@ inline void TraceLatency(const std::string& request_id, std::string_view operati
   const double total =
       stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp) : 0.0;
 
-  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name, request_id, parts,
-               total, bytes);
+  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name, request_id,
+               parts, total, bytes);
 }
 
 }  // namespace detail

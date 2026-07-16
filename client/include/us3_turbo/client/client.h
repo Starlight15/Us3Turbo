@@ -46,7 +46,8 @@ class Client {
   [[nodiscard]] bool Initialize();
 
   /**  @brief 统一 PUT 入口:按 request.path 选 GDS/UCX 通路。*/
-  [[nodiscard]] bool PutObject(const ClientProxyPutRequest& request, ConstBufferView buffer,
+  [[nodiscard]] bool PutObject(const ClientProxyPutRequest& request,
+                               ConstBufferView buffer,
                                ClientProxyPutResponse& response) const;
 
   // ===== 分段上传接口 =====
@@ -60,19 +61,20 @@ class Client {
   };
 
   /** @brief 初始化分段上传，返回 upload_id。path 锁定整条会话通路。 */
-  [[nodiscard]] bool CreateMultipartUpload(const std::string& bucket, const std::string& key,
-                                           PutDataPath path, std::string& out_upload_id,
+  [[nodiscard]] bool CreateMultipartUpload(const std::string& bucket,
+                                           const std::string& key, PutDataPath path,
+                                           std::string& out_upload_id,
                                            std::string& out_error) const;
 
   /** @brief GDS 路径上传单个 part：为本 part 独立注册 RDMA token。 */
-  [[nodiscard]] bool UploadPartGds(const std::string& upload_id, std::uint32_t part_number,
-                                   ConstBufferView buffer, std::string& out_etag,
-                                   std::string& out_error) const;
+  [[nodiscard]] bool UploadPartGds(const std::string& upload_id,
+                                   std::uint32_t part_number, ConstBufferView buffer,
+                                   std::string& out_etag, std::string& out_error) const;
 
   /** @brief UCX 路径上传单个 part：为本 part 独立注册 descriptor。 */
-  [[nodiscard]] bool UploadPartUcx(const std::string& upload_id, std::uint32_t part_number,
-                                   ConstBufferView buffer, std::string& out_etag,
-                                   std::string& out_error) const;
+  [[nodiscard]] bool UploadPartUcx(const std::string& upload_id,
+                                   std::uint32_t part_number, ConstBufferView buffer,
+                                   std::string& out_etag, std::string& out_error) const;
 
   /** @brief 完成分段上传，返回最终 object_id/etag/size。 */
   [[nodiscard]] bool CompleteMultipartUpload(const std::string& upload_id,
@@ -87,7 +89,8 @@ class Client {
 
   /** @brief 查对象布局（GetObject 第一步），返回 object_size 供调用方分配buffer。 */
   [[nodiscard]] bool StatObject(const std::string& bucket, const std::string& key,
-                                std::uint64_t& out_object_size, std::string& out_error) const;
+                                std::uint64_t& out_object_size,
+                                std::string& out_error) const;
 
   /**  @brief GDS 通路 GET：buffer 须已按 StatObject 返回的 size 分配。 */
   [[nodiscard]] bool GetObjectGds(const std::string& bucket, const std::string& key,

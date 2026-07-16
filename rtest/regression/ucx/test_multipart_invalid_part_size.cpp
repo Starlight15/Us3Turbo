@@ -55,8 +55,8 @@ int main(int argc, char** argv) {
 
   std::cout << "=== T1.1 UCX " << kTestName << " ===\n"
             << "  proxy     : " << proxy_addr << "\n"
-            << "  part_size : " << rtest::HumanBytes(part_size) << "  num_parts : " << num_parts
-            << "\n";
+            << "  part_size : " << rtest::HumanBytes(part_size)
+            << "  num_parts : " << num_parts << "\n";
 
   // host buffer（3 个 part 复用同一 8MB buffer）。
   std::vector<std::byte> host(part_size);
@@ -88,10 +88,12 @@ int main(int argc, char** argv) {
     parts.reserve(num_parts);
     for (std::uint32_t i = 1; i <= num_parts; ++i) {
       std::string etag;
-      if (!client.UploadPartUcx(
-              upload_id, i, ConstBufferView{.data = host.data(), .size = part_size}, etag, error)) {
+      if (!client.UploadPartUcx(upload_id, i,
+                                ConstBufferView{.data = host.data(), .size = part_size},
+                                etag, error)) {
         // 8MB 不应被 UploadPart 拒；若被拒说明 UploadPart 行为变了，记录之。
-        std::cout << "  UploadPartUcx " << i << " REJECTED (unexpected): " << error << "\n";
+        std::cout << "  UploadPartUcx " << i << " REJECTED (unexpected): " << error
+                  << "\n";
       } else {
         std::cout << "  UploadPartUcx " << i << " ok etag=" << etag << "\n";
         parts.push_back({i, etag});
@@ -101,13 +103,15 @@ int main(int argc, char** argv) {
     // ---- Complete（期望失败 + "invalid part size"）----
     Client::CompletedMultipart done;
     const bool complete_ok = client.CompleteMultipartUpload(upload_id, parts, done);
-    std::cout << "  CompleteMultipartUpload: " << (complete_ok ? "succeeded" : "FAILED (expected)")
+    std::cout << "  CompleteMultipartUpload: "
+              << (complete_ok ? "succeeded" : "FAILED (expected)")
               << " error=" << done.error << "\n";
     if (complete_ok) {
       fail_reason = "expected Complete to fail, but it succeeded (object_size=" +
                     std::to_string(done.object_size) + ")";
     } else if (done.error.find("invalid part size") == std::string::npos) {
-      fail_reason = "Complete failed but error lacks \"invalid part size\": " + done.error;
+      fail_reason =
+          "Complete failed but error lacks \"invalid part size\": " + done.error;
     } else {
       test_passed = true;
     }

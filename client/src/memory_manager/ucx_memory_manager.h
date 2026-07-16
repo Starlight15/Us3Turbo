@@ -35,7 +35,8 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
   [[nodiscard]] static bool Instance(UcxMemoryManager*& out);
 
   /** @brief 注册 host buffer 并打包 rkey,填充 Descriptor。幂等。 */
-  [[nodiscard]] bool AcquireDescriptor(const void* ptr, std::size_t size, Descriptor& out);
+  [[nodiscard]] bool AcquireDescriptor(const void* ptr, std::size_t size,
+                                       Descriptor& out);
 
   UcxMemoryManager(const UcxMemoryManager&) = delete;
   UcxMemoryManager& operator=(const UcxMemoryManager&) = delete;

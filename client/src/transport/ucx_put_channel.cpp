@@ -29,7 +29,8 @@ using detail::MakeRequestId;
 using detail::TraceLatency;
 
 // CRC32C 校验(options.verify_crc32c):UCX 对 host buffer 直算,无需 D2H。
-[[nodiscard]] bool VerifyUcxCrc32c(const std::string& request_id, ConstBufferView host_buffer,
+[[nodiscard]] bool VerifyUcxCrc32c(const std::string& request_id,
+                                   ConstBufferView host_buffer,
                                    std::uint32_t remote_crc32c,
                                    const ClientProxyPutRequest& request) {
   const std::uint32_t local = Crc32c(std::span<const std::byte>(
@@ -67,8 +68,8 @@ bool UcxPutChannel::PutOnce(const ClientProxyPutRequest& request, ConstBufferVie
   UcxDataSource ucx_source{desc.remote_addr, desc.rkey, desc.client_ucx_addr};
   auto t_desc = trace ? clk::now() : clk::time_point{};
 
-  if (!proxy_.UcxPut(request_id, request.bucket, request.key, request.object_size, ucx_source,
-                     result)) {
+  if (!proxy_.UcxPut(request_id, request.bucket, request.key, request.object_size,
+                     ucx_source, result)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};

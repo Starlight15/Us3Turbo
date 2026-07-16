@@ -236,7 +236,8 @@ int DecodeGdsPutResponse(const char* buffer, std::size_t len, GdsPutRsp& out_rsp
 /* 编码 UCX PUT 请求，返回总字节数。
  * 布局: Message(52) + UcxPutReq(68) + key + addr + rkey */
 std::size_t EncodeUcxPutRequest(const std::string& key, std::uint64_t remote_addr,
-                                const std::string& packed_rkey, const std::string& client_ucx_addr,
+                                const std::string& packed_rkey,
+                                const std::string& client_ucx_addr,
                                 std::uint64_t source_offset, std::uint64_t data_len,
                                 std::uint32_t setid, std::uint64_t session_id,
                                 std::vector<char>& out_buffer);
@@ -251,7 +252,8 @@ int DecodeUcxPutResponse(const char* buffer, std::size_t len, UcxPutRsp& out_rsp
  * 布局: Message(52) + UcxGetReq(76) + key + addr + rkey
  * 与 UcxPutReq 布局不同: dataLen_ 前多 readOffset_，source 改为 dest */
 std::size_t EncodeUcxGetRequest(const std::string& key, std::uint64_t remote_addr,
-                                const std::string& packed_rkey, const std::string& client_ucx_addr,
+                                const std::string& packed_rkey,
+                                const std::string& client_ucx_addr,
                                 std::uint64_t dest_offset, std::uint64_t read_offset,
                                 std::uint64_t data_len, std::uint32_t setid,
                                 std::uint64_t session_id, std::uint64_t request_id,
@@ -263,11 +265,12 @@ int DecodeUcxGetResponse(const char* buffer, std::size_t len, UcxGetRsp& out_rsp
 
 /* 编码 DEL 请求，返回总字节数。
  * 布局: Message(52) + DelReq(12) + key */
-std::size_t EncodeDelRequest(const std::string& key, std::uint32_t setid, std::uint64_t session_id,
-                             std::vector<char>& out_buffer);
+std::size_t EncodeDelRequest(const std::string& key, std::uint32_t setid,
+                             std::uint64_t session_id, std::vector<char>& out_buffer);
 
 /* 解码 DEL 响应体（不含 Message 头）。返回 0=成功，-1=格式错误。 */
-int DecodeDelResponse(const char* buffer, std::size_t len, DelRsp& out_rsp, std::string& out_err);
+int DecodeDelResponse(const char* buffer, std::size_t len, DelRsp& out_rsp,
+                      std::string& out_err);
 
 /* GDS GET */
 

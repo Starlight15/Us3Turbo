@@ -26,10 +26,12 @@ class MongoUploadIndex final : public IUploadIndex {
   [[nodiscard]] bool Get(const std::string& upload_id, UploadRecord& out) override;
 
   /* 追加分段记录到 part_col */
-  [[nodiscard]] bool AddPart(const std::string& upload_id, const PartRecord& part) override;
+  [[nodiscard]] bool AddPart(const std::string& upload_id,
+                             const PartRecord& part) override;
 
   /* 列举指定上传会话的所有分段 */
-  [[nodiscard]] bool ListParts(const std::string& upload_id, std::vector<PartRecord>& out) override;
+  [[nodiscard]] bool ListParts(const std::string& upload_id,
+                               std::vector<PartRecord>& out) override;
 
   /* 删除上传会话及其分段记录 */
   void Remove(const std::string& upload_id) override;
@@ -48,8 +50,9 @@ class MongoUploadIndex final : public IUploadIndex {
 
   /* 插入对象元数据到 fileidx_col，single_put 和 Complete 均调用 */
   [[nodiscard]] bool InsertFileIdx(const std::string& bucket, const std::string& key,
-                                   const std::string& first_object, std::uint64_t block_size,
-                                   std::uint64_t filesize, const std::string& hash) override;
+                                   const std::string& first_object,
+                                   std::uint64_t block_size, std::uint64_t filesize,
+                                   const std::string& hash) override;
 
   /* 按 bucket+key 查询对象元数据，GetObject 第一步 */
   [[nodiscard]] bool GetFileIdx(const std::string& bucket, const std::string& key,

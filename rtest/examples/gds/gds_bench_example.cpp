@@ -188,7 +188,8 @@ std::string HumanBytes(std::uint64_t b) {
 
 double Percentile(std::vector<double>& sorted, double p) {
   if (sorted.empty()) return 0.0;
-  std::size_t idx = static_cast<std::size_t>(p / 100.0 * static_cast<double>(sorted.size() - 1));
+  std::size_t idx =
+      static_cast<std::size_t>(p / 100.0 * static_cast<double>(sorted.size() - 1));
   if (idx >= sorted.size()) idx = sorted.size() - 1;
   return sorted[idx];
 }
@@ -198,7 +199,9 @@ double Percentile(std::vector<double>& sorted, double p) {
 // barrier 的 completion functor:最后一个到达的线程记录统一起跑时刻。
 struct StartSetter {
   std::atomic<clk::time_point>* start;
-  void operator()() const noexcept { start->store(clk::now(), std::memory_order_relaxed); }
+  void operator()() const noexcept {
+    start->store(clk::now(), std::memory_order_relaxed);
+  }
 };
 
 struct WorkerStats {
@@ -211,9 +214,9 @@ struct WorkerStats {
 };
 
 void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
-            const std::byte* host_pattern, std::atomic<std::uint64_t>& next, std::uint64_t total,
-            std::barrier<StartSetter>& sync, std::atomic<clk::time_point>& start,
-            WorkerStats& stats) {
+            const std::byte* host_pattern, std::atomic<std::uint64_t>& next,
+            std::uint64_t total, std::barrier<StartSetter>& sync,
+            std::atomic<clk::time_point>& start, WorkerStats& stats) {
   using namespace us3_turbo::client;
 
   // 1) 分配并填充 device buffer(每个 worker 独立)。
@@ -225,7 +228,8 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
   }
   if (cudaError_t e = cudaMemcpy(dev, host_pattern, a.size, cudaMemcpyHostToDevice);
       e != cudaSuccess) {
-    std::cerr << "[worker " << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e) << "\n";
+    std::cerr << "[worker " << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e)
+              << "\n";
     cudaFree(dev);
     return;
   }
@@ -308,14 +312,16 @@ int main(int argc, char** argv) {
   const std::size_t nworkers = static_cast<std::size_t>(a.concurrency);
   std::atomic<std::uint64_t> next{0};
   std::atomic<clk::time_point> start{clk::time_point{}};
-  std::barrier<StartSetter> sync(static_cast<std::ptrdiff_t>(nworkers), StartSetter{&start});
+  std::barrier<StartSetter> sync(static_cast<std::ptrdiff_t>(nworkers),
+                                 StartSetter{&start});
 
   std::vector<WorkerStats> stats(nworkers);
   std::vector<std::thread> threads;
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
-    threads.emplace_back(Worker, w, std::ref(a), std::ref(client), host.data(), std::ref(next),
-                         a.count, std::ref(sync), std::ref(start), std::ref(stats[w]));
+    threads.emplace_back(Worker, w, std::ref(a), std::ref(client), host.data(),
+                         std::ref(next), a.count, std::ref(sync), std::ref(start),
+                         std::ref(stats[w]));
   }
   for (auto& t : threads) t.join();
 
@@ -367,7 +373,8 @@ int main(int argc, char** argv) {
             << "  fail         : " << fail << "\n"
             << "  bytes        : " << HumanBytes(bytes) << " (" << bytes << ")\n"
             << "  wall time    : " << wall_ms << " ms\n"
-            << "  throughput   : " << throughput_mbs << " MiB/s  (" << ops_per_sec << " ops/s)\n";
+            << "  throughput   : " << throughput_mbs << " MiB/s  (" << ops_per_sec
+            << " ops/s)\n";
   if (!lat.empty()) {
     std::cout << "  latency (ms) : avg=" << avg_lat << "  min=" << lat.front()
               << "  p50=" << Percentile(lat, 50.0) << "  p95=" << Percentile(lat, 95.0)

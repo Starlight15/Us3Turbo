@@ -29,7 +29,8 @@ struct GetOutput {
    填输出。GDS 与 UCX 完全独立实现。 */
 class GetObject {
  public:
-  explicit GetObject(IUploadIndex* index, UfileAcClient* client) : index_(index), client_(client) {}
+  explicit GetObject(IUploadIndex* index, UfileAcClient* client)
+      : index_(index), client_(client) {}
 
   /* 查询 object 布局信息，返回 size/block_size/hash 供 client 分配 buffer。 */
   [[nodiscard]] int StatObject(const StatObjectRequest& request, StatObjectOutput& out);

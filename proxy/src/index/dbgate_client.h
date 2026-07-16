@@ -51,8 +51,9 @@ class DBGateClient {
 
   /* Upsert fileidx_col 文档（single_put / multipart Complete） */
   [[nodiscard]] int UpsertFileIdx(std::uint32_t bucket_id, const std::string& key,
-                                  const std::string& first_object, std::uint64_t block_size,
-                                  std::uint64_t filesize, const std::string& hash);
+                                  const std::string& first_object,
+                                  std::uint64_t block_size, std::uint64_t filesize,
+                                  const std::string& hash);
 
   /* Query fileidx_col 文档（GetObject 第一步）; Returns 0=ok, -1=not found,
    * other=error */
@@ -63,15 +64,16 @@ class DBGateClient {
 
   /* Insert minit_col 文档（CreateUpload） */
   [[nodiscard]] int InsertMinit(const std::string& upload_id, std::uint32_t bucket_id,
-                                const std::string& key, const std::string& first_object, int path);
+                                const std::string& key, const std::string& first_object,
+                                int path);
 
   /* Query minit_col 文档（GetUpload）; Returns 0=ok, -1=not found, other=error
    */
   [[nodiscard]] int QueryMinit(const std::string& upload_id, std::string& out_doc);
 
   /* Update minit_col 字段（merged_size / last_merged_part） */
-  [[nodiscard]] int UpdateMinit(const std::string& upload_id, const std::string& field_name,
-                                std::uint64_t value);
+  [[nodiscard]] int UpdateMinit(const std::string& upload_id,
+                                const std::string& field_name, std::uint64_t value);
 
   /* Delete minit_col 文档（AbortUpload/CompleteUpload） */
   [[nodiscard]] int DeleteMinit(const std::string& upload_id);
@@ -80,7 +82,8 @@ class DBGateClient {
 
   /* Insert part_col 文档（UploadPart）; block_crcs 序列化为 JSON 数组 */
   [[nodiscard]] int InsertPart(const std::string& upload_id, std::uint32_t part_number,
-                               std::uint64_t offset, std::uint64_t size, const std::string& etag,
+                               std::uint64_t offset, std::uint64_t size,
+                               const std::string& etag,
                                const std::vector<std::uint32_t>& block_crcs);
 
   /* Query part_col 文档列表（CompleteUpload） */

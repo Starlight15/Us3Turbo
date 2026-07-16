@@ -25,7 +25,8 @@ namespace us3_turbo::proxy {
  * 并发安全。 */
 class ProxyService final : public Control {
  public:
-  ProxyService(std::unique_ptr<SinglePut> single_put, std::unique_ptr<Multipart> multipart,
+  ProxyService(std::unique_ptr<SinglePut> single_put,
+               std::unique_ptr<Multipart> multipart,
                std::unique_ptr<GetObject> get_object, IUploadIndex* index_for_cleanup)
       : single_put_(std::move(single_put)),
         multipart_(std::move(multipart)),
@@ -59,12 +60,14 @@ class ProxyService final : public Control {
                              google::protobuf::Closure* done) override;
 
   /* GDS 分段上传 part，委托 Multipart。 */
-  void UploadPartGds(google::protobuf::RpcController* cntl, const UploadPartGdsRequest* request,
-                     UploadPartResponse* response, google::protobuf::Closure* done) override;
+  void UploadPartGds(google::protobuf::RpcController* cntl,
+                     const UploadPartGdsRequest* request, UploadPartResponse* response,
+                     google::protobuf::Closure* done) override;
 
   /* UCX 分段上传 part，委托 Multipart。 */
-  void UploadPartUcx(google::protobuf::RpcController* cntl, const UploadPartUcxRequest* request,
-                     UploadPartResponse* response, google::protobuf::Closure* done) override;
+  void UploadPartUcx(google::protobuf::RpcController* cntl,
+                     const UploadPartUcxRequest* request, UploadPartResponse* response,
+                     google::protobuf::Closure* done) override;
 
   /* 完成分段上传，委托 Multipart。 */
   void CompleteMultipartUpload(google::protobuf::RpcController* cntl,

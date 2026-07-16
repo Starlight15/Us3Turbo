@@ -65,36 +65,48 @@ class Logger {
    * 消息，用于启动/停止、构造期等无请求上下文场景 */
 
   template <typename... Args>
-  static void SysInfo(std::string_view func, fmt::format_string<Args...> fmt, Args&&... args) {
+  static void SysInfo(std::string_view func, fmt::format_string<Args...> fmt,
+                      Args&&... args) {
     spdlog::info("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
-  static void SysWarn(std::string_view func, fmt::format_string<Args...> fmt, Args&&... args) {
+  static void SysWarn(std::string_view func, fmt::format_string<Args...> fmt,
+                      Args&&... args) {
     spdlog::warn("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
-  static void SysError(std::string_view func, fmt::format_string<Args...> fmt, Args&&... args) {
+  static void SysError(std::string_view func, fmt::format_string<Args...> fmt,
+                       Args&&... args) {
     spdlog::error("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
-  static void SysDebug(std::string_view func, fmt::format_string<Args...> fmt, Args&&... args) {
+  static void SysDebug(std::string_view func, fmt::format_string<Args...> fmt,
+                       Args&&... args) {
     spdlog::debug("[{}] {}", func, fmt::format(fmt, std::forward<Args>(args)...));
   }
 };
 
 /* 请求日志宏（带 request_id） */
-#define LOG_INFO(rid, fmt, ...) us3_turbo::proxy::Logger::Info(__func__, rid, fmt, ##__VA_ARGS__)
-#define LOG_WARN(rid, fmt, ...) us3_turbo::proxy::Logger::Warn(__func__, rid, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(rid, fmt, ...) us3_turbo::proxy::Logger::Error(__func__, rid, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(rid, fmt, ...) us3_turbo::proxy::Logger::Debug(__func__, rid, fmt, ##__VA_ARGS__)
+#define LOG_INFO(rid, fmt, ...) \
+  us3_turbo::proxy::Logger::Info(__func__, rid, fmt, ##__VA_ARGS__)
+#define LOG_WARN(rid, fmt, ...) \
+  us3_turbo::proxy::Logger::Warn(__func__, rid, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(rid, fmt, ...) \
+  us3_turbo::proxy::Logger::Error(__func__, rid, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(rid, fmt, ...) \
+  us3_turbo::proxy::Logger::Debug(__func__, rid, fmt, ##__VA_ARGS__)
 
 /* 进程日志宏（无 request_id） */
-#define LOG_SYS_INFO(fmt, ...) us3_turbo::proxy::Logger::SysInfo(__func__, fmt, ##__VA_ARGS__)
-#define LOG_SYS_WARN(fmt, ...) us3_turbo::proxy::Logger::SysWarn(__func__, fmt, ##__VA_ARGS__)
-#define LOG_SYS_ERROR(fmt, ...) us3_turbo::proxy::Logger::SysError(__func__, fmt, ##__VA_ARGS__)
-#define LOG_SYS_DEBUG(fmt, ...) us3_turbo::proxy::Logger::SysDebug(__func__, fmt, ##__VA_ARGS__)
+#define LOG_SYS_INFO(fmt, ...) \
+  us3_turbo::proxy::Logger::SysInfo(__func__, fmt, ##__VA_ARGS__)
+#define LOG_SYS_WARN(fmt, ...) \
+  us3_turbo::proxy::Logger::SysWarn(__func__, fmt, ##__VA_ARGS__)
+#define LOG_SYS_ERROR(fmt, ...) \
+  us3_turbo::proxy::Logger::SysError(__func__, fmt, ##__VA_ARGS__)
+#define LOG_SYS_DEBUG(fmt, ...) \
+  us3_turbo::proxy::Logger::SysDebug(__func__, fmt, ##__VA_ARGS__)
 
 }  // namespace us3_turbo::proxy

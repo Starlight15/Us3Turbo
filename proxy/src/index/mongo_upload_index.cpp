@@ -17,8 +17,8 @@ std::string MongoUploadIndex::Create(const std::string& bucket, const std::strin
   const std::string upload_id = utils::GenUuid();
   const std::string obj_id = utils::GenUuid();
 
-  int ret = client_->InsertMinit(upload_id, static_cast<std::uint32_t>(FLAGS_bucket_id), key,
-                                 obj_id, static_cast<int>(path));
+  int ret = client_->InsertMinit(upload_id, static_cast<std::uint32_t>(FLAGS_bucket_id),
+                                 key, obj_id, static_cast<int>(path));
   if (ret != 0) {
     LOG_SYS_ERROR("InsertMinit failed: upload_id={} ret={}", upload_id, ret);
     return {};
@@ -63,12 +63,13 @@ bool MongoUploadIndex::Get(const std::string& upload_id, UploadRecord& out) {
 }
 
 bool MongoUploadIndex::AddPart(const std::string& upload_id, const PartRecord& part) {
-  int ret = client_->InsertPart(upload_id, part.part_number, part.file_offset, part.part_size,
-                                part.etag, part.block_crcs);
+  int ret = client_->InsertPart(upload_id, part.part_number, part.file_offset,
+                                part.part_size, part.etag, part.block_crcs);
   return ret == 0;
 }
 
-bool MongoUploadIndex::ListParts(const std::string& upload_id, std::vector<PartRecord>& out) {
+bool MongoUploadIndex::ListParts(const std::string& upload_id,
+                                 std::vector<PartRecord>& out) {
   std::string docs_json;
   int ret = client_->QueryParts(upload_id, docs_json);
   if (ret != 0) return false;
@@ -111,7 +112,8 @@ void MongoUploadIndex::RemoveExpired(std::int64_t /*ttl_ms*/) {
   /* TTL managed by MongoDB TTL index; Phase 5 may add explicit cleanup */
 }
 
-bool MongoUploadIndex::UpdateMergedSize(const std::string& upload_id, std::uint64_t merged_size) {
+bool MongoUploadIndex::UpdateMergedSize(const std::string& upload_id,
+                                        std::uint64_t merged_size) {
   int ret = client_->UpdateMinit(upload_id, mgo::f::kMergedSize, merged_size);
   return ret == 0;
 }
@@ -123,18 +125,21 @@ bool MongoUploadIndex::UpdateLastMergedPart(const std::string& upload_id,
   return ret == 0;
 }
 
-bool MongoUploadIndex::InsertFileIdx(const std::string& /*bucket*/, const std::string& key,
-                                     const std::string& first_object, std::uint64_t block_size,
-                                     std::uint64_t filesize, const std::string& hash) {
-  int ret = client_->UpsertFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id), key, first_object,
-                                   block_size, filesize, hash);
+bool MongoUploadIndex::InsertFileIdx(const std::string& /*bucket*/,
+                                     const std::string& key,
+                                     const std::string& first_object,
+                                     std::uint64_t block_size, std::uint64_t filesize,
+                                     const std::string& hash) {
+  int ret = client_->UpsertFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id), key,
+                                   first_object, block_size, filesize, hash);
   return ret == 0;
 }
 
 bool MongoUploadIndex::GetFileIdx(const std::string& /*bucket*/, const std::string& key,
                                   FileIdxRecord& out) {
   std::string doc_json;
-  int ret = client_->QueryFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id), key, doc_json);
+  int ret =
+      client_->QueryFileIdx(static_cast<std::uint32_t>(FLAGS_bucket_id), key, doc_json);
   if (ret != 0) return false;  // not found or query failed — treat as 404
 
   try {

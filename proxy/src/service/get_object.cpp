@@ -30,8 +30,8 @@ int GetObject::StatObject(const StatObjectRequest& req, StatObjectOutput& out) {
   out.object_size = rec.filesize;
   out.block_size = rec.block_size;
   out.hash = rec.hash;
-  LOG_DEBUG(rid, "stat bucket={}/{} size={} block_size={} hash={}", req.bucket(), req.key(),
-            rec.filesize, rec.block_size, rec.hash);
+  LOG_DEBUG(rid, "stat bucket={}/{} size={} block_size={} hash={}", req.bucket(),
+            req.key(), rec.filesize, rec.block_size, rec.hash);
   return 0;
 }
 
@@ -98,8 +98,8 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
     return PROXY_ERR_INVALID_PARAM;
   }
   if (rec.filesize != req.object_size()) {
-    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}", req.object_size(),
-             rec.filesize, req.bucket(), req.key());
+    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}",
+             req.object_size(), rec.filesize, req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
 
@@ -118,7 +118,8 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
     const std::uint64_t len = std::min(block_size, rec.filesize - offset);
     const std::string block_key = rec.first_object + "_" + std::to_string(i);
 
-    const auto result = client_->GetBlockGds(block_key, rdma_token, offset, 0, len, rid_hash);
+    const auto result =
+        client_->GetBlockGds(block_key, rdma_token, offset, 0, len, rid_hash);
     if (result.ret_code != 0) {
       LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key, result.error);
       return result.ret_code;
@@ -140,8 +141,8 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
   out.crc32c = (crcs.size() == 1) ? crcs[0] : 0;  // 单块整对象 crc，多块用 hash
   out.bytes_read = total_read;
   out.hash = hash;
-  LOG_INFO(rid, "GetGds ok bucket={}/{} bytes={} blocks={}", req.bucket(), req.key(), total_read,
-           block_count);
+  LOG_INFO(rid, "GetGds ok bucket={}/{} bytes={} blocks={}", req.bucket(), req.key(),
+           total_read, block_count);
   return 0;
 }
 
@@ -158,8 +159,8 @@ int GetObject::GetUcx(const ClientProxyGetRequest& req, GetOutput& out) {
     return PROXY_ERR_INVALID_PARAM;
   }
   if (rec.filesize != req.object_size()) {
-    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}", req.object_size(),
-             rec.filesize, req.bucket(), req.key());
+    LOG_WARN(rid, "object_size mismatch: client={} fileidx={} bucket={}/{}",
+             req.object_size(), rec.filesize, req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
 
@@ -180,8 +181,8 @@ int GetObject::GetUcx(const ClientProxyGetRequest& req, GetOutput& out) {
     const std::uint64_t len = std::min(block_size, rec.filesize - offset);
     const std::string block_key = rec.first_object + "_" + std::to_string(i);
 
-    const auto result = client_->GetBlockUcx(block_key, remote_addr, packed_rkey, client_ucx_addr,
-                                             offset, 0, len, rid_hash);
+    const auto result = client_->GetBlockUcx(block_key, remote_addr, packed_rkey,
+                                             client_ucx_addr, offset, 0, len, rid_hash);
     if (result.ret_code != 0) {
       LOG_ERROR(rid, "block {} key={} read failed: {}", i, block_key, result.error);
       return result.ret_code;
@@ -203,8 +204,8 @@ int GetObject::GetUcx(const ClientProxyGetRequest& req, GetOutput& out) {
   out.crc32c = (crcs.size() == 1) ? crcs[0] : 0;  // 单块整对象 crc，多块用 hash
   out.bytes_read = total_read;
   out.hash = hash;
-  LOG_INFO(rid, "GetUcx ok bucket={}/{} bytes={} blocks={}", req.bucket(), req.key(), total_read,
-           block_count);
+  LOG_INFO(rid, "GetUcx ok bucket={}/{} bytes={} blocks={}", req.bucket(), req.key(),
+           total_read, block_count);
   return 0;
 }
 

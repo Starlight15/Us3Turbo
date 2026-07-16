@@ -68,14 +68,16 @@ int main(int argc, char** argv) {
   // GPU buffer（各场景 part 复用同一 16MB buffer）。
   void* dev = nullptr;
   if (cudaError_t e = cudaMalloc(&dev, part_size); e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName << ": cudaMalloc: " << cudaGetErrorString(e) << "\n";
+    std::cerr << "[FAIL] " << kTestName << ": cudaMalloc: " << cudaGetErrorString(e)
+              << "\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
   if (cudaError_t e = cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
       e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
+    std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy: " << cudaGetErrorString(e)
+              << "\n";
     cudaFree(dev);
     return 1;
   }
@@ -91,15 +93,17 @@ int main(int argc, char** argv) {
   }
 
   const auto upload_part = [&](const std::string& upload_id, std::uint32_t part_no,
-                               std::string& etag, std::string& err, int retries = 1) -> bool {
+                               std::string& etag, std::string& err,
+                               int retries = 1) -> bool {
     // backend 数据面偶发单 block 超时(见 TEST_FINDINGS.md P4)；对正常
     // UploadPart 做有限重试，仅在重试后仍失败才算真正失败，避免把环境抖动当作
     // part 上传 失败而误判跳号检测。注意: 重复 part 场景须传
     // retries=0——重复上传应只尝试 一次(重试会覆写 block 后再走
     // AddPart，改变重复检测语义)。
     for (int attempt = 0; attempt <= retries; ++attempt) {
-      if (client.UploadPartGds(upload_id, part_no, ConstBufferView{.data = dev, .size = part_size},
-                               etag, err)) {
+      if (client.UploadPartGds(upload_id, part_no,
+                               ConstBufferView{.data = dev, .size = part_size}, etag,
+                               err)) {
         return true;
       }
     }
@@ -113,7 +117,8 @@ int main(int argc, char** argv) {
   std::string scene_a_reason;
   {
     std::string upload_id, error;
-    if (!client.CreateMultipartUpload(bucket, key_a, PutDataPath::kGds, upload_id, error)) {
+    if (!client.CreateMultipartUpload(bucket, key_a, PutDataPath::kGds, upload_id,
+                                      error)) {
       scene_a_reason = "CreateMultipartUpload failed: " + error;
       std::cerr << "  " << scene_a_reason << "\n";
     } else {
@@ -125,8 +130,8 @@ int main(int argc, char** argv) {
       std::string e2v, e2_err;
       const bool up2_ok = upload_part(upload_id, 2, e2v, e2_err);
 
-      std::cout << "  up1 ok=" << up1_ok << " | dup up1' ok=" << up1b_ok << " err=\"" << e1b_err2
-                << "\" | up2 ok=" << up2_ok << "\n";
+      std::cout << "  up1 ok=" << up1_ok << " | dup up1' ok=" << up1b_ok << " err=\""
+                << e1b_err2 << "\" | up2 ok=" << up2_ok << "\n";
 
       // 收集成功上传的 part 供 Complete（client 分配 part_number + etag）。
       std::vector<Client::PartInfo> parts;
@@ -144,7 +149,8 @@ int main(int argc, char** argv) {
       //   Complete 成功，或 Complete 失败但 error 非空，或重复 UploadPart
       //   失败但 error 非空。FAIL 仅当：某操作 false 且 error 空，或 Complete
       //   成功但 object_size==0。
-      const bool dup_rejected_with_msg = (!up1b_ok && !e1b_err2.empty()) || (up1_ok && !up1b_ok);
+      const bool dup_rejected_with_msg =
+          (!up1b_ok && !e1b_err2.empty()) || (up1_ok && !up1b_ok);
       if (complete_ok) {
         scene_a_pass = (done.object_size != 0);
         if (!scene_a_pass) scene_a_reason = "Complete succeeded but object_size==0";
@@ -172,7 +178,8 @@ int main(int argc, char** argv) {
   std::string scene_b_reason;
   {
     std::string upload_id, error;
-    if (!client.CreateMultipartUpload(bucket, key_b, PutDataPath::kGds, upload_id, error)) {
+    if (!client.CreateMultipartUpload(bucket, key_b, PutDataPath::kGds, upload_id,
+                                      error)) {
       scene_b_reason = "CreateMultipartUpload failed: " + error;
       std::cerr << "  " << scene_b_reason << "\n";
     } else {
@@ -222,7 +229,8 @@ int main(int argc, char** argv) {
 
   // 环境不稳(backend 数据面超时导致 up3 没上传) → 整体 SKIP(77)，不判 FAIL。
   if (scene_b_skipped) {
-    std::cout << "\n[SKIP] " << kTestName << ": scene B inconclusive (backend unstable); scene A="
+    std::cout << "\n[SKIP] " << kTestName
+              << ": scene B inconclusive (backend unstable); scene A="
               << (scene_a_pass ? "PASS" : "FAIL") << "\n";
     return 77;
   }

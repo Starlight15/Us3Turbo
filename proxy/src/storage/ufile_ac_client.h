@@ -65,31 +65,36 @@ class UfileAcClient {
   }
 
   /* GDS 写一个 block 到 backend。 */
-  [[nodiscard]] BlockResult PutBlockGds(const std::string& key, const std::string& rdma_token,
+  [[nodiscard]] BlockResult PutBlockGds(const std::string& key,
+                                        const std::string& rdma_token,
                                         std::uint64_t gpu_offset, std::uint64_t data_len);
 
   /* UCX 写一个 block 到 backend。 */
   [[nodiscard]] BlockResult PutBlockUcx(const std::string& key, std::uint64_t remote_addr,
                                         const std::string& packed_rkey,
                                         const std::string& client_ucx_addr,
-                                        std::uint64_t source_offset, std::uint64_t data_len);
+                                        std::uint64_t source_offset,
+                                        std::uint64_t data_len);
 
   /* 尽力删除一个 block；失败通常忽略（TTL 兜底），KEY_NOT_FOUND 视为可接受。 */
   [[nodiscard]] BlockResult DeleteBlock(const std::string& key);
 
   /* GDS 读一个 block 到 client GPU buffer。request_id 透传进 backend
    * 供日志关联。 */
-  [[nodiscard]] BlockResult GetBlockGds(const std::string& key, const std::string& rdma_token,
-                                        std::uint64_t gpu_offset, std::uint64_t read_offset,
-                                        std::uint64_t data_len, std::uint64_t request_id);
+  [[nodiscard]] BlockResult GetBlockGds(const std::string& key,
+                                        const std::string& rdma_token,
+                                        std::uint64_t gpu_offset,
+                                        std::uint64_t read_offset, std::uint64_t data_len,
+                                        std::uint64_t request_id);
 
   /* UCX 读一个 block 到 client buffer。request_id 透传进 backend 供日志关联。
    */
   [[nodiscard]] BlockResult GetBlockUcx(const std::string& key, std::uint64_t remote_addr,
                                         const std::string& packed_rkey,
                                         const std::string& client_ucx_addr,
-                                        std::uint64_t dest_offset, std::uint64_t read_offset,
-                                        std::uint64_t data_len, std::uint64_t request_id);
+                                        std::uint64_t dest_offset,
+                                        std::uint64_t read_offset, std::uint64_t data_len,
+                                        std::uint64_t request_id);
 
  private:
   /* 拆分 "host:port" 为 host + port；失败返回 false。 */
@@ -100,16 +105,17 @@ class UfileAcClient {
 
   /* 通用收发骨架：取连接→加锁→发送→收响应头(校验magic/type/body_len)→收响应体。
    * 成功返回0；失败填out_result并返回非0。编码/解码由调用方完成。 */
-  int SendAndRecv(const char* op_name, std::uint32_t expected_type, std::uint32_t min_rsp_body,
-                  const std::vector<char>& req_buf, std::vector<char>& out_body,
-                  BlockResult& out_result);
+  int SendAndRecv(const char* op_name, std::uint32_t expected_type,
+                  std::uint32_t min_rsp_body, const std::vector<char>& req_buf,
+                  std::vector<char>& out_body, BlockResult& out_result);
 
   /* 解码响应辅助，返回填充好的 BlockResult。 */
   static BlockResult DecodeGdsPutRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
   static BlockResult DecodeUcxPutRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
-  static BlockResult DecodeDelRsp(const char* body, std::uint32_t body_len, const std::string& key);
+  static BlockResult DecodeDelRsp(const char* body, std::uint32_t body_len,
+                                  const std::string& key);
   static BlockResult DecodeGdsGetRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
   static BlockResult DecodeUcxGetRsp(const char* body, std::uint32_t body_len,

@@ -74,22 +74,28 @@ class ProxyRpc {
   // ===== 分段上传接口（client → proxy）=====
 
   /** @brief 初始化分段上传，返回 upload_id。 */
-  [[nodiscard]] bool CreateMultipartUpload(std::string_view request_id, const std::string& bucket,
+  [[nodiscard]] bool CreateMultipartUpload(std::string_view request_id,
+                                           const std::string& bucket,
                                            const std::string& key,
                                            ::us3_turbo::proxy::PutDataPath path,
                                            std::string& out_upload_id,
                                            std::string& out_error) const;
 
   /** @brief GDS 路径上传单个 part：rdma_token 随 RPC 透传。 */
-  [[nodiscard]] bool UploadPartGds(std::string_view request_id, const std::string& upload_id,
+  [[nodiscard]] bool UploadPartGds(std::string_view request_id,
+                                   const std::string& upload_id,
                                    std::uint32_t part_number, std::uint64_t part_size,
-                                   const std::string& rdma_token, PutPathResult& result) const;
+                                   const std::string& rdma_token,
+                                   PutPathResult& result) const;
 
   /** @brief UCX 路径上传单个 part：描述符随 RPC 透传。 */
-  [[nodiscard]] bool UploadPartUcx(std::string_view request_id, const std::string& upload_id,
+  [[nodiscard]] bool UploadPartUcx(std::string_view request_id,
+                                   const std::string& upload_id,
                                    std::uint32_t part_number, std::uint64_t part_size,
-                                   std::uint64_t remote_addr, const std::string& packed_rkey,
-                                   const std::string& client_ucx_addr, PutPathResult& result) const;
+                                   std::uint64_t remote_addr,
+                                   const std::string& packed_rkey,
+                                   const std::string& client_ucx_addr,
+                                   PutPathResult& result) const;
 
   /** @brief 完成分段上传，返回最终 object_id/etag/size。 */
   struct CompletedMultipart {
@@ -105,7 +111,8 @@ class ProxyRpc {
       CompletedMultipart& out) const;
 
   /** @brief 终止分段上传，proxy 清理会话（幂等）。 */
-  [[nodiscard]] bool AbortMultipartUpload(std::string_view request_id, const std::string& upload_id,
+  [[nodiscard]] bool AbortMultipartUpload(std::string_view request_id,
+                                          const std::string& upload_id,
                                           std::string& out_error) const;
 
   // ===== GET 接口（client → proxy）=====

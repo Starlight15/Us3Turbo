@@ -11,7 +11,8 @@
 
 namespace us3_turbo::proxy {
 
-bool UfileAcClient::ParseEndpoint(const std::string& endpoint, std::string& host, int& port) {
+bool UfileAcClient::ParseEndpoint(const std::string& endpoint, std::string& host,
+                                  int& port) {
   const auto pos = endpoint.rfind(':');
   if (pos == std::string::npos) return false;
   host = endpoint.substr(0, pos);
@@ -38,7 +39,8 @@ std::pair<std::size_t, TcpConnection*> UfileAcClient::AcquireConn() {
 
 /* GDS PUT */
 
-BlockResult UfileAcClient::PutBlockGds(const std::string& key, const std::string& rdma_token,
+BlockResult UfileAcClient::PutBlockGds(const std::string& key,
+                                       const std::string& rdma_token,
                                        std::uint64_t gpu_offset, std::uint64_t data_len) {
   LOG_SYS_DEBUG("PutBlockGds: key={} offset={} len={}", key, gpu_offset, data_len);
 
@@ -50,12 +52,14 @@ BlockResult UfileAcClient::PutBlockGds(const std::string& key, const std::string
   // 收发
   std::vector<char> rsp_body;
   BlockResult result;
-  if (SendAndRecv("PutBlockGds", OSD_GDS_PUT_RSP, GDS_PUT_RSP_SIZE, req, rsp_body, result) != 0) {
+  if (SendAndRecv("PutBlockGds", OSD_GDS_PUT_RSP, GDS_PUT_RSP_SIZE, req, rsp_body,
+                  result) != 0) {
     return result;  // 已填错误
   }
 
   // 解码
-  return DecodeGdsPutRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()), key);
+  return DecodeGdsPutRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()),
+                         key);
 }
 
 /* UCX PUT */
@@ -63,23 +67,27 @@ BlockResult UfileAcClient::PutBlockGds(const std::string& key, const std::string
 BlockResult UfileAcClient::PutBlockUcx(const std::string& key, std::uint64_t remote_addr,
                                        const std::string& packed_rkey,
                                        const std::string& client_ucx_addr,
-                                       std::uint64_t source_offset, std::uint64_t data_len) {
+                                       std::uint64_t source_offset,
+                                       std::uint64_t data_len) {
   LOG_SYS_DEBUG("PutBlockUcx: key={} offset={} len={}", key, source_offset, data_len);
 
   // 编码
   std::vector<char> req;
-  EncodeUcxPutRequest(key, remote_addr, packed_rkey, client_ucx_addr, source_offset, data_len,
-                      setid_, session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+  EncodeUcxPutRequest(key, remote_addr, packed_rkey, client_ucx_addr, source_offset,
+                      data_len, setid_,
+                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
 
   // 收发
   std::vector<char> rsp_body;
   BlockResult result;
-  if (SendAndRecv("PutBlockUcx", OSD_UCX_PUT_RSP, UCX_PUT_RSP_SIZE, req, rsp_body, result) != 0) {
+  if (SendAndRecv("PutBlockUcx", OSD_UCX_PUT_RSP, UCX_PUT_RSP_SIZE, req, rsp_body,
+                  result) != 0) {
     return result;
   }
 
   // 解码
-  return DecodeUcxPutRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()), key);
+  return DecodeUcxPutRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()),
+                         key);
 }
 
 /* DEL (best-effort) */
@@ -89,7 +97,8 @@ BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
 
   // 编码
   std::vector<char> req;
-  EncodeDelRequest(key, setid_, session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+  EncodeDelRequest(key, setid_, session_seq_.fetch_add(1, std::memory_order_relaxed),
+                   req);
 
   // 收发
   std::vector<char> rsp_body;
@@ -105,7 +114,8 @@ BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
 /* 通用收发骨架 */
 
 int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
-                               std::uint32_t min_rsp_body, const std::vector<char>& req_buf,
+                               std::uint32_t min_rsp_body,
+                               const std::vector<char>& req_buf,
                                std::vector<char>& out_body, BlockResult& out_result) {
   /* 连接级失败重试: 对端(ufile-ac)空闲关闭后, 池中连接第一笔请求必失败。
    * 失败后立即 Close 当前连接, 下次 AcquireConn 跳过 !alive 连接取下一条
@@ -300,26 +310,31 @@ BlockResult UfileAcClient::DecodeDelRsp(const char* body, std::uint32_t body_len
 
 /* GDS GET */
 
-BlockResult UfileAcClient::GetBlockGds(const std::string& key, const std::string& rdma_token,
-                                       std::uint64_t gpu_offset, std::uint64_t read_offset,
-                                       std::uint64_t data_len, std::uint64_t request_id) {
-  LOG_SYS_DEBUG("GetBlockGds: key={} gpu_offset={} read_offset={} len={} request_id={}", key,
-                gpu_offset, read_offset, data_len, request_id);
+BlockResult UfileAcClient::GetBlockGds(const std::string& key,
+                                       const std::string& rdma_token,
+                                       std::uint64_t gpu_offset,
+                                       std::uint64_t read_offset, std::uint64_t data_len,
+                                       std::uint64_t request_id) {
+  LOG_SYS_DEBUG("GetBlockGds: key={} gpu_offset={} read_offset={} len={} request_id={}",
+                key, gpu_offset, read_offset, data_len, request_id);
 
   // 编码
   std::vector<char> req;
   EncodeGdsGetRequest(key, rdma_token, read_offset, gpu_offset, data_len, setid_,
-                      session_seq_.fetch_add(1, std::memory_order_relaxed), request_id, req);
+                      session_seq_.fetch_add(1, std::memory_order_relaxed), request_id,
+                      req);
 
   // 收发
   std::vector<char> rsp_body;
   BlockResult result;
-  if (SendAndRecv("GetBlockGds", OSD_GDS_GET_RSP, GDS_GET_RSP_SIZE, req, rsp_body, result) != 0) {
+  if (SendAndRecv("GetBlockGds", OSD_GDS_GET_RSP, GDS_GET_RSP_SIZE, req, rsp_body,
+                  result) != 0) {
     return result;  // 已填错误
   }
 
   // 解码
-  return DecodeGdsGetRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()), key);
+  return DecodeGdsGetRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()),
+                         key);
 }
 
 BlockResult UfileAcClient::DecodeGdsGetRsp(const char* body, std::uint32_t body_len,
@@ -357,26 +372,29 @@ BlockResult UfileAcClient::DecodeGdsGetRsp(const char* body, std::uint32_t body_
 BlockResult UfileAcClient::GetBlockUcx(const std::string& key, std::uint64_t remote_addr,
                                        const std::string& packed_rkey,
                                        const std::string& client_ucx_addr,
-                                       std::uint64_t dest_offset, std::uint64_t read_offset,
-                                       std::uint64_t data_len, std::uint64_t request_id) {
-  LOG_SYS_DEBUG("GetBlockUcx: key={} dest_offset={} read_offset={} len={} request_id={}", key,
-                dest_offset, read_offset, data_len, request_id);
+                                       std::uint64_t dest_offset,
+                                       std::uint64_t read_offset, std::uint64_t data_len,
+                                       std::uint64_t request_id) {
+  LOG_SYS_DEBUG("GetBlockUcx: key={} dest_offset={} read_offset={} len={} request_id={}",
+                key, dest_offset, read_offset, data_len, request_id);
 
   // 编码
   std::vector<char> req;
-  EncodeUcxGetRequest(key, remote_addr, packed_rkey, client_ucx_addr, dest_offset, read_offset,
-                      data_len, setid_, session_seq_.fetch_add(1, std::memory_order_relaxed),
-                      request_id, req);
+  EncodeUcxGetRequest(
+      key, remote_addr, packed_rkey, client_ucx_addr, dest_offset, read_offset, data_len,
+      setid_, session_seq_.fetch_add(1, std::memory_order_relaxed), request_id, req);
 
   // 收发
   std::vector<char> rsp_body;
   BlockResult result;
-  if (SendAndRecv("GetBlockUcx", OSD_UCX_GET_RSP, UCX_GET_RSP_SIZE, req, rsp_body, result) != 0) {
+  if (SendAndRecv("GetBlockUcx", OSD_UCX_GET_RSP, UCX_GET_RSP_SIZE, req, rsp_body,
+                  result) != 0) {
     return result;  // 已填错误
   }
 
   // 解码
-  return DecodeUcxGetRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()), key);
+  return DecodeUcxGetRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()),
+                         key);
 }
 
 BlockResult UfileAcClient::DecodeUcxGetRsp(const char* body, std::uint32_t body_len,

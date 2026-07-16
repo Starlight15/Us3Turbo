@@ -24,7 +24,8 @@ DEFINE_int64(multipart_part_size, 16LL * 1024 * 1024,
              "size (each part is written as one block; default 16MB, equals the "
              "backend single-op limit MAX_VALUE_LENGTH)");
 DEFINE_string(log_level, "info", "app log level: debug/info/warn/error");
-DEFINE_int32(log_max_size_mb, 50, "max size per app log file (MB); rotates when exceeded");
+DEFINE_int32(log_max_size_mb, 50,
+             "max size per app log file (MB); rotates when exceeded");
 DEFINE_int32(log_max_files, 10, "max number of rotated app log files to keep");
 DEFINE_int32(backend_conn_pool_size, 8,
              "backend connection pool size (recommend: ≈ num_threads for best "
@@ -37,4 +38,5 @@ DEFINE_int32(dbgate_conn_pool_size, 4,
 DEFINE_int32(bucket_id, 1,
              "Bucket ID for index operations (temporary hardcoded, Phase 5 "
              "will query bucketidx_col)");
-DEFINE_string(mongo_db_name, "s3proxy", "MongoDB database name for fileidx/minit/part collections");
+DEFINE_string(mongo_db_name, "s3proxy",
+              "MongoDB database name for fileidx/minit/part collections");

@@ -16,7 +16,8 @@ enum class PutDataPath : std::uint8_t {
 };
 
 inline PutDataPath operator|(PutDataPath a, PutDataPath b) {
-  return static_cast<PutDataPath>(static_cast<std::uint8_t>(a) | static_cast<std::uint8_t>(b));
+  return static_cast<PutDataPath>(static_cast<std::uint8_t>(a) |
+                                  static_cast<std::uint8_t>(b));
 }
 
 inline bool HasPath(PutDataPath flags, PutDataPath check) {

@@ -14,7 +14,8 @@ std::size_t EncodeGdsPutRequest(const std::string& key, const std::string& rdma_
                                 std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t tok_len = static_cast<std::uint32_t>(rdma_token.size());
-  const std::uint32_t body_len = static_cast<std::uint32_t>(GDS_PUT_REQ_SIZE + key_len + tok_len);
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(GDS_PUT_REQ_SIZE + key_len + tok_len);
   const std::uint32_t msg_size_field =
       static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
   const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
@@ -79,7 +80,8 @@ int DecodeGdsPutResponse(const char* buffer, std::size_t len, GdsPutRsp& out_rsp
 // ============================ UCX PUT ============================
 
 std::size_t EncodeUcxPutRequest(const std::string& key, std::uint64_t remote_addr,
-                                const std::string& packed_rkey, const std::string& client_ucx_addr,
+                                const std::string& packed_rkey,
+                                const std::string& client_ucx_addr,
                                 std::uint64_t source_offset, std::uint64_t data_len,
                                 std::uint32_t setid, std::uint64_t session_id,
                                 std::vector<char>& out_buffer) {
@@ -155,8 +157,8 @@ int DecodeUcxPutResponse(const char* buffer, std::size_t len, UcxPutRsp& out_rsp
 
 // ============================ DEL ============================
 
-std::size_t EncodeDelRequest(const std::string& key, std::uint32_t setid, std::uint64_t session_id,
-                             std::vector<char>& out_buffer) {
+std::size_t EncodeDelRequest(const std::string& key, std::uint32_t setid,
+                             std::uint64_t session_id, std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t body_len = static_cast<std::uint32_t>(DEL_REQ_SIZE + key_len);
   const std::uint32_t msg_size_field =
@@ -193,7 +195,8 @@ std::size_t EncodeDelRequest(const std::string& key, std::uint32_t setid, std::u
   return total;
 }
 
-int DecodeDelResponse(const char* buffer, std::size_t len, DelRsp& out_rsp, std::string& out_err) {
+int DecodeDelResponse(const char* buffer, std::size_t len, DelRsp& out_rsp,
+                      std::string& out_err) {
   if (len < DEL_RSP_SIZE) {
     out_err = "Del rsp body too short len=" + std::to_string(len);
     return -1;
@@ -219,7 +222,8 @@ std::size_t EncodeGdsGetRequest(const std::string& key, const std::string& rdma_
                                 std::vector<char>& out_buffer) {
   const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
   const std::uint32_t tok_len = static_cast<std::uint32_t>(rdma_token.size());
-  const std::uint32_t body_len = static_cast<std::uint32_t>(GDS_GET_REQ_SIZE + key_len + tok_len);
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(GDS_GET_REQ_SIZE + key_len + tok_len);
   const std::uint32_t msg_size_field =
       static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
   const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
@@ -284,7 +288,8 @@ int DecodeGdsGetResponse(const char* buffer, std::size_t len, GdsGetRsp& out_rsp
 // ============================ UCX GET ============================
 
 std::size_t EncodeUcxGetRequest(const std::string& key, std::uint64_t remote_addr,
-                                const std::string& packed_rkey, const std::string& client_ucx_addr,
+                                const std::string& packed_rkey,
+                                const std::string& client_ucx_addr,
                                 std::uint64_t dest_offset, std::uint64_t read_offset,
                                 std::uint64_t data_len, std::uint32_t setid,
                                 std::uint64_t session_id, std::uint64_t request_id,

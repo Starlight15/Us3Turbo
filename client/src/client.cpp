@@ -36,23 +36,25 @@ namespace {
   std::uint32_t local = 0;
   if (is_device) {
     std::vector<std::byte> host(buffer.size);
-    if (cudaError_t e = cudaMemcpy(host.data(), buffer.data, buffer.size, cudaMemcpyDeviceToHost);
+    if (cudaError_t e =
+            cudaMemcpy(host.data(), buffer.data, buffer.size, cudaMemcpyDeviceToHost);
         e != cudaSuccess) {
-      spdlog::error("{} (req={}): verify D2H failed: {}", request_id, tag, cudaGetErrorString(e));
+      spdlog::error("{} (req={}): verify D2H failed: {}", request_id, tag,
+                    cudaGetErrorString(e));
       return false;
     }
     local = Crc32c(std::span<const std::byte>(host.data(), host.size()));
   } else {
-    local =
-        Crc32c(std::span<const std::byte>(static_cast<const std::byte*>(buffer.data), buffer.size));
+    local = Crc32c(std::span<const std::byte>(static_cast<const std::byte*>(buffer.data),
+                                              buffer.size));
   }
   if (local == remote_crc32c) {
-    spdlog::info("{} (req={}): crc32c MATCH local={:08x} remote={:08x}", request_id, tag, local,
-                 remote_crc32c);
+    spdlog::info("{} (req={}): crc32c MATCH local={:08x} remote={:08x}", request_id, tag,
+                 local, remote_crc32c);
     return true;
   }
-  spdlog::error("{} (req={}): crc32c MISMATCH local={:08x} remote={:08x}", request_id, tag, local,
-                remote_crc32c);
+  spdlog::error("{} (req={}): crc32c MISMATCH local={:08x} remote={:08x}", request_id,
+                tag, local, remote_crc32c);
   return false;
 }
 
@@ -213,8 +215,9 @@ bool Client::CreateMultipartUpload(const std::string& bucket, const std::string&
     return false;
   }
   const std::string request_id = detail::MakeRequestId();
-  const ::us3_turbo::proxy::PutDataPath proto_path =
-      (path == PutDataPath::kGds) ? ::us3_turbo::proxy::PATH_GDS : ::us3_turbo::proxy::PATH_UCX;
+  const ::us3_turbo::proxy::PutDataPath proto_path = (path == PutDataPath::kGds)
+                                                         ? ::us3_turbo::proxy::PATH_GDS
+                                                         : ::us3_turbo::proxy::PATH_UCX;
   return proxy_->CreateMultipartUpload(request_id, bucket, key, proto_path, out_upload_id,
                                        out_error);
 }
@@ -236,7 +239,8 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
   // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
   if (buffer.size > options_.multipart_part_size) {
-    out_error = "part size " + std::to_string(buffer.size) + " exceeds multipart_part_size (" +
+    out_error = "part size " + std::to_string(buffer.size) +
+                " exceeds multipart_part_size (" +
                 std::to_string(options_.multipart_part_size) + ")";
     return false;
   }
@@ -252,8 +256,8 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   const std::string rdma_token(token.str());
 
   PutPathResult result;
-  const bool rpc_ok =
-      proxy_->UploadPartGds(request_id, upload_id, part_number, buffer.size, rdma_token, result);
+  const bool rpc_ok = proxy_->UploadPartGds(request_id, upload_id, part_number,
+                                            buffer.size, rdma_token, result);
   // Token 析构自动释放（RAII），无需显式 ReleaseToken。
 
   if (!rpc_ok || !result.ok) {
@@ -269,8 +273,8 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   }
 
   out_etag = result.etag;
-  spdlog::info("UploadPartGds (req={}): upload={} part={} size={} etag={}", request_id, upload_id,
-               part_number, buffer.size, out_etag);
+  spdlog::info("UploadPartGds (req={}): upload={} part={} size={} etag={}", request_id,
+               upload_id, part_number, buffer.size, out_etag);
   return true;
 }
 
@@ -291,7 +295,8 @@ bool Client::UploadPartUcx(const std::string& upload_id, std::uint32_t part_numb
   // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
   // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
   if (buffer.size > options_.multipart_part_size) {
-    out_error = "part size " + std::to_string(buffer.size) + " exceeds multipart_part_size (" +
+    out_error = "part size " + std::to_string(buffer.size) +
+                " exceeds multipart_part_size (" +
                 std::to_string(options_.multipart_part_size) + ")";
     return false;
   }
@@ -306,8 +311,8 @@ bool Client::UploadPartUcx(const std::string& upload_id, std::uint32_t part_numb
 
   PutPathResult result;
   const bool rpc_ok =
-      proxy_->UploadPartUcx(request_id, upload_id, part_number, buffer.size, desc.remote_addr,
-                            desc.rkey, desc.client_ucx_addr, result);
+      proxy_->UploadPartUcx(request_id, upload_id, part_number, buffer.size,
+                            desc.remote_addr, desc.rkey, desc.client_ucx_addr, result);
   if (!rpc_ok || !result.ok) {
     out_error = result.error_message;
     if (out_error.empty()) out_error = "UploadPartUcx rpc failed";
@@ -319,8 +324,8 @@ bool Client::UploadPartUcx(const std::string& upload_id, std::uint32_t part_numb
   }
 
   out_etag = result.etag;
-  spdlog::info("UploadPartUcx (req={}): upload={} part={} size={} etag={}", request_id, upload_id,
-               part_number, buffer.size, out_etag);
+  spdlog::info("UploadPartUcx (req={}): upload={} part={} size={} etag={}", request_id,
+               upload_id, part_number, buffer.size, out_etag);
   return true;
 }
 
@@ -346,7 +351,8 @@ bool Client::CompleteMultipartUpload(const std::string& upload_id,
   return out.ok;
 }
 
-bool Client::AbortMultipartUpload(const std::string& upload_id, std::string& out_error) const {
+bool Client::AbortMultipartUpload(const std::string& upload_id,
+                                  std::string& out_error) const {
   if (!initialized_) {
     out_error = "Client not initialized";
     return false;

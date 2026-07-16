@@ -12,7 +12,8 @@
 namespace us3_turbo::client {
 
 bool UcxGetChannel::StatObject(const std::string& bucket, const std::string& key,
-                               std::uint64_t& out_object_size, std::string& out_error) const {
+                               std::uint64_t& out_object_size,
+                               std::string& out_error) const {
   const std::string request_id = detail::MakeRequestId();
   return proxy_.StatObject(request_id, bucket, key, out_object_size, out_error);
 }

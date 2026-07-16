@@ -32,18 +32,20 @@ using detail::MakeRequestId;
 using detail::TraceLatency;
 
 // CRC32C 校验(options.verify_crc32c):GDS 需 D2H 拷贝后计算。
-[[nodiscard]] bool VerifyGdsCrc32c(const std::string& request_id, ConstBufferView device_buffer,
+[[nodiscard]] bool VerifyGdsCrc32c(const std::string& request_id,
+                                   ConstBufferView device_buffer,
                                    std::uint32_t remote_crc32c,
                                    const ClientProxyPutRequest& request) {
   std::vector<std::byte> host(device_buffer.size);
-  if (cudaError_t e =
-          cudaMemcpy(host.data(), device_buffer.data, device_buffer.size, cudaMemcpyDeviceToHost);
+  if (cudaError_t e = cudaMemcpy(host.data(), device_buffer.data, device_buffer.size,
+                                 cudaMemcpyDeviceToHost);
       e != cudaSuccess) {
     spdlog::error("GdsPut (req={}): verify_crc32c D2H copy failed: {}", request_id,
                   cudaGetErrorString(e));
     return false;
   }
-  const std::uint32_t local = Crc32c(std::span<const std::byte>(host.data(), host.size()));
+  const std::uint32_t local =
+      Crc32c(std::span<const std::byte>(host.data(), host.size()));
   const std::uint32_t remote = remote_crc32c;
   if (local == remote) {
     spdlog::info(
@@ -76,8 +78,8 @@ bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& request, ConstBufferVie
   GdsDataSource gds_source{std::string(token.str())};
   auto t_token = trace ? clk::now() : clk::time_point{};
 
-  if (!proxy_.GdsPut(request_id, request.bucket, request.key, request.object_size, gds_source,
-                     result)) {
+  if (!proxy_.GdsPut(request_id, request.bucket, request.key, request.object_size,
+                     gds_source, result)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};

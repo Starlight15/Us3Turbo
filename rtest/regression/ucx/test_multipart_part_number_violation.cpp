@@ -75,7 +75,8 @@ int main(int argc, char** argv) {
   }
 
   const auto upload_part = [&](const std::string& upload_id, std::uint32_t part_no,
-                               std::string& etag, std::string& err, int retries = 1) -> bool {
+                               std::string& etag, std::string& err,
+                               int retries = 1) -> bool {
     // backend 数据面偶发单 block 超时(见 TEST_FINDINGS.md P4)；对正常
     // UploadPart 做有限重试，仅在重试后仍失败才算真正失败，避免把环境抖动当作
     // part 上传 失败而误判跳号检测。注意: 重复 part 场景须传
@@ -83,8 +84,8 @@ int main(int argc, char** argv) {
     // AddPart，改变重复检测语义)。
     for (int attempt = 0; attempt <= retries; ++attempt) {
       if (client.UploadPartUcx(upload_id, part_no,
-                               ConstBufferView{.data = host.data(), .size = part_size}, etag,
-                               err)) {
+                               ConstBufferView{.data = host.data(), .size = part_size},
+                               etag, err)) {
         return true;
       }
     }
@@ -98,7 +99,8 @@ int main(int argc, char** argv) {
   std::string scene_a_reason;
   {
     std::string upload_id, error;
-    if (!client.CreateMultipartUpload(bucket, key_a, PutDataPath::kUcx, upload_id, error)) {
+    if (!client.CreateMultipartUpload(bucket, key_a, PutDataPath::kUcx, upload_id,
+                                      error)) {
       scene_a_reason = "CreateMultipartUpload failed: " + error;
       std::cerr << "  " << scene_a_reason << "\n";
     } else {
@@ -110,8 +112,8 @@ int main(int argc, char** argv) {
       std::string e2r, e2_err;
       const bool up2_ok = upload_part(upload_id, 2, e2v, e2_err);
 
-      std::cout << "  up1 ok=" << up1_ok << " | dup up1' ok=" << up1b_ok << " err=\"" << e1b_err2
-                << "\" | up2 ok=" << up2_ok << "\n";
+      std::cout << "  up1 ok=" << up1_ok << " | dup up1' ok=" << up1b_ok << " err=\""
+                << e1b_err2 << "\" | up2 ok=" << up2_ok << "\n";
 
       std::vector<Client::PartInfo> parts;
       if (up1_ok) parts.push_back({1, e1});
@@ -150,7 +152,8 @@ int main(int argc, char** argv) {
   std::string scene_b_reason;
   {
     std::string upload_id, error;
-    if (!client.CreateMultipartUpload(bucket, key_b, PutDataPath::kUcx, upload_id, error)) {
+    if (!client.CreateMultipartUpload(bucket, key_b, PutDataPath::kUcx, upload_id,
+                                      error)) {
       scene_b_reason = "CreateMultipartUpload failed: " + error;
       std::cerr << "  " << scene_b_reason << "\n";
     } else {
@@ -199,7 +202,8 @@ int main(int argc, char** argv) {
 
   // 环境不稳(backend 数据面超时导致 up3 没上传) → 整体 SKIP(77)，不判 FAIL。
   if (scene_b_skipped) {
-    std::cout << "\n[SKIP] " << kTestName << ": scene B inconclusive (backend unstable); scene A="
+    std::cout << "\n[SKIP] " << kTestName
+              << ": scene B inconclusive (backend unstable); scene A="
               << (scene_a_pass ? "PASS" : "FAIL") << "\n";
     return 77;
   }

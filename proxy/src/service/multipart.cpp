@@ -33,9 +33,11 @@ void Multipart::CleanupWrittenBlocks(const std::string& request_id,
   }
 }
 
-int Multipart::ValidateUploadPartGds(const std::string& request_id, const std::string& upload_id,
+int Multipart::ValidateUploadPartGds(const std::string& request_id,
+                                     const std::string& upload_id,
                                      std::uint32_t part_number, std::uint64_t part_size,
-                                     const std::string& rdma_token, UploadRecord& out_upload) {
+                                     const std::string& rdma_token,
+                                     UploadRecord& out_upload) {
   /* 1) 读取 upload 元信息 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
@@ -55,8 +57,8 @@ int Multipart::ValidateUploadPartGds(const std::string& request_id, const std::s
     return PROXY_ERR_INVALID_PARAM;
   }
   if (part_size > static_cast<std::uint64_t>(FLAGS_multipart_part_size)) {
-    LOG_WARN(request_id, "UploadPartGds upload={} part={} size={} > max {}", upload_id, part_number,
-             part_size, FLAGS_multipart_part_size);
+    LOG_WARN(request_id, "UploadPartGds upload={} part={} size={} > max {}", upload_id,
+             part_number, part_size, FLAGS_multipart_part_size);
     return PROXY_ERR_INVALID_PART_SIZE;
   }
   if (rdma_token.empty()) {
@@ -68,10 +70,13 @@ int Multipart::ValidateUploadPartGds(const std::string& request_id, const std::s
   return 0;
 }
 
-int Multipart::ValidateUploadPartUcx(const std::string& request_id, const std::string& upload_id,
+int Multipart::ValidateUploadPartUcx(const std::string& request_id,
+                                     const std::string& upload_id,
                                      std::uint32_t part_number, std::uint64_t part_size,
-                                     std::uint64_t remote_addr, const std::string& packed_rkey,
-                                     const std::string& client_ucx_addr, UploadRecord& out_upload) {
+                                     std::uint64_t remote_addr,
+                                     const std::string& packed_rkey,
+                                     const std::string& client_ucx_addr,
+                                     UploadRecord& out_upload) {
   /* 1) 读取 upload 元信息 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
@@ -91,22 +96,22 @@ int Multipart::ValidateUploadPartUcx(const std::string& request_id, const std::s
     return PROXY_ERR_INVALID_PARAM;
   }
   if (part_size > static_cast<std::uint64_t>(FLAGS_multipart_part_size)) {
-    LOG_WARN(request_id, "UploadPartUcx upload={} part={} size={} > max {}", upload_id, part_number,
-             part_size, FLAGS_multipart_part_size);
+    LOG_WARN(request_id, "UploadPartUcx upload={} part={} size={} > max {}", upload_id,
+             part_number, part_size, FLAGS_multipart_part_size);
     return PROXY_ERR_INVALID_PART_SIZE;
   }
   if (remote_addr == 0 || packed_rkey.empty() || client_ucx_addr.empty()) {
-    LOG_WARN(request_id, "UploadPartUcx upload={} part={} ucx source fields incomplete", upload_id,
-             part_number);
+    LOG_WARN(request_id, "UploadPartUcx upload={} part={} ucx source fields incomplete",
+             upload_id, part_number);
     return PROXY_ERR_MISSING_SOURCE;
   }
   out_upload = upload;
   return 0;
 }
 
-bool Multipart::WritePartIndex(const std::string& request_id, const std::string& upload_id,
-                               std::uint32_t part_number, std::uint64_t part_size,
-                               std::uint64_t file_offset,
+bool Multipart::WritePartIndex(const std::string& request_id,
+                               const std::string& upload_id, std::uint32_t part_number,
+                               std::uint64_t part_size, std::uint64_t file_offset,
                                const std::vector<std::uint32_t>& block_crcs,
                                UploadPartOutput& out) {
   /* 1) 计算 part etag */
@@ -136,24 +141,26 @@ bool Multipart::WritePartIndex(const std::string& request_id, const std::string&
   out.etag = part_etag;
   out.crc32c = block_crcs.empty() ? 0 : block_crcs[0];
   out.bytes_written = part_size;
-  LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}", upload_id, part_number, out.etag,
-           block_crcs.size());
+  LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}", upload_id, part_number,
+           out.etag, block_crcs.size());
   return true;
 }
 
 int Multipart::CreateUpload(const std::string& request_id, const std::string& bucket,
-                            const std::string& key, PutDataPath path, std::string& out_upload_id) {
+                            const std::string& key, PutDataPath path,
+                            std::string& out_upload_id) {
   if (bucket.empty() || key.empty()) {
     LOG_WARN(request_id, "bucket/key empty bucket={} key={}", bucket, key);
     return PROXY_ERR_INVALID_PARAM;
   }
   if (path != PATH_GDS && path != PATH_UCX) {
-    LOG_WARN(request_id, "path={} not GDS/UCX bucket={}/{}", static_cast<int>(path), bucket, key);
+    LOG_WARN(request_id, "path={} not GDS/UCX bucket={}/{}", static_cast<int>(path),
+             bucket, key);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
   out_upload_id = index_->Create(bucket, key, path);
-  LOG_INFO(request_id, "created upload_id={} bucket={}/{} path={}", out_upload_id, bucket, key,
-           static_cast<int>(path));
+  LOG_INFO(request_id, "created upload_id={} bucket={}/{} path={}", out_upload_id, bucket,
+           key, static_cast<int>(path));
   return 0;
 }
 
@@ -162,8 +169,8 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
                              const std::string& rdma_token, UploadPartOutput& out) {
   /* 1) 校验 */
   UploadRecord upload;
-  int ret =
-      ValidateUploadPartGds(request_id, upload_id, part_number, part_size, rdma_token, upload);
+  int ret = ValidateUploadPartGds(request_id, upload_id, part_number, part_size,
+                                  rdma_token, upload);
   if (ret != 0) return ret;
 
   /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
@@ -172,33 +179,38 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
    * 全局 block 序号 = part_number-1（1 block/part），与 GET 按
    * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
    * (part-1)）。 */
-  const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
-  const std::uint64_t file_offset = static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
+  const std::uint64_t part_size_limit =
+      static_cast<std::uint64_t>(FLAGS_multipart_part_size);
+  const std::uint64_t file_offset =
+      static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
   const std::string block_key = GenerateBlockKey(upload.obj_id, part_number - 1);
 
-  LOG_INFO(request_id, "upload={} part={} size={} block_key={} offset={}", upload_id, part_number,
-           part_size, block_key, file_offset);
+  LOG_INFO(request_id, "upload={} part={} size={} block_key={} offset={}", upload_id,
+           part_number, part_size, block_key, file_offset);
 
   if (block_key.size() > KEY_MAX_LENGTH) {
-    LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}", upload_id, part_number,
-              block_key.size(), KEY_MAX_LENGTH);
+    LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}", upload_id,
+              part_number, block_key.size(), KEY_MAX_LENGTH);
     return PROXY_ERR_INVALID_PARAM;
   }
 
   /* 写单块（整 part）。失败时无已写 block，直接返回，无需回滚。 */
-  const auto result = client_->PutBlockGds(block_key, rdma_token, /*gpu_offset=*/0, part_size);
+  const auto result =
+      client_->PutBlockGds(block_key, rdma_token, /*gpu_offset=*/0, part_size);
   if (result.ret_code != 0) {
     LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id, part_number,
               result.error);
     return result.ret_code;
   }
-  LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}", upload_id, part_number,
-            block_key, result.crc32c);
+  LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}", upload_id,
+            part_number, block_key, result.crc32c);
 
   /* 写索引 + 填输出；索引失败回滚已写块。 */
   const std::vector<std::uint32_t> crcs{result.crc32c};
-  if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out)) {
-    LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id, part_number);
+  if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs,
+                      out)) {
+    LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id,
+              part_number);
     const std::vector<std::string> written_keys{block_key};
     CleanupWrittenBlocks(request_id, written_keys);
     return PROXY_ERR_INDEX_FAILED;
@@ -212,8 +224,8 @@ int Multipart::UploadPartUcx(const std::string& request_id, const std::string& u
                              const std::string& client_ucx_addr, UploadPartOutput& out) {
   /* 1) 校验 */
   UploadRecord upload;
-  int ret = ValidateUploadPartUcx(request_id, upload_id, part_number, part_size, remote_addr,
-                                  packed_rkey, client_ucx_addr, upload);
+  int ret = ValidateUploadPartUcx(request_id, upload_id, part_number, part_size,
+                                  remote_addr, packed_rkey, client_ucx_addr, upload);
   if (ret != 0) return ret;
 
   /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
@@ -222,34 +234,39 @@ int Multipart::UploadPartUcx(const std::string& request_id, const std::string& u
    * 全局 block 序号 = part_number-1（1 block/part），与 GET 按
    * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
    * (part-1)）。 */
-  const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
-  const std::uint64_t file_offset = static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
+  const std::uint64_t part_size_limit =
+      static_cast<std::uint64_t>(FLAGS_multipart_part_size);
+  const std::uint64_t file_offset =
+      static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
   const std::string block_key = GenerateBlockKey(upload.obj_id, part_number - 1);
 
-  LOG_INFO(request_id, "upload={} part={} size={} block_key={} offset={}", upload_id, part_number,
-           part_size, block_key, file_offset);
+  LOG_INFO(request_id, "upload={} part={} size={} block_key={} offset={}", upload_id,
+           part_number, part_size, block_key, file_offset);
 
   if (block_key.size() > KEY_MAX_LENGTH) {
-    LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}", upload_id, part_number,
-              block_key.size(), KEY_MAX_LENGTH);
+    LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}", upload_id,
+              part_number, block_key.size(), KEY_MAX_LENGTH);
     return PROXY_ERR_INVALID_PARAM;
   }
 
   /* 写单块（整 part）。失败时无已写 block，直接返回，无需回滚。 */
-  const auto result = client_->PutBlockUcx(block_key, remote_addr, packed_rkey, client_ucx_addr,
-                                           /*source_offset=*/0, part_size);
+  const auto result =
+      client_->PutBlockUcx(block_key, remote_addr, packed_rkey, client_ucx_addr,
+                           /*source_offset=*/0, part_size);
   if (result.ret_code != 0) {
     LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id, part_number,
               result.error);
     return result.ret_code;
   }
-  LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}", upload_id, part_number,
-            block_key, result.crc32c);
+  LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}", upload_id,
+            part_number, block_key, result.crc32c);
 
   /* 写索引 + 填输出；索引失败回滚已写块。 */
   const std::vector<std::uint32_t> crcs{result.crc32c};
-  if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out)) {
-    LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id, part_number);
+  if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs,
+                      out)) {
+    LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id,
+              part_number);
     const std::vector<std::string> written_keys{block_key};
     CleanupWrittenBlocks(request_id, written_keys);
     return PROXY_ERR_INDEX_FAILED;
@@ -259,7 +276,8 @@ int Multipart::UploadPartUcx(const std::string& request_id, const std::string& u
 
 int Multipart::CompleteUpload(
     const std::string& request_id, const std::string& upload_id,
-    const std::vector<CompleteMultipartUploadRequest_PartInfo>& client_parts, CompleteOutput& out) {
+    const std::vector<CompleteMultipartUploadRequest_PartInfo>& client_parts,
+    CompleteOutput& out) {
   /* 1) 读取 upload 元信息 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
@@ -271,8 +289,9 @@ int Multipart::CompleteUpload(
   index_->ListParts(upload_id, parts);
 
   /* 2) 按 part_number 升序排序 */
-  std::sort(parts.begin(), parts.end(),
-            [](const PartRecord& a, const PartRecord& b) { return a.part_number < b.part_number; });
+  std::sort(parts.begin(), parts.end(), [](const PartRecord& a, const PartRecord& b) {
+    return a.part_number < b.part_number;
+  });
 
   /* 3) 校验升序无重复 */
   int ret = ValidateParts(request_id, parts);
@@ -293,14 +312,15 @@ int Multipart::CompleteUpload(
   /* 6) 校验 client part 列表 etag 匹配 */
   if (!client_parts.empty()) {
     if (client_parts.size() != parts.size()) {
-      LOG_WARN(request_id, "upload={} client parts={} != actual={}", upload_id, client_parts.size(),
-               parts.size());
+      LOG_WARN(request_id, "upload={} client parts={} != actual={}", upload_id,
+               client_parts.size(), parts.size());
       return PROXY_ERR_INVALID_PARAM;
     }
     for (std::size_t i = 0; i < parts.size(); ++i) {
       if (client_parts[i].part_number() != parts[i].part_number ||
           client_parts[i].etag() != parts[i].etag) {
-        LOG_WARN(request_id, "upload={} part {} etag mismatch", upload_id, parts[i].part_number);
+        LOG_WARN(request_id, "upload={} part {} etag mismatch", upload_id,
+                 parts[i].part_number);
         return PROXY_ERR_INVALID_PARAM;
       }
     }
@@ -310,8 +330,8 @@ int Multipart::CompleteUpload(
   std::uint64_t parts_sum = 0;
   for (const auto& p : parts) parts_sum += p.part_size;
   if (upload.merged_size != parts_sum) {
-    LOG_WARN(request_id, "upload={} merged_size={} != parts_sum={} (index inconsistent)", upload_id,
-             upload.merged_size, parts_sum);
+    LOG_WARN(request_id, "upload={} merged_size={} != parts_sum={} (index inconsistent)",
+             upload_id, upload.merged_size, parts_sum);
     return PROXY_ERR_INTERNAL;
   }
   const std::uint64_t total_size = upload.merged_size;
@@ -320,8 +340,8 @@ int Multipart::CompleteUpload(
   std::vector<std::uint32_t> object_crcs;
   for (const auto& p : parts) {
     if (p.block_crcs.empty()) {
-      LOG_ERROR(request_id, "upload={} part={} block_crcs empty, index corrupted", upload_id,
-                p.part_number);
+      LOG_ERROR(request_id, "upload={} part={} block_crcs empty, index corrupted",
+                upload_id, p.part_number);
       return PROXY_ERR_INTERNAL;
     }
     object_crcs.insert(object_crcs.end(), p.block_crcs.begin(), p.block_crcs.end());
@@ -368,14 +388,16 @@ bool Multipart::AbortUpload(const std::string& request_id, const std::string& up
 }
 
 /* s3 语义：part_number 升序无重复（允许间隙），此处校验严格升序 */
-int Multipart::ValidateParts(const std::string& request_id, const std::vector<PartRecord>& parts) {
+int Multipart::ValidateParts(const std::string& request_id,
+                             const std::vector<PartRecord>& parts) {
   if (parts.empty()) {
     LOG_WARN(request_id, "no parts uploaded");
     return PROXY_ERR_INVALID_PARAM;
   }
   for (std::size_t i = 1; i < parts.size(); ++i) {
     if (parts[i].part_number <= parts[i - 1].part_number) {
-      LOG_WARN(request_id, "part {} not strictly ascending at index {}", parts[i].part_number, i);
+      LOG_WARN(request_id, "part {} not strictly ascending at index {}",
+               parts[i].part_number, i);
       return PROXY_ERR_INVALID_PARAM;
     }
   }
@@ -384,7 +406,8 @@ int Multipart::ValidateParts(const std::string& request_id, const std::vector<Pa
 
 int Multipart::ValidatePartSizes(const std::string& request_id,
                                  const std::vector<PartRecord>& parts) {
-  const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
+  const std::uint64_t part_size_limit =
+      static_cast<std::uint64_t>(FLAGS_multipart_part_size);
   for (std::size_t i = 0; i < parts.size(); ++i) {
     const bool is_last = (i == parts.size() - 1);
     if (!is_last && parts[i].part_size != part_size_limit) {
@@ -393,8 +416,8 @@ int Multipart::ValidatePartSizes(const std::string& request_id,
       return PROXY_ERR_INVALID_PART_SIZE;
     }
     if (is_last && parts[i].part_size > part_size_limit) {
-      LOG_WARN(request_id, "last part {} size {} > {}", parts[i].part_number, parts[i].part_size,
-               part_size_limit);
+      LOG_WARN(request_id, "last part {} size {} > {}", parts[i].part_number,
+               parts[i].part_size, part_size_limit);
       return PROXY_ERR_INVALID_PART_SIZE;
     }
   }
