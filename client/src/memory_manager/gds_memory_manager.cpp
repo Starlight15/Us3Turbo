@@ -111,7 +111,7 @@ bool GdsMemoryManager::UnregisterBuffer(void* ptr) {
 
 bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
                                     std::size_t offset, Token& out,
-                                    cuObjOpType_t operation) {
+                                    cuObjOpType_t op) {
   if (!ptr || size == 0U) {
     LOG_SYS_WARN("requires non-null ptr and positive size (ptr={} size={})",
                  ptr, size);
@@ -120,66 +120,57 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
 
   void* mut_ptr = const_cast<void*>(ptr);
 
-  // 查询当前地址上"住户"的进程内唯一分配 ID。CUDA 保证:同一进程内,
-  // 不同分配的 buffer_id 绝不重复,free 后也不会被后来者捡走
-  // (见 cuda.h CU_POINTER_ATTRIBUTE_BUFFER_ID 文档)。
-  // 复用检测完全依赖该属性,查询失败直接拒绝,不做 size-only 降级——
-  // 旧驱动/不支持环境下 GDS 视为不可用,由调用方决定是否走非 GDS 路径。
-  unsigned long long cur_buffer_id = 0;
-  const CUresult pr =
-      cuPointerGetAttribute(&cur_buffer_id, CU_POINTER_ATTRIBUTE_BUFFER_ID,
+  // 查 buffer_id 检测地址复用:同进程内不同分配 ID 唯一,free 后不回收。
+  // 查询失败直接拒绝,不做降级。
+  unsigned long long buf_id = 0;
+  const CUresult rc =
+      cuPointerGetAttribute(&buf_id, CU_POINTER_ATTRIBUTE_BUFFER_ID,
                             reinterpret_cast<CUdeviceptr>(mut_ptr));
-  if (pr != CUDA_SUCCESS) {
-    LOG_SYS_ERROR(
-        "cuPointerGetAttribute(BUFFER_ID) failed (ptr={} rc={}), cannot "
-        "verify address-reuse identity, refusing to register",
-        ptr, static_cast<int>(pr));
-    return false;  // 身份查不到就不能判断复用,直接失败,不降级。
+  if (rc != CUDA_SUCCESS) {
+    LOG_SYS_ERROR("cuPointerGetAttribute(BUFFER_ID) failed (ptr={} rc={})", ptr,
+                  static_cast<int>(rc));
+    return false;
   }
 
-  // 单次加锁完成幂等注册检查,DoRegister 失败则回滚占位。
-  // 重新 pin 的条件:地址被复用(buffer_id 变了) || 旧注册范围不够。
+  // 加锁查注册表:地址复用或覆盖范围不够则重注册。
   {
     std::lock_guard<std::mutex> lk(mu_);
     const std::size_t needed = size + offset;
     auto it = registered_.find(mut_ptr);
     if (it != registered_.end()) {
-      const bool addr_reused = it->second.buffer_id != cur_buffer_id;
+      const bool reused = it->second.buffer_id != buf_id;
       const bool too_small = it->second.size < needed;
-      if (addr_reused || too_small) {
-        LOG_SYS_INFO(
-            "re-register ptr={} reason={} old_size={} new_size={} old_bufid={} "
-            "new_bufid={}",
-            mut_ptr,
-            addr_reused ? "buffer reused at same address" : "size grew",
-            it->second.size, needed, it->second.buffer_id, cur_buffer_id);
+      if (reused || too_small) {
+        // clang-format off
+        LOG_SYS_INFO("re-register ptr={} reason={} old_sz={} new_sz={} old_id={} new_id={}", mut_ptr, reused ? "reused" : "grew", it->second.size, needed, it->second.buffer_id, buf_id);
+        // clang-format on
         DoUnregister(mut_ptr, it->second);
-        registered_.erase(it);  // 先清旧条目,避免"已 unregister 但 key 还在"
+        registered_.erase(it);
         GdsRegEntry entry{};
-        entry.buffer_id = cur_buffer_id;  // 提前填充
+        entry.buffer_id = buf_id;
         if (!DoRegister(mut_ptr, needed, entry)) return false;
         registered_.emplace(mut_ptr, entry);
       }
-      // 身份未变且范围足够:无需再 pin。
     } else {
       GdsRegEntry entry{};
-      entry.buffer_id = cur_buffer_id;  // 提前填充
+      entry.buffer_id = buf_id;
       if (!DoRegister(mut_ptr, needed, entry)) return false;
       registered_.emplace(mut_ptr, entry);
     }
   }
-  // cuMemObjGetRDMAToken 可能耗时较长,锁外执行以提高并发性。
+
+  // GetRDMAToken 在锁外执行以允许并发。
   char* tok = nullptr;
-  const auto rc = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset,
-                                                      operation, &tok);
-  if (rc != CU_OBJ_SUCCESS || !tok) {
+  const auto ret =
+      impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, op, &tok);
+  if (ret != CU_OBJ_SUCCESS || !tok) {
     LOG_SYS_ERROR(
         "cuMemObjGetRDMAToken failed (ptr={} size={} offset={} op={} rc={})",
-        ptr, size, offset, static_cast<int>(operation), rc);
+        ptr, size, offset, static_cast<int>(op), ret);
     return false;
   }
   LOG_SYS_INFO("ptr={} size={} offset={} op={} rdma_token={}", ptr, size,
-               offset, static_cast<int>(operation), tok);
+               offset, static_cast<int>(op), tok);
   out = Token(impl_->client.get(), tok);
   return true;
 }

@@ -63,7 +63,7 @@ class GdsMemoryManager : public BufferRegistry<GdsRegEntry> {
    *  CUOBJ_GET(读场景 backend RDMA_WRITE)。 */
   [[nodiscard]] bool AcquireToken(
       const void* ptr, std::size_t size, std::size_t offset, Token& out,
-      cuObjOpType_t operation = static_cast<cuObjOpType_t>(0));
+      cuObjOpType_t op = static_cast<cuObjOpType_t>(0));
 
   GdsMemoryManager(const GdsMemoryManager&) = delete;
   GdsMemoryManager& operator=(const GdsMemoryManager&) = delete;
