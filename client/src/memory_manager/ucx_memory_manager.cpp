@@ -36,8 +36,7 @@ void UcxMemoryManager::ConnCallback(ucp_conn_request_h req, void* arg) {
   }
   std::scoped_lock lk(self->mu_);
   ucp_ep_params_t ep_params{};
-  ep_params.field_mask =
-      UCP_EP_PARAM_FIELD_CONN_REQUEST | UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
+  ep_params.field_mask = UCP_EP_PARAM_FIELD_CONN_REQUEST | UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
   ep_params.conn_request = req;
   ep_params.err_mode = UCP_ERR_HANDLING_MODE_NONE;
   ucp_ep_h ep = nullptr;
@@ -103,8 +102,7 @@ bool UcxMemoryManager::InitListener() {
   }
 
   ucp_listener_params_t lparams{};
-  lparams.field_mask = UCP_LISTENER_PARAM_FIELD_SOCK_ADDR |
-                       UCP_LISTENER_PARAM_FIELD_CONN_HANDLER;
+  lparams.field_mask = UCP_LISTENER_PARAM_FIELD_SOCK_ADDR | UCP_LISTENER_PARAM_FIELD_CONN_HANDLER;
   lparams.sockaddr.addr = reinterpret_cast<struct sockaddr*>(&addr);
   lparams.sockaddr.addrlen = sizeof(addr);
   lparams.conn_handler.cb = &UcxMemoryManager::ConnCallback;
@@ -126,9 +124,8 @@ bool UcxMemoryManager::InitListener() {
   }
   char host[NI_MAXHOST] = {};
   char serv[NI_MAXSERV] = {};
-  if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr),
-                  sizeof(lattr.sockaddr), host, sizeof(host), serv,
-                  sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+  if (getnameinfo(reinterpret_cast<struct sockaddr*>(&lattr.sockaddr), sizeof(lattr.sockaddr), host,
+                  sizeof(host), serv, sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
     LOG_SYS_ERROR("getnameinfo failed");
     return false;
   }
@@ -224,15 +221,13 @@ bool UcxMemoryManager::Instance(UcxMemoryManager*& out) {
 
 bool UcxMemoryManager::DoRegister(void* ptr, std::size_t size, ucp_mem_h& out) {
   ucp_mem_map_params_t mparams{};
-  mparams.field_mask =
-      UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH;
+  mparams.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH;
   mparams.address = ptr;
   mparams.length = size;
   ucp_mem_h memh = nullptr;
   ucs_status_t st = ucp_mem_map(context_, &mparams, &memh);
   if (st != UCS_OK) {
-    LOG_SYS_ERROR("ucp_mem_map failed (ptr={} size={} {})", ptr, size,
-                  ucs_status_string(st));
+    LOG_SYS_ERROR("ucp_mem_map failed (ptr={} size={} {})", ptr, size, ucs_status_string(st));
     return false;
   }
   out = memh;
@@ -246,8 +241,7 @@ void UcxMemoryManager::DoUnregister(void* /*ptr*/, ucp_mem_h& handle) {
   }
 }
 
-bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
-                                         Descriptor& out) {
+bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size, Descriptor& out) {
   if (ptr == nullptr || size == 0U) {
     LOG_SYS_WARN("requires non-null ptr and positive size");
     return false;
@@ -281,9 +275,8 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   out.client_ucx_addr = listen_addr_;
   ucp_rkey_buffer_release(rkey_buf);
 
-  LOG_SYS_INFO("ptr={} size={} remote_addr=0x{:x} rkey_bytes={} ucx_addr={}",
-               ptr, size, out.remote_addr, out.rkey.size(),
-               out.client_ucx_addr);
+  LOG_SYS_INFO("ptr={} size={} remote_addr=0x{:x} rkey_bytes={} ucx_addr={}", ptr, size,
+               out.remote_addr, out.rkey.size(), out.client_ucx_addr);
   return true;
 }
 

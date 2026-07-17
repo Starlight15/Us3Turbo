@@ -15,20 +15,16 @@ class ProxyRpc;
  * backend ucp_put_nbx 反向推数据。与 UcxPutChannel 平级、职责相反。 */
 class UcxGetChannel final {
  public:
-  UcxGetChannel(const ClientOptions& options, const ProxyRpc& proxy,
-                UcxMemoryManager* ucx_mgr)
+  UcxGetChannel(const ClientOptions& options, const ProxyRpc& proxy, UcxMemoryManager* ucx_mgr)
       : opts_(options), proxy_(proxy), ucx_mgr_(ucx_mgr) {}
 
   /** @brief 查对象布局(object_size)，调用方据此分配 buffer。 */
-  [[nodiscard]] bool StatObject(const std::string& bucket,
-                                const std::string& key,
-                                std::uint64_t& out_object_size,
-                                std::string& out_error) const;
+  [[nodiscard]] bool StatObject(const std::string& bucket, const std::string& key,
+                                std::uint64_t& out_object_size, std::string& out_error) const;
 
   /** @brief 单次 GET 尝试：buffer 须已按 StatObject 返回的 size 分配。 */
   [[nodiscard]] bool GetOnce(const std::string& bucket, const std::string& key,
-                             MutableBufferView buffer,
-                             GetPathResult& res) const;
+                             MutableBufferView buffer, GetPathResult& res) const;
 
  private:
   const ClientOptions& opts_;

@@ -25,8 +25,7 @@ using clk = std::chrono::steady_clock;
 [[nodiscard]] inline std::string MakeReqId() {
   static thread_local std::mt19937_64 rng{
       static_cast<std::uint64_t>(std::random_device{}()) ^
-      static_cast<std::uint64_t>(
-          std::chrono::steady_clock::now().time_since_epoch().count())};
+      static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
   char buf[17];
   std::snprintf(buf, sizeof(buf), "%016lx", rng());
   return std::string("req-") + buf;
@@ -39,10 +38,8 @@ struct LatencyStage {
 };
 
 /** @brief 打印相邻阶段耗时 + 首→末总耗时(latency_trace 开启时调用)。*/
-inline void TraceLatency(const std::string& req_id,
-                         std::string_view operation_name,
-                         std::span<const LatencyStage> stages,
-                         std::size_t bytes) {
+inline void TraceLatency(const std::string& req_id, std::string_view operation_name,
+                         std::span<const LatencyStage> stages, std::size_t bytes) {
   const auto ms = [](clk::time_point a, clk::time_point b) {
     return std::chrono::duration<double, std::milli>(b - a).count();
   };
@@ -53,11 +50,10 @@ inline void TraceLatency(const std::string& req_id,
                          ms(stages[i - 1].timestamp, stages[i].timestamp));
   }
   const double total =
-      stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp)
-                         : 0.0;
+      stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp) : 0.0;
 
-  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name,
-               req_id, parts, total, bytes);
+  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name, req_id, parts, total,
+               bytes);
 }
 
 }  // namespace detail

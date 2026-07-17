@@ -14,13 +14,8 @@
 
 namespace us3_turbo::client {
 namespace {
-ssize_t StubGet(const void*, char*, size_t, loff_t, const cufileRDMAInfo_t*) {
-  return -1;
-}
-ssize_t StubPut(const void*, const char*, size_t, loff_t,
-                const cufileRDMAInfo_t*) {
-  return -1;
-}
+ssize_t StubGet(const void*, char*, size_t, loff_t, const cufileRDMAInfo_t*) { return -1; }
+ssize_t StubPut(const void*, const char*, size_t, loff_t, const cufileRDMAInfo_t*) { return -1; }
 
 }  // namespace
 
@@ -38,13 +33,11 @@ struct GdsMemoryManager::Impl {
   }
 };
 
-GdsMemoryManager::Token::Token(Token&& o) noexcept
-    : client_(o.client_), tok_(o.tok_) {
+GdsMemoryManager::Token::Token(Token&& o) noexcept : client_(o.client_), tok_(o.tok_) {
   o.client_ = nullptr;
   o.tok_ = nullptr;
 }
-GdsMemoryManager::Token& GdsMemoryManager::Token::operator=(
-    Token&& o) noexcept {
+GdsMemoryManager::Token& GdsMemoryManager::Token::operator=(Token&& o) noexcept {
   if (this != &o) {
     Reset();
     client_ = o.client_;
@@ -70,8 +63,7 @@ GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
 GdsMemoryManager::~GdsMemoryManager() {
   // 懒注册常驻:注册表作进程级缓存,残留项是预期行为。
   if (RegisteredCount() != 0U) {
-    LOG_SYS_DEBUG("{} buffer(s) in cache at shutdown (懒注册常驻)",
-                  RegisteredCount());
+    LOG_SYS_DEBUG("{} buffer(s) in cache at shutdown (懒注册常驻)", RegisteredCount());
     std::lock_guard<std::mutex> lk(mu_);
     for (auto& [ptr, _] : registered_)
       if (impl_->client) impl_->client->cuMemObjPutDescriptor(ptr);
@@ -94,8 +86,7 @@ bool GdsMemoryManager::Instance(GdsMemoryManager*& out) {
 // null/size 校验 wrapper。
 bool GdsMemoryManager::RegisterBuffer(void* ptr, std::size_t size) {
   if (!ptr || size == 0U) {
-    LOG_SYS_WARN("requires non-null ptr and positive size (ptr={} size={})",
-                 ptr, size);
+    LOG_SYS_WARN("requires non-null ptr and positive size (ptr={} size={})", ptr, size);
     return false;
   }
   return BufferRegistry::RegisterBuffer(ptr, size);
@@ -109,12 +100,10 @@ bool GdsMemoryManager::UnregisterBuffer(void* ptr) {
   return BufferRegistry::UnregisterBuffer(ptr);
 }
 
-bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
-                                    std::size_t offset, Token& out,
-                                    cuObjOpType_t op) {
+bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size, std::size_t offset,
+                                    Token& out, cuObjOpType_t op) {
   if (!ptr || size == 0U) {
-    LOG_SYS_WARN("requires non-null ptr and positive size (ptr={} size={})",
-                 ptr, size);
+    LOG_SYS_WARN("requires non-null ptr and positive size (ptr={} size={})", ptr, size);
     return false;
   }
 
@@ -123,9 +112,8 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
   // 查 buffer_id 检测地址复用:同进程内不同分配 ID 唯一,free 后不回收。
   // 查询失败直接拒绝,不做降级。
   unsigned long long buf_id = 0;
-  const CUresult rc =
-      cuPointerGetAttribute(&buf_id, CU_POINTER_ATTRIBUTE_BUFFER_ID,
-                            reinterpret_cast<CUdeviceptr>(mut_ptr));
+  const CUresult rc = cuPointerGetAttribute(&buf_id, CU_POINTER_ATTRIBUTE_BUFFER_ID,
+                                            reinterpret_cast<CUdeviceptr>(mut_ptr));
   if (rc != CUDA_SUCCESS) {
     LOG_SYS_ERROR("cuPointerGetAttribute(BUFFER_ID) failed (ptr={} rc={})", ptr,
                   static_cast<int>(rc));
@@ -161,26 +149,22 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
 
   // GetRDMAToken 在锁外执行以允许并发。
   char* tok = nullptr;
-  const auto ret =
-      impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, op, &tok);
+  const auto ret = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, op, &tok);
   if (ret != CU_OBJ_SUCCESS || !tok) {
-    LOG_SYS_ERROR(
-        "cuMemObjGetRDMAToken failed (ptr={} size={} offset={} op={} rc={})",
-        ptr, size, offset, static_cast<int>(op), ret);
+    LOG_SYS_ERROR("cuMemObjGetRDMAToken failed (ptr={} size={} offset={} op={} rc={})", ptr, size,
+                  offset, static_cast<int>(op), ret);
     return false;
   }
-  LOG_SYS_INFO("ptr={} size={} offset={} op={} rdma_token={}", ptr, size,
-               offset, static_cast<int>(op), tok);
+  LOG_SYS_INFO("ptr={} size={} offset={} op={} rdma_token={}", ptr, size, offset,
+               static_cast<int>(op), tok);
   out = Token(impl_->client.get(), tok);
   return true;
 }
 
-bool GdsMemoryManager::DoRegister(void* ptr, std::size_t size,
-                                  GdsRegEntry& out) {
+bool GdsMemoryManager::DoRegister(void* ptr, std::size_t size, GdsRegEntry& out) {
   const auto rc = impl_->client->cuMemObjGetDescriptor(ptr, size);
   if (rc != CU_OBJ_SUCCESS) {
-    LOG_SYS_ERROR("cuMemObjGetDescriptor failed (ptr={} size={} rc={})", ptr,
-                  size, rc);
+    LOG_SYS_ERROR("cuMemObjGetDescriptor failed (ptr={} size={} rc={})", ptr, size, rc);
     return false;
   }
   out.size = size;  // GDS 句柄即 buffer size

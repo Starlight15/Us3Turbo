@@ -16,12 +16,10 @@ class ProxyRpc;
  * RDMA-READ。 */
 class GdsPutChannel final : public PutChannel {
  public:
-  GdsPutChannel(const ClientOptions& options, const ProxyRpc& proxy,
-                GdsMemoryManager* gds_mgr)
+  GdsPutChannel(const ClientOptions& options, const ProxyRpc& proxy, GdsMemoryManager* gds_mgr)
       : opts_(options), proxy_(proxy), gds_mgr_(gds_mgr) {}
 
-  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& req,
-                             ConstBufferView buffer,
+  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                              PutPathResult& res) const override;
 
  private:

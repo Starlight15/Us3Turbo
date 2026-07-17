@@ -50,8 +50,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   const std::string proxy_addr = "192.168.1.198:9100";
-  std::size_t bytes =
-      100UL * 1024UL * 1024UL;  // 默认 100M（超 16M 单步上限，用于演示拒绝）
+  std::size_t bytes = 100UL * 1024UL * 1024UL;  // 默认 100M（超 16M 单步上限，用于演示拒绝）
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--size") {
@@ -76,8 +75,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::vector<std::byte> host(bytes);
-  for (std::size_t i = 0; i < bytes; ++i)
-    host[i] = static_cast<std::byte>(i % 251U);
+  for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
   e = cudaMemcpy(dev, host.data(), bytes, cudaMemcpyHostToDevice);
   if (e != cudaSuccess) {
     std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";
@@ -102,8 +100,7 @@ int main(int argc, char** argv) {
   req.path = PutDataPath::kGds;
 
   ClientProxyPutResponse resp;
-  bool put_ok =
-      client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, resp);
+  bool put_ok = client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, resp);
 
   cudaFree(dev);
 

@@ -106,8 +106,8 @@ double Median(std::vector<double> v) {
 double Percentile(std::vector<double> v, double p) {
   if (v.empty()) return 0.0;
   std::sort(v.begin(), v.end());
-  const std::size_t idx = std::min(
-      v.size() - 1, static_cast<std::size_t>(p / 100.0 * (v.size() - 1)));
+  const std::size_t idx =
+      std::min(v.size() - 1, static_cast<std::size_t>(p / 100.0 * (v.size() - 1)));
   return v[idx];
 }
 
@@ -121,16 +121,14 @@ double Mean(const std::vector<double>& v) {
 // ---- 上传一轮 multipart，返回各阶段耗时 ----
 // GDS: dev_buf 为 device 指针；UCX: host_buf 为 host 指针。两者互斥，由 kIsGds
 // 在编译期裁剪未用分支，避免 UCX target 链接 CUDA。
-RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a,
-                         std::uint32_t round_idx, std::uint32_t worker_idx,
-                         const auto& data_buf) {
+RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::uint32_t round_idx,
+                         std::uint32_t worker_idx, const auto& data_buf) {
   using namespace us3_turbo::client;
   RoundLatency lat;
   lat.bytes = a.total;
 
-  const std::string key =
-      a.key_prefix + "-" + kPathName + "-w" + std::to_string(worker_idx) +
-      "-r" + std::to_string(round_idx) + "-" + rtest::MakeTimestampSuffix();
+  const std::string key = a.key_prefix + "-" + kPathName + "-w" + std::to_string(worker_idx) +
+                          "-r" + std::to_string(round_idx) + "-" + rtest::MakeTimestampSuffix();
 
   std::string upload_id, error;
   const auto t_create0 = clk::now();
@@ -158,20 +156,16 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a,
     bool ok = false;
 #if defined(BENCH_GDS)
     ok = client.UploadPartGds(
-        upload_id, i,
-        ConstBufferView{.data = static_cast<char*>(data_buf) + off,
-                        .size = len},
+        upload_id, i, ConstBufferView{.data = static_cast<char*>(data_buf) + off, .size = len},
         etag, error);
 #else  // BENCH_UCX
     ok = client.UploadPartUcx(
-        upload_id, i,
-        ConstBufferView{.data = static_cast<std::byte*>(data_buf) + off,
-                        .size = len},
+        upload_id, i, ConstBufferView{.data = static_cast<std::byte*>(data_buf) + off, .size = len},
         etag, error);
 #endif
     if (!ok) {
-      std::cerr << "[w" << worker_idx << " r" << round_idx << "] UploadPart "
-                << i << " failed: " << error << "\n";
+      std::cerr << "[w" << worker_idx << " r" << round_idx << "] UploadPart " << i
+                << " failed: " << error << "\n";
       std::string abort_err;
       (void)client.AbortMultipartUpload(upload_id, abort_err);
       return lat;
@@ -188,8 +182,7 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a,
   lat.complete_ms = ms_double(t_cmp1 - t_cmp0).count();
 
   if (!ok || done.object_size != a.total) {
-    std::cerr << "[w" << worker_idx << " r" << round_idx
-              << "] Complete failed: " << done.error
+    std::cerr << "[w" << worker_idx << " r" << round_idx << "] Complete failed: " << done.error
               << " size=" << done.object_size << "\n";
     return lat;
   }
@@ -202,9 +195,7 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a,
 // barrier 的 completion functor：最后一个到达的线程记录统一起跑时刻。
 struct StartSetter {
   std::atomic<clk::time_point>* start;
-  void operator()() const noexcept {
-    start->store(clk::now(), std::memory_order_relaxed);
-  }
+  void operator()() const noexcept { start->store(clk::now(), std::memory_order_relaxed); }
 };
 
 struct WorkerStats {
@@ -217,8 +208,7 @@ struct WorkerStats {
 
 // ---- worker：各自分配 buffer，barrier 对齐后跑 reps 轮 ----
 void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
-            const std::vector<std::byte>& host_pattern,
-            std::barrier<StartSetter>& sync,
+            const std::vector<std::byte>& host_pattern, std::barrier<StartSetter>& sync,
             std::atomic<clk::time_point>& start, WorkerStats& stats) {
   using namespace us3_turbo::client;
 
@@ -233,8 +223,7 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
   }
   e = cudaMemcpy(dev, host_pattern.data(), a.total, cudaMemcpyHostToDevice);
   if (e != cudaSuccess) {
-    std::cerr << "[w" << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e)
-              << "\n";
+    std::cerr << "[w" << wid << "] cudaMemcpy failed: " << cudaGetErrorString(e) << "\n";
     cudaFree(dev);
     return;
   }
@@ -277,13 +266,11 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
 }
 
 // ---- 打印与 CSV ----
-void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail,
-                  std::uint64_t total_bytes, double wall_ms,
-                  const std::vector<RoundLatency>& all) {
+void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail, std::uint64_t total_bytes,
+                  double wall_ms, const std::vector<RoundLatency>& all) {
   const double wall_s = wall_ms / 1000.0;
-  const double tput = (wall_s > 0.0) ? static_cast<double>(total_bytes) /
-                                           wall_s / (1024.0 * 1024.0)
-                                     : 0.0;
+  const double tput =
+      (wall_s > 0.0) ? static_cast<double>(total_bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
 
   std::vector<double> create_ms, upload_ms, complete_ms, total_ms;
   create_ms.reserve(all.size());
@@ -298,38 +285,30 @@ void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail,
     total_ms.push_back(r.total_ms);
   }
 
-  std::cout << "=== results (" << kPathName
-            << " multipart, conc=" << a.concurrency << ", reps=" << a.reps
-            << ") ===\n"
+  std::cout << "=== results (" << kPathName << " multipart, conc=" << a.concurrency
+            << ", reps=" << a.reps << ") ===\n"
             << "  ok          : " << ok << "\n"
             << "  fail        : " << fail << "\n"
             << "  bytes       : " << rtest::HumanBytes(total_bytes) << "\n"
             << "  wall time   : " << wall_ms << " ms\n"
             << "  throughput  : " << tput << " MiB/s\n";
   if (!total_ms.empty()) {
-    const double data_pct =
-        (Mean(total_ms) > 0.0) ? Mean(upload_ms) / Mean(total_ms) * 100.0 : 0.0;
+    const double data_pct = (Mean(total_ms) > 0.0) ? Mean(upload_ms) / Mean(total_ms) * 100.0 : 0.0;
     std::cout << "  per-round(ms): \n"
-              << "    create   : avg=" << Mean(create_ms)
-              << "  p50=" << Median(create_ms)
-              << "  p95=" << Percentile(create_ms, 95) << "  max="
-              << *std::max_element(create_ms.begin(), create_ms.end()) << "\n"
-              << "    upload   : avg=" << Mean(upload_ms)
-              << "  p50=" << Median(upload_ms)
-              << "  p95=" << Percentile(upload_ms, 95) << "  max="
-              << *std::max_element(upload_ms.begin(), upload_ms.end())
+              << "    create   : avg=" << Mean(create_ms) << "  p50=" << Median(create_ms)
+              << "  p95=" << Percentile(create_ms, 95)
+              << "  max=" << *std::max_element(create_ms.begin(), create_ms.end()) << "\n"
+              << "    upload   : avg=" << Mean(upload_ms) << "  p50=" << Median(upload_ms)
+              << "  p95=" << Percentile(upload_ms, 95)
+              << "  max=" << *std::max_element(upload_ms.begin(), upload_ms.end())
               << "  (data-plane, " << data_pct << "% of round)\n"
-              << "    complete : avg=" << Mean(complete_ms)
-              << "  p50=" << Median(complete_ms)
-              << "  p95=" << Percentile(complete_ms, 95) << "  max="
-              << *std::max_element(complete_ms.begin(), complete_ms.end())
-              << "\n"
-              << "    total    : avg=" << Mean(total_ms)
-              << "  p50=" << Median(total_ms)
+              << "    complete : avg=" << Mean(complete_ms) << "  p50=" << Median(complete_ms)
+              << "  p95=" << Percentile(complete_ms, 95)
+              << "  max=" << *std::max_element(complete_ms.begin(), complete_ms.end()) << "\n"
+              << "    total    : avg=" << Mean(total_ms) << "  p50=" << Median(total_ms)
               << "  p95=" << Percentile(total_ms, 95)
               << "  min=" << *std::min_element(total_ms.begin(), total_ms.end())
-              << "  max=" << *std::max_element(total_ms.begin(), total_ms.end())
-              << "\n";
+              << "  max=" << *std::max_element(total_ms.begin(), total_ms.end()) << "\n";
   }
 }
 
@@ -341,10 +320,9 @@ void PrintCsv(const Args& a, const std::vector<RoundLatency>& all) {
       static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
   std::uint32_t rep = 0;
   for (const auto& r : all) {
-    std::cout << kPathName << "," << a.total << "," << a.part_size << ","
-              << num_parts << "," << a.concurrency << "," << rep++ << ","
-              << r.create_ms << "," << r.upload_ms << "," << r.complete_ms
-              << "," << r.total_ms << "," << (r.ok ? 1 : 0) << "\n";
+    std::cout << kPathName << "," << a.total << "," << a.part_size << "," << num_parts << ","
+              << a.concurrency << "," << rep++ << "," << r.create_ms << "," << r.upload_ms << ","
+              << r.complete_ms << "," << r.total_ms << "," << (r.ok ? 1 : 0) << "\n";
   }
 }
 
@@ -403,8 +381,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     } else if (arg == "--csv") {
       a.csv = true;
     } else if (arg == "--help" || arg == "-h") {
-      std::cout << "usage: us3_turbo_bench_" << kPathName
-                << "_multipart [options]\n"
+      std::cout << "usage: us3_turbo_bench_" << kPathName << "_multipart [options]\n"
                 << "  --proxy ADDR        proxy endpoint (default "
                    "192.168.1.198:9100)\n"
                 << "  --total SIZE        total object size (default 64M)\n"
@@ -489,16 +466,15 @@ int main(int argc, char** argv) {
 
   const std::size_t nworkers = static_cast<std::size_t>(a.concurrency);
   std::atomic<clk::time_point> start{clk::time_point{}};
-  std::barrier<StartSetter> sync(static_cast<std::ptrdiff_t>(nworkers),
-                                 StartSetter{&start});
+  std::barrier<StartSetter> sync(static_cast<std::ptrdiff_t>(nworkers), StartSetter{&start});
   std::vector<WorkerStats> stats(nworkers);
 
   std::vector<std::thread> threads;
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
-    threads.emplace_back(Worker, static_cast<std::uint32_t>(w), std::ref(a),
-                         std::ref(client), std::cref(host_pattern),
-                         std::ref(sync), std::ref(start), std::ref(stats[w]));
+    threads.emplace_back(Worker, static_cast<std::uint32_t>(w), std::ref(a), std::ref(client),
+                         std::cref(host_pattern), std::ref(sync), std::ref(start),
+                         std::ref(stats[w]));
   }
   for (auto& t : threads) t.join();
 

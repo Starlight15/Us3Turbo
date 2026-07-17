@@ -10,20 +10,17 @@ namespace us3_turbo::proxy {
  * - 13xxx：路由 / data_flow 错误
  */
 constexpr int PROXY_ERR_INVALID_PARAM = 10001;
-constexpr int PROXY_ERR_INVALID_PART_SIZE =
-    10002;  // part 大小不符合 part_size 约束
-constexpr int PROXY_ERR_INVALID_PART = 10003;  // part 无效（valid=false）
-constexpr int PROXY_ERR_INDEX_FAILED = 10004;  // 索引写入失败
-constexpr int PROXY_ERR_INTERNAL = 10099;  // 内部错误（索引操作失败等）
+constexpr int PROXY_ERR_INVALID_PART_SIZE = 10002;  // part 大小不符合 part_size 约束
+constexpr int PROXY_ERR_INVALID_PART = 10003;       // part 无效（valid=false）
+constexpr int PROXY_ERR_INDEX_FAILED = 10004;       // 索引写入失败
+constexpr int PROXY_ERR_INTERNAL = 10099;           // 内部错误（索引操作失败等）
 constexpr int PROXY_ERR_BACKEND_UNAVAILABLE = 12001;
 constexpr int PROXY_ERR_BACKEND_RPC = 12002;
-constexpr int PROXY_ERR_BACKEND_IO = 12003;  // backend TCP IO failure
-constexpr int PROXY_ERR_BACKEND_PROTOCOL =
-    12004;  // backend protocol decode error
+constexpr int PROXY_ERR_BACKEND_IO = 12003;        // backend TCP IO failure
+constexpr int PROXY_ERR_BACKEND_PROTOCOL = 12004;  // backend protocol decode error
 constexpr int PROXY_ERR_BACKEND_FAILED = 12005;
-constexpr int PROXY_ERR_PATH_NOT_SUPPORTED =
-    13002;  // path 与 RPC 不匹配 / kAll/kNone
-constexpr int PROXY_ERR_MISSING_SOURCE = 13003;  // path 指定但对应 source 缺失
+constexpr int PROXY_ERR_PATH_NOT_SUPPORTED = 13002;  // path 与 RPC 不匹配 / kAll/kNone
+constexpr int PROXY_ERR_MISSING_SOURCE = 13003;      // path 指定但对应 source 缺失
 
 /* 错误码通用描述 */
 inline const char* ProxyErrorMessage(int code) {

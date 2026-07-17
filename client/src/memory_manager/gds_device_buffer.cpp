@@ -57,13 +57,11 @@ void GdsDeviceBuffer::Reset() noexcept {
   } else {
     // manager 不可用(例如进程退出路径):无法主动 unregister,
     // 退化依赖 Step1 的 buffer_id 校验在下次复用时兜底识别。
-    LOG_SYS_DEBUG("GdsMemoryManager unavailable (ptr={}), skip unregister",
-                  ptr_);
+    LOG_SYS_DEBUG("GdsMemoryManager unavailable (ptr={}), skip unregister", ptr_);
   }
   const cudaError_t e = cudaFree(ptr_);
   if (e != cudaSuccess) {
-    LOG_SYS_ERROR("cudaFree failed (ptr={} err={})", ptr_,
-                  cudaGetErrorString(e));
+    LOG_SYS_ERROR("cudaFree failed (ptr={} err={})", ptr_, cudaGetErrorString(e));
   }
   ptr_ = nullptr;
   size_ = 0;

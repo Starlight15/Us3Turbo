@@ -31,10 +31,8 @@ inline constexpr auto kSize = "size";
 inline constexpr auto kEtag = "etag";
 inline constexpr auto kCrc = "crc";
 // 两个"块大小"字段刻意不同名，分别定义、不要合并：
-inline constexpr auto kFileIdxBlockSize =
-    "blocksize";  // fileidx 沿用 s3proxy schema（无下划线）
-inline constexpr auto kMinitBlockSize =
-    "block_size";  // minit 用 Us3Turbo 自有 schema（有下划线）
+inline constexpr auto kFileIdxBlockSize = "blocksize";  // fileidx 沿用 s3proxy schema（无下划线）
+inline constexpr auto kMinitBlockSize = "block_size";  // minit 用 Us3Turbo 自有 schema（有下划线）
 }  // namespace f
 
 }  // namespace us3_turbo::proxy::mongo

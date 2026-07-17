@@ -16,12 +16,10 @@ class ProxyRpc;
  * ucp_get_nbx 反向拉取。 */
 class UcxPutChannel final : public PutChannel {
  public:
-  UcxPutChannel(const ClientOptions& options, const ProxyRpc& proxy,
-                UcxMemoryManager* ucx_mgr)
+  UcxPutChannel(const ClientOptions& options, const ProxyRpc& proxy, UcxMemoryManager* ucx_mgr)
       : opts_(options), proxy_(proxy), ucx_mgr_(ucx_mgr) {}
 
-  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& req,
-                             ConstBufferView buffer,
+  [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                              PutPathResult& res) const override;
 
  private:

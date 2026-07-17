@@ -68,15 +68,12 @@ class Logger {
 
   /* 控制台 + 滚动文件 sink（proxy 用）。file_prefix 决定文件名前缀，如
    * "proxy"。 */
-  static void Init(spdlog::level::level_enum level,
-                   std::string_view file_prefix,
-                   std::size_t max_file_size_mb = 50,
-                   std::size_t max_files = 10) {
+  static void Init(spdlog::level::level_enum level, std::string_view file_prefix,
+                   std::size_t max_file_size_mb = 50, std::size_t max_files = 10) {
     detail::EnsureLogDir();
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        detail::MakeLogFileName(file_prefix), max_file_size_mb * 1024 * 1024,
-        max_files);
+        detail::MakeLogFileName(file_prefix), max_file_size_mb * 1024 * 1024, max_files);
     spdlog::sinks_init_list sinks{console_sink, file_sink};
     auto logger = std::make_shared<spdlog::logger>("us3turbo", sinks);
     logger->set_level(level);
@@ -118,31 +115,27 @@ class Logger {
    * 上下文场景 */
 
   template <typename... Args>
-  static void SysInfo(std::string_view func, int line,
-                      fmt::format_string<Args...> fmt, Args&&... args) {
-    spdlog::info("[{}:{}] {}", func, line,
-                 fmt::format(fmt, std::forward<Args>(args)...));
+  static void SysInfo(std::string_view func, int line, fmt::format_string<Args...> fmt,
+                      Args&&... args) {
+    spdlog::info("[{}:{}] {}", func, line, fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
-  static void SysWarn(std::string_view func, int line,
-                      fmt::format_string<Args...> fmt, Args&&... args) {
-    spdlog::warn("[{}:{}] {}", func, line,
-                 fmt::format(fmt, std::forward<Args>(args)...));
+  static void SysWarn(std::string_view func, int line, fmt::format_string<Args...> fmt,
+                      Args&&... args) {
+    spdlog::warn("[{}:{}] {}", func, line, fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
-  static void SysError(std::string_view func, int line,
-                       fmt::format_string<Args...> fmt, Args&&... args) {
-    spdlog::error("[{}:{}] {}", func, line,
-                  fmt::format(fmt, std::forward<Args>(args)...));
+  static void SysError(std::string_view func, int line, fmt::format_string<Args...> fmt,
+                       Args&&... args) {
+    spdlog::error("[{}:{}] {}", func, line, fmt::format(fmt, std::forward<Args>(args)...));
   }
 
   template <typename... Args>
-  static void SysDebug(std::string_view func, int line,
-                       fmt::format_string<Args...> fmt, Args&&... args) {
-    spdlog::debug("[{}:{}] {}", func, line,
-                  fmt::format(fmt, std::forward<Args>(args)...));
+  static void SysDebug(std::string_view func, int line, fmt::format_string<Args...> fmt,
+                       Args&&... args) {
+    spdlog::debug("[{}:{}] {}", func, line, fmt::format(fmt, std::forward<Args>(args)...));
   }
 };
 

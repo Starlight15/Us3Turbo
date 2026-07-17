@@ -35,7 +35,7 @@ enum class ErrorCode {
   kStaleState,
   kPayloadTooLarge,   // HTTP 413: PUT body exceeds gateway/client size limit
   kMethodNotAllowed,  // HTTP 405: Method not allowed
-  kTimeout,  // 请求超时（端到端 deadline 触发；retryable=true）
+  kTimeout,           // 请求超时（端到端 deadline 触发；retryable=true）
 };
 
 [[nodiscard]] constexpr std::string_view ToString(ErrorCode code) noexcept {

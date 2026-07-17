@@ -52,23 +52,20 @@ int main(int argc, char** argv) {
   }
 
   if (total <= kPartSizeLimit) {
-    std::cerr << "[FAIL] " << kTestName << ": size must be > "
-              << rtest::HumanBytes(kPartSizeLimit) << " for multi-block, got "
-              << rtest::HumanBytes(total) << "\n";
+    std::cerr << "[FAIL] " << kTestName << ": size must be > " << rtest::HumanBytes(kPartSizeLimit)
+              << " for multi-block, got " << rtest::HumanBytes(total) << "\n";
     return 2;
   }
-  const std::uint64_t part1 = kPartSizeLimit;  // 非 last，须 == 上限
+  const std::uint64_t part1 = kPartSizeLimit;          // 非 last，须 == 上限
   const std::uint64_t part2 = total - kPartSizeLimit;  // last（<= 上限）
 
   const std::string bucket = "test-bucket";
-  const std::string key =
-      std::string("rtest-t22-ucx-") + rtest::MakeTimestampSuffix();
+  const std::string key = std::string("rtest-t22-ucx-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.2 UCX " << kTestName << " ===\n"
             << "  proxy : " << proxy_addr << "\n"
-            << "  total : " << rtest::HumanBytes(total) << " ("
-            << rtest::HumanBytes(part1) << " + " << rtest::HumanBytes(part2)
-            << ")\n";
+            << "  total : " << rtest::HumanBytes(total) << " (" << rtest::HumanBytes(part1) << " + "
+            << rtest::HumanBytes(part2) << ")\n";
 
   // 完整期望数据（各 part 不同 offset_base pattern）。
   std::vector<std::byte> host_full(total);
@@ -98,8 +95,7 @@ int main(int argc, char** argv) {
 
   // ---- CreateMultipartUpload ----
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kUcx, upload_id,
-                                    error)) {
+  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kUcx, upload_id, error)) {
     fail_reason = "CreateMultipartUpload failed: " + error;
     goto cleanup;
   }
@@ -110,19 +106,15 @@ int main(int argc, char** argv) {
     std::string etag1, etag2;
     // Part 1
     std::memcpy(put_buf.data(), host_full.data(), part1);
-    if (!client.UploadPartUcx(
-            upload_id, 1,
-            ConstBufferView{.data = put_buf.data(), .size = part1}, etag1,
-            error)) {
+    if (!client.UploadPartUcx(upload_id, 1, ConstBufferView{.data = put_buf.data(), .size = part1},
+                              etag1, error)) {
       fail_reason = "UploadPartUcx 1 failed: " + error;
       goto cleanup;
     }
     // Part 2
     std::memcpy(put_buf.data(), host_full.data() + part1, part2);
-    if (!client.UploadPartUcx(
-            upload_id, 2,
-            ConstBufferView{.data = put_buf.data(), .size = part2}, etag2,
-            error)) {
+    if (!client.UploadPartUcx(upload_id, 2, ConstBufferView{.data = put_buf.data(), .size = part2},
+                              etag2, error)) {
       fail_reason = "UploadPartUcx 2 failed: " + error;
       goto cleanup;
     }
@@ -134,8 +126,7 @@ int main(int argc, char** argv) {
       goto cleanup;
     }
     if (done.object_size != total) {
-      fail_reason = "object_size mismatch: got " +
-                    std::to_string(done.object_size) + " want " +
+      fail_reason = "object_size mismatch: got " + std::to_string(done.object_size) + " want " +
                     std::to_string(total);
       goto cleanup;
     }
@@ -147,33 +138,28 @@ int main(int argc, char** argv) {
   {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(bucket, key, obj_size, stat_err) ||
-        obj_size != total) {
+    if (!client.StatObject(bucket, key, obj_size, stat_err) || obj_size != total) {
       fail_reason = "StatObject failed or size mismatch";
       goto cleanup;
     }
     std::vector<std::byte> get_buf(total);
     std::memset(get_buf.data(), 0xBB, total);
     GetPathResult get_res;
-    if (!client.GetObjectUcx(
-            bucket, key,
-            MutableBufferView{.data = get_buf.data(), .size = total},
-            get_res) ||
+    if (!client.GetObjectUcx(bucket, key, MutableBufferView{.data = get_buf.data(), .size = total},
+                             get_res) ||
         !get_res.ok) {
       fail_reason = "GetObjectUcx FAILED: " + get_res.error_message;
       goto cleanup;
     }
-    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x"
-              << std::hex << get_res.crc32c << std::dec
-              << " hash=" << get_res.hash << "\n";
+    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
+              << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
 
     if (get_res.crc32c != 0) {
       fail_reason = "crc32c != 0 (expected 0 for multi-block)";
     } else if (get_res.hash.empty()) {
       fail_reason = "hash is empty";
     } else if (get_res.bytes_read != total) {
-      fail_reason = "bytes_read mismatch: got " +
-                    std::to_string(get_res.bytes_read) + " want " +
+      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) + " want " +
                     std::to_string(total);
     } else {
       test_passed = true;
