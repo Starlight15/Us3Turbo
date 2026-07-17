@@ -1,12 +1,11 @@
 // test_get_multi_block_hash.cpp — T2.2 GET 多块对象 hash
 //
-// 验证: 20MB 对象经 multipart 上传 [16M,4M]（multipart 存 block_size=16MB =
-// part_size → 2 块） 后 GET 读回，result.crc32c==0、hash
-// 非空、bytes_read==20MB。 关键修正: single PUT 不可能传
-// 20MB（>max_single_put_bytes=16MB 被拒；且 single PUT 存 block_size=filesize →
-// 恒单块 → crc32c 永非 0）。故必须用 multipart。 PUT 无 hash 字段、公开
-// StatObject 不返回 hash，故无 hash_put/hash_get 直比。 失败条件:
-// crc32c!=0、hash 空、bytes_read!=total。
+// 验证: 8MB 对象经 multipart 上传 [4M,4M]（multipart 存 block_size=part_size
+// → 2 块）后 GET 读回，result.crc32c==0、hash 非空、bytes_read==8MB。
+// 关键修正: single PUT 不可能传 >max_single_put_bytes（被拒；且 single PUT 存
+// block_size=filesize → 恒单块 → crc32c 永非 0）。故必须用 multipart。
+// PUT 无 hash 字段、公开 StatObject 不返回 hash，故无 hash_put/hash_get 直比。
+// 失败条件: crc32c!=0、hash 空、bytes_read!=total。
 
 #include <cstdint>
 #include <iostream>
@@ -19,14 +18,14 @@
 
 namespace {
 constexpr char kTestName[] = "ucx_get_multi_block_hash";
-constexpr std::uint64_t kPartSizeLimit = 16ULL * 1024 * 1024;
+constexpr std::uint64_t kPartSizeLimit = rtest::kDefaultPartSize;
 }  // namespace
 
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t total = 20ULL * 1024 * 1024;  // 默认 20M（>16M 触发多块）
+  std::uint64_t total = 8ULL * 1024 * 1024;  // 默认 8M（>4M 触发多块）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -53,12 +52,12 @@ int main(int argc, char** argv) {
   }
 
   if (total <= kPartSizeLimit) {
-    std::cerr << "[FAIL] " << kTestName
-              << ": size must be > 16M for multi-block, got "
+    std::cerr << "[FAIL] " << kTestName << ": size must be > "
+              << rtest::HumanBytes(kPartSizeLimit) << " for multi-block, got "
               << rtest::HumanBytes(total) << "\n";
     return 2;
   }
-  const std::uint64_t part1 = kPartSizeLimit;  // 16M（非 last，须 == 上限）
+  const std::uint64_t part1 = kPartSizeLimit;  // 非 last，须 == 上限
   const std::uint64_t part2 = total - kPartSizeLimit;  // last（<= 上限）
 
   const std::string bucket = "test-bucket";

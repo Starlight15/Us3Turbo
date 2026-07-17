@@ -16,14 +16,14 @@
 //
 // 用法（GDS）：
 //   us3_turbo_bench_gds_multipart \
-//     --proxy 192.168.1.198:9100 --total 64M --part-size 16M \
+//     --proxy 192.168.1.198:9100 --total 64M --part-size 4M \
 //     --concurrency 1 --reps 5 [--csv]
 // 用法（UCX）：
 //   UCX_NET_DEVICES=mlx5_2:1 us3_turbo_bench_ucx_multipart \
-//     --proxy 192.168.1.198:9100 --total 64M --part-size 16M --reps 5
+//     --proxy 192.168.1.198:9100 --total 64M --part-size 4M --reps 5
 //
 // 并发压测：
-//   --concurrency 8 --reps 3 --total 256M --part-size 16M
+//   --concurrency 8 --reps 3 --total 256M --part-size 4M
 //
 // 说明：
 //   - part_size 默认 16M（= proxy multipart_part_size 上限）。非 last part 必须
@@ -75,7 +75,7 @@ constexpr bool kIsGds = false;
 struct Args {
   std::string proxy{"192.168.1.198:9100"};
   std::uint64_t total{64ULL * 1024 * 1024};
-  std::uint64_t part_size{16ULL * 1024 * 1024};
+  std::uint64_t part_size{rtest::kDefaultPartSize};
   std::uint32_t reps{5};
   std::uint32_t warmup{0};
   std::uint32_t concurrency{1};
@@ -435,11 +435,12 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     std::cerr << "concurrency must be > 0\n";
     return false;
   }
-  // proxy 约束：part_size 上限 16M。非 last part 必须恰好 == part_size，因此
-  // part_size 应为 16M（除非刻意测更小 part 触发 Complete 拒绝，这里不做）。
+  // proxy 约束：part_size 上限 = backend MAX_VALUE_LENGTH(16M)。非 last part
+  // 必须恰好 == part_size，因此 part_size 应 ≤16M(除非刻意测更大 part 触发
+  // backend 拒绝，这里不做)。
   if (a.part_size > 16ULL * 1024 * 1024) {
     std::cerr << "part-size " << rtest::HumanBytes(a.part_size)
-              << " > 16M (proxy multipart_part_size)\n";
+              << " > 16M (backend MAX_VALUE_LENGTH)\n";
     return false;
   }
   return true;

@@ -10,7 +10,8 @@ namespace us3_turbo::proxy {
  * - 13xxx：路由 / data_flow 错误
  */
 constexpr int PROXY_ERR_INVALID_PARAM = 10001;
-constexpr int PROXY_ERR_INVALID_PART_SIZE = 10002;  // part 大小不符合 16MB 约束
+constexpr int PROXY_ERR_INVALID_PART_SIZE =
+    10002;  // part 大小不符合 part_size 约束
 constexpr int PROXY_ERR_INVALID_PART = 10003;  // part 无效（valid=false）
 constexpr int PROXY_ERR_INDEX_FAILED = 10004;  // 索引写入失败
 constexpr int PROXY_ERR_INTERNAL = 10099;  // 内部错误（索引操作失败等）

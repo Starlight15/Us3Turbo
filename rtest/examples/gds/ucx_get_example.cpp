@@ -10,7 +10,7 @@
 //   us3_turbo_ucx_get_example \
 //     --proxy 192.168.1.198:9100 \
 //     --single-size 4M \
-//     --part-size 16M --num-parts 2 \
+//     --part-size 4M --num-parts 2 \
 //     [--verify-crc32c]
 
 #include <chrono>
@@ -385,8 +385,8 @@ int main(int argc, char** argv) {
   std::string proxy_addr = "192.168.1.198:9100";
   std::uint64_t single_size = 4ULL * 1024 * 1024;  // 默认 4MiB
   std::uint64_t part_size =
-      16ULL * 1024 *
-      1024;  // 默认 16MiB per part（须与 proxy multipart_part_size 一致）
+      4ULL * 1024 *
+      1024;  // 默认 4MiB per part（须与 proxy multipart_part_size 一致）
   std::uint32_t num_parts = 2;  // 默认 2 parts = 32MiB
   bool verify = false;
 

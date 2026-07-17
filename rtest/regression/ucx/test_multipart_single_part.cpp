@@ -1,11 +1,11 @@
 // test_multipart_single_part.cpp — T1.3 单 part = 整对象
 //
-// 验证: 单 part（part_number=1, 16MB）的"不分段的分段上传" Complete 成功且
-// object_size==16MB。
-// 1 block/part: 16MB 单 part = 单块（block_size=part_size=16MB）→ GET 单块 →
+// 验证: 单 part（part_number=1）的"不分段的分段上传" Complete 成功且
+// object_size==part_size。
+// 1 block/part: 单 part = 单块（block_size=part_size）→ GET 单块 →
 // crc32c=该块 crc（非 0）、hash=Crc32cToETag(crc)。可选 GET 校验断言 hash 非空
 // + bytes_read，不断言 crc32c 具体值。 失败条件: Complete 失败或
-// object_size!=16MB。
+// object_size!=part_size。
 
 #include <cstdint>
 #include <iostream>
@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
 
   std::string proxy_addr = "192.168.1.198:9100";
   std::uint64_t part_size =
-      16ULL * 1024 * 1024;  // 默认 16M（== proxy part 上限）
+      rtest::kDefaultPartSize;  // 默认 4M（== proxy part 上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
         std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x"
                   << std::hex << get_res.crc32c << std::dec
                   << " hash=" << get_res.hash << "\n";
-        // 1 block/part: 16MB 单 part = 单块 → crc32c = 该块 crc（非 0）。
+        // 1 block/part: 单 part = 单块 → crc32c = 该块 crc（非 0）。
         if (!get_res.hash.empty() && get_res.bytes_read == obj_size) {
           std::cout << "  optional GET checks OK (hash non-empty)\n";
         } else {

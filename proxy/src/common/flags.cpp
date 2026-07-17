@@ -20,9 +20,9 @@ DEFINE_int64(max_single_put_bytes, 16LL * 1024 * 1024,
              "max object size (bytes) for single-step GdsPut/UcxPut; larger "
              "objects must use multipart");
 DEFINE_int64(
-    multipart_part_size, 16LL * 1024 * 1024,
+    multipart_part_size, 4LL * 1024 * 1024,
     "part size (bytes) for multipart upload, also the on-disk block "
-    "size (each part is written as one block; default 16MB, equals the "
+    "size (each part is written as one block; default 4MB, equals the "
     "backend single-op limit MAX_VALUE_LENGTH)");
 DEFINE_string(log_level, "info", "app log level: debug/info/warn/error");
 DEFINE_int32(log_max_size_mb, 50,

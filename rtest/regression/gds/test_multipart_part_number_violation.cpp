@@ -1,6 +1,6 @@
 // test_multipart_part_number_violation.cpp — T1.2 part_number 重复 / 跳号
 //
-// 两个子场景，默认 part-size 16M（确保唯一违例是 part_number，非 part 大小）。
+// 两个子场景，默认 part-size 4M（确保唯一违例是 part_number，非 part 大小）。
 // 场景A 重复 part_number（1,1,2）：行为依赖 MongoDB partlist_col 是否有
 //   (upload_id,seq) 唯一索引——无则 Complete 时 "invalid parameter"，有则重复
 //   UploadPart 时 "index write failed"。测试记录实际行为，接受任一非静默结果。
@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
 
   std::string proxy_addr = "192.168.1.198:9100";
   std::uint64_t part_size =
-      16ULL * 1024 * 1024;  // 默认 16M（== proxy part 上限）
+      rtest::kDefaultPartSize;  // 默认 4M（== proxy part 上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
             << "  proxy     : " << proxy_addr << "\n"
             << "  part_size : " << rtest::HumanBytes(part_size) << "\n";
 
-  // GPU buffer（各场景 part 复用同一 16MB buffer）。
+  // GPU buffer（各场景 part 复用同一 buffer）。
   void* dev = nullptr;
   cudaError_t e = cudaMalloc(&dev, part_size);
   if (e != cudaSuccess) {

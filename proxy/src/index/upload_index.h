@@ -8,11 +8,11 @@
 
 namespace us3_turbo::proxy {
 
-/* 每个 part 作为一个 block 写入 ufile-ac（block 粒度 = part 粒度 = 16MB）*/
+/* 每个 part 作为一个 block 写入 ufile-ac（block 粒度 = part 粒度）*/
 struct BlockInfo {
   std::string key;          // 格式 mp/{uuid32}/p{part_no:04u}（≤48）
   std::uint64_t offset{0};  // = gpu/source offset
-  std::uint64_t size{0};    // = part_size（末 part 可能 < 16MB）
+  std::uint64_t size{0};    // = part_size（末 part 可能 < part_size）
   std::uint32_t crc32c{0};  // ufile-ac 返回
 };
 
@@ -53,9 +53,9 @@ struct UploadRecord {
 
   // 对齐 s3proxy 新增字段
   std::string obj_id;  // = s3proxy ObjId
-  // block_size：multipart 恒 = part_size（16MB，1 block/part）；Complete 写入
+  // block_size：multipart 恒 = part_size（1 block/part）；Complete 写入
   // fileidx_col 供 GET 按 part 粒度读回。此处默认仅用于历史/缺字段兜底。
-  std::uint64_t block_size{16ULL * 1024 * 1024};
+  std::uint64_t block_size{4ULL * 1024 * 1024};
   std::uint64_t merged_size{0};  // UploadPart 累加，Complete 用作总大小
   std::int32_t last_merged_part{0};  // 供未来续传/持久化
   std::int32_t status{0};            // 0=进行中, 1=完成, 2=中止

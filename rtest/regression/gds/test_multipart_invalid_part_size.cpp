@@ -1,7 +1,7 @@
-// test_multipart_invalid_part_size.cpp — T1.1 中间 part < 16MB 应被拒绝
+// test_multipart_invalid_part_size.cpp — T1.1 中间 part < part_size 应被拒绝
 //
-// 验证: 3 个 8MB part（均 < proxy multipart_part_size=16MB）在 UploadPart 时被
-// 接受（UploadPart 仅拒 >16MB/0），但在 CompleteMultipartUpload 时被 proxy 的
+// 验证: 3 个 3MB part（均 < proxy multipart_part_size=4MB）在 UploadPart 时被
+// 接受（UploadPart 仅拒 >4MB/0），但在 CompleteMultipartUpload 时被 proxy 的
 // ValidatePartSizes 拒绝，out.error 含 "invalid part size"。
 // 失败条件: Complete 成功（静默接受违规 part），或 Complete 失败但错误不含
 // "invalid part size"。
@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t part_size = 8ULL * 1024 * 1024;  // 默认 8M（< 16M）
+  std::uint64_t part_size = 3ULL * 1024 * 1024;  // 默认 3M（< 4M）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
             << "  part_size : " << rtest::HumanBytes(part_size)
             << "  num_parts : " << num_parts << "\n";
 
-  // GPU buffer（3 个 part 复用同一 8MB buffer）。
+  // GPU buffer（3 个 part 复用同一 3MB buffer）。
   void* dev = nullptr;
   cudaError_t e = cudaMalloc(&dev, part_size);
   if (e != cudaSuccess) {
@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
   }
   std::cout << "  CreateMultipartUpload: upload_id=" << upload_id << "\n";
 
-  // ---- UploadPart ×3（8MB < 16M，UploadPart 应全部接受）----
+  // ---- UploadPart ×3（3MB < 4M，UploadPart 应全部接受）----
   {
     std::vector<Client::PartInfo> parts;
     parts.reserve(num_parts);
@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
       if (!client.UploadPartGds(upload_id, i,
                                 ConstBufferView{.data = dev, .size = part_size},
                                 etag, error)) {
-        // 8MB 不应被 UploadPart 拒；若被拒说明 UploadPart 行为变了，记录之。
+        // 3MB 不应被 UploadPart 拒；若被拒说明 UploadPart 行为变了，记录之。
         std::cout << "  UploadPartGds " << i
                   << " REJECTED (unexpected): " << error << "\n";
       } else {

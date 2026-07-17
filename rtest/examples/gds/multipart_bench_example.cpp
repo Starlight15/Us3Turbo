@@ -10,7 +10,7 @@
 //
 // 并发分段压测（CRC off 下分析瓶颈）：
 //   us3_turbo_multipart_bench_example \
-//     --total 256M --part-size 16M --concurrency 8 --multipart-only --reps 3
+//     --total 256M --part-size 4M --concurrency 8 --multipart-only --reps 3
 
 #include <algorithm>
 #include <atomic>
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
   std::uint32_t reps = 5;
   std::uint64_t part_size = 5ULL * 1024 * 1024;
   std::uint64_t concurrency = 1;  // 并发分段上传 worker 数
-  bool multipart_only = false;  // 跳过单步对比（允许 total > 16MiB 上限）
+  bool multipart_only = false;  // 跳过单步对比（允许 total > 16MiB 单步上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
   const bool run_single = !multipart_only;
   if (run_single && total > 16ULL * 1024 * 1024) {
     std::cerr << "total " << total
-              << " > 16MiB single-step limit; "
+              << " > 16MiB single-step PUT limit; "
                  "use --multipart-only\n";
     return 2;
   }

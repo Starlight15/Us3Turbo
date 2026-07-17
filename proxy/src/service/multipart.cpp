@@ -184,9 +184,9 @@ int Multipart::UploadPartGds(const std::string& request_id,
   if (ret != 0) return ret;
 
   /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
-   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockGds 已支持整 part（≤16MB，
-   * 见 MAX_VALUE_LENGTH），一次 RDMA 读 + 一次落盘，消除 block 间串行往返。
-   * 全局 block 序号 = part_number-1（1 block/part），与 GET 按
+   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockGds 已支持整 part
+   *（≤ MAX_VALUE_LENGTH=16MB），一次 RDMA 读 + 一次落盘，消除 block
+   *间串行往返。 全局 block 序号 = part_number-1（1 block/part），与 GET 按
    * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
    * (part-1)）。 */
   const std::uint64_t part_size_limit =
@@ -244,9 +244,9 @@ int Multipart::UploadPartUcx(const std::string& request_id,
   if (ret != 0) return ret;
 
   /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
-   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockUcx 已支持整 part（≤16MB，
-   * 见 MAX_VALUE_LENGTH），一次远程 RMA 读 + 一次落盘，消除 block 间串行往返。
-   * 全局 block 序号 = part_number-1（1 block/part），与 GET 按
+   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockUcx 已支持整 part
+   *（≤ MAX_VALUE_LENGTH=16MB），一次远程 RMA 读 + 一次落盘，消除 block
+   *间串行往返。 全局 block 序号 = part_number-1（1 block/part），与 GET 按
    * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
    * (part-1)）。 */
   const std::uint64_t part_size_limit =
@@ -323,7 +323,7 @@ int Multipart::CompleteUpload(
     }
   }
 
-  /* 5) 16MB 对齐校验 */
+  /* 5) part_size 对齐校验 */
   ret = ValidatePartSizes(request_id, parts);
   if (ret != 0) return ret;
 

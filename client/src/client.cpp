@@ -250,7 +250,7 @@ bool Client::UploadPartGds(const std::string& upload_id,
     return false;
   }
 
-  // 分段 part 上限：须 ≤ multipart_part_size（默认 16MiB，与 proxy 对齐）。
+  // 分段 part 上限：须 ≤ multipart_part_size（默认 4MiB，与 proxy 对齐）。
   // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
   // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
   if (buffer.size > opts_.multipart_part_size) {
@@ -307,7 +307,7 @@ bool Client::UploadPartUcx(const std::string& upload_id,
     return false;
   }
 
-  // 分段 part 上限：须 ≤ multipart_part_size（默认 16MiB，与 proxy 对齐）。
+  // 分段 part 上限：须 ≤ multipart_part_size（默认 4MiB，与 proxy 对齐）。
   // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
   // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
   if (buffer.size > opts_.multipart_part_size) {
