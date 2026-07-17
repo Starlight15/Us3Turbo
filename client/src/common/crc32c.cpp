@@ -25,7 +25,7 @@ constexpr auto kTable = MakeTable();
 
 }  // namespace
 
-std::uint32_t Crc32cInit() noexcept { return 0xFFFFFFFFu; }
+std::uint32_t Crc32cInit() noexcept { return 0u; }
 
 std::uint32_t Crc32cUpdate(std::uint32_t state, const void* data, std::size_t n) noexcept {
   const auto* p = static_cast<const std::uint8_t*>(data);
@@ -35,7 +35,7 @@ std::uint32_t Crc32cUpdate(std::uint32_t state, const void* data, std::size_t n)
   return state;
 }
 
-std::uint32_t Crc32cFinalize(std::uint32_t state) noexcept { return state ^ 0xFFFFFFFFu; }
+std::uint32_t Crc32cFinalize(std::uint32_t state) noexcept { return state; }
 
 std::uint32_t Crc32c(std::span<const std::byte> data) noexcept {
   return Crc32cFinalize(Crc32cUpdate(Crc32cInit(), data.data(), data.size()));
