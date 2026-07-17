@@ -252,6 +252,12 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
 
   const std::string req_id = detail::MakeReqId();
 
+  // [诊断插桩] 复用现有 latency_trace 开关(bench --trace 已透传到
+  // opts_.latency_trace)拆分 acquire(client 侧注册/token)与 rpc(网络+backend
+  // 可见耗时)两阶段。验证完毕后可整块删除。
+  const bool trace = opts_.latency_trace;
+  auto t0 = trace ? detail::clk::now() : detail::clk::time_point{};
+
   // 为本 part 独立注册 token（offset=0，相对本 part buffer）。
   GdsMemoryManager::Token token;
   if (!mgr->AcquireToken(buffer.data, buffer.size, 0, token)) {
@@ -259,10 +265,12 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
     return false;
   }
   const std::string rdma_token(token.str());
+  auto t_acquire = trace ? detail::clk::now() : detail::clk::time_point{};
 
   PutPathResult res;
   const bool rpc_ok =
       proxy_->UploadPartGds(req_id, upload_id, part_number, buffer.size, rdma_token, res);
+  auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
   // Token 析构自动释放（RAII），无需显式 ReleaseToken。
 
   if (!rpc_ok || !res.ok) {
@@ -274,6 +282,11 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   // 可选 CRC 校验（仅当 server 返回了 crc32c）。
   if (opts_.verify_crc32c && res.crc32c != 0) {
     VerifyPartCrc32c(req_id, buffer, res.crc32c, IsDevicePointer(buffer.data), "UploadPartGds");
+  }
+
+  if (trace) {
+    const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
+    detail::TraceLatency(req_id, "UploadPartGds", stages, buffer.size);
   }
 
   out_etag = res.etag;
@@ -306,15 +319,24 @@ bool Client::UploadPartUcx(const std::string& upload_id, std::uint32_t part_numb
 
   const std::string req_id = detail::MakeReqId();
 
+  // [诊断插桩] 复用现有 latency_trace 开关(bench --trace 已透传到
+  // opts_.latency_trace)拆分 acquire(client 侧注册/token)与 rpc(网络+backend
+  // 可见耗时)两阶段。验证完毕后可整块删除。
+  const bool trace = opts_.latency_trace;
+  auto t0 = trace ? detail::clk::now() : detail::clk::time_point{};
+
   UcxMemoryManager::Descriptor desc;
   if (!mgr->AcquireDescriptor(buffer.data, buffer.size, desc)) {
     out_error = "failed to acquire UCX descriptor";
     return false;
   }
+  auto t_acquire = trace ? detail::clk::now() : detail::clk::time_point{};
 
   PutPathResult res;
   const bool rpc_ok = proxy_->UploadPartUcx(req_id, upload_id, part_number, buffer.size,
                                             desc.remote_addr, desc.rkey, desc.client_ucx_addr, res);
+  auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
+
   if (!rpc_ok || !res.ok) {
     out_error = res.error_message;
     if (out_error.empty()) out_error = "UploadPartUcx rpc failed";
@@ -323,6 +345,11 @@ bool Client::UploadPartUcx(const std::string& upload_id, std::uint32_t part_numb
 
   if (opts_.verify_crc32c && res.crc32c != 0) {
     VerifyPartCrc32c(req_id, buffer, res.crc32c, false, "UploadPartUcx");
+  }
+
+  if (trace) {
+    const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
+    detail::TraceLatency(req_id, "UploadPartUcx", stages, buffer.size);
   }
 
   out_etag = res.etag;

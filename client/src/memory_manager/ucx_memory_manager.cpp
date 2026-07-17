@@ -248,19 +248,29 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size, Desc
   }
   void* mut_ptr = const_cast<void*>(ptr);
 
+  // [诊断插桩] 分阶段计时,定位并发瓶颈:等锁 / 持锁(查表+可能的
+  // ucp_mem_map) / 锁外(rkey_pack)。验证完毕后可整块删除,不影响功能逻辑。
+  using diag_clk = std::chrono::steady_clock;
+  const auto t0 = diag_clk::now();
+
   // 单次加锁完成幂等注册检查并取出 memh。基类 BufferRegistry::RegisterBuffer
   // 内部会再锁 mu_,此处已持锁须直接调 DoRegister(与 GdsMemoryManager
   // ::AcquireToken 同构),否则 std::mutex 不可重入致自死锁。
   ucp_mem_h memh{};
+  bool cache_hit = false;
+  diag_clk::time_point t1, t2;
   {
     std::lock_guard<std::mutex> lk(mu_);
+    t1 = diag_clk::now();  // 锁已到手:t1-t0 = 等锁耗时
     auto it = registered_.find(mut_ptr);
+    cache_hit = (it != registered_.end());
     if (it == registered_.end()) {
       ucp_mem_h h{};
       if (!DoRegister(mut_ptr, size, h)) return false;
       it = registered_.emplace(mut_ptr, std::move(h)).first;
     }
     memh = it->second;
+    t2 = diag_clk::now();  // t2-t1 = 持锁期间耗时(查表,miss 时含 ucp_mem_map)
   }
   // ucp_rkey_pack 可能耗时,锁外执行以提高并发性(与 GDS token 获取同模式)。
   void* rkey_buf = nullptr;
@@ -274,9 +284,16 @@ bool UcxMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size, Desc
   out.rkey.assign(static_cast<const char*>(rkey_buf), rkey_size);
   out.client_ucx_addr = listen_addr_;
   ucp_rkey_buffer_release(rkey_buf);
+  const auto t3 = diag_clk::now();  // t3-t2 = rkey_pack 耗时
 
-  LOG_SYS_INFO("ptr={} size={} remote_addr=0x{:x} rkey_bytes={} ucx_addr={}", ptr, size,
-               out.remote_addr, out.rkey.size(), out.client_ucx_addr);
+  const auto diag_us = [](diag_clk::time_point a, diag_clk::time_point b) {
+    return std::chrono::duration<double, std::micro>(b - a).count();
+  };
+  LOG_SYS_INFO(
+      "ptr={} size={} remote_addr=0x{:x} rkey_bytes={} ucx_addr={} "
+      "PHASE hit={} lock_wait_us={:.1f} inlock_us={:.1f} pack_us={:.1f}",
+      ptr, size, out.remote_addr, out.rkey.size(), out.client_ucx_addr, cache_hit, diag_us(t0, t1),
+      diag_us(t1, t2), diag_us(t2, t3));
   return true;
 }
 

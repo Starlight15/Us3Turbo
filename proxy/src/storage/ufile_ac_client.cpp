@@ -1,5 +1,6 @@
 #include "proxy/src/storage/ufile_ac_client.h"
 
+#include <chrono>  // [诊断插桩]
 #include <string>
 #include <utility>
 #include <vector>
@@ -115,6 +116,9 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
    * (keyed by block_id), 幂等安全。协议错误(bad magic/body too short)不重试。
    */
   for (int attempt = 0; attempt < 2; ++attempt) {
+    // [诊断插桩] t0: attempt 起点，含 AcquireConn 本身耗时
+    const auto t0 = std::chrono::steady_clock::now();
+
     // 取连接
     auto [idx, conn] = AcquireConn();
     if (conn == nullptr) {
@@ -127,7 +131,14 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
       LOG_SYS_ERROR("{}: no available connection after 2 attempts", op_name);
       return -1;
     }
+
+    // [诊断插桩] t1: AcquireConn 返回后 → acquire_conn_us = t1-t0
+    const auto t1 = std::chrono::steady_clock::now();
+
     std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
+
+    // [诊断插桩] t2: 拿到该连接 mutex 后 → lock_wait_us = t2-t1（核心指标：连接池排队）
+    const auto t2 = std::chrono::steady_clock::now();
 
     // 发送
     bool ok = true;
@@ -135,6 +146,9 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
       LOG_SYS_ERROR("{}: send failed", op_name);
       ok = false;
     }
+
+    // [诊断插桩] t3: SendAll 后 → send_us = t3-t2
+    const auto t3 = std::chrono::steady_clock::now();
 
     // 收响应头并校验
     Message rmsg{};
@@ -165,6 +179,9 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
       }
     }
 
+    // [诊断插桩] t4: 收响应头+校验后 → recv_hdr_us = t4-t3
+    const auto t4 = std::chrono::steady_clock::now();
+
     // 收响应体
     if (ok) {
       out_body.resize(rmsg.bodyLen_);
@@ -175,6 +192,16 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
     }
 
     if (ok) {
+      // [诊断插桩] t5: 收响应体后 → recv_body_us = t5-t4；打印全阶段耗时
+      const auto t5 = std::chrono::steady_clock::now();
+      const auto us = [](auto a, auto b) {
+        return std::chrono::duration<double, std::micro>(b - a).count();
+      };
+      LOG_SYS_INFO(
+          "{}: PHASE idx={} attempt={} acquire_conn_us={:.1f} lock_wait_us={:.1f} "
+          "send_us={:.1f} recv_hdr_us={:.1f} recv_body_us={:.1f} total_us={:.1f}",
+          op_name, idx, attempt, us(t0, t1), us(t1, t2), us(t2, t3), us(t3, t4), us(t4, t5),
+          us(t0, t5));
       return 0;  // 成功
     }
 
