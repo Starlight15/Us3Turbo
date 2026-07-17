@@ -15,6 +15,7 @@
 namespace us3_turbo::client {
 namespace {
 ssize_t StubGet(const void*, char*, size_t, loff_t, const cufileRDMAInfo_t*) { return -1; }
+
 ssize_t StubPut(const void*, const char*, size_t, loff_t, const cufileRDMAInfo_t*) { return -1; }
 
 }  // namespace
@@ -37,6 +38,7 @@ GdsMemoryManager::Token::Token(Token&& o) noexcept : client_(o.client_), tok_(o.
   o.client_ = nullptr;
   o.tok_ = nullptr;
 }
+
 GdsMemoryManager::Token& GdsMemoryManager::Token::operator=(Token&& o) noexcept {
   if (this != &o) {
     Reset();
@@ -47,12 +49,15 @@ GdsMemoryManager::Token& GdsMemoryManager::Token::operator=(Token&& o) noexcept 
   }
   return *this;
 }
+
 GdsMemoryManager::Token::~Token() { Reset(); }
+
 void GdsMemoryManager::Token::Reset() noexcept {
   if (tok_ && client_) client_->cuMemObjPutRDMAToken(tok_);
   client_ = nullptr;
   tok_ = nullptr;
 }
+
 std::string_view GdsMemoryManager::Token::str() const noexcept {
   return tok_ ? std::string_view(tok_) : std::string_view{};
 }
@@ -60,6 +65,7 @@ std::string_view GdsMemoryManager::Token::str() const noexcept {
 GdsMemoryManager::GdsMemoryManager() : impl_(std::make_unique<Impl>()) {
   connected_ = impl_->client && impl_->client->isConnected();
 }
+
 GdsMemoryManager::~GdsMemoryManager() {
   // 懒注册常驻:注册表作进程级缓存,残留项是预期行为。
   if (RegisteredCount() != 0U) {

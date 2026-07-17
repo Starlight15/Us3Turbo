@@ -107,11 +107,15 @@ class UfileAcClient {
   /* 解码响应辅助，返回填充好的 BlockResult。 */
   static BlockResult DecodeGdsPutRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
+
   static BlockResult DecodeUcxPutRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
+
   static BlockResult DecodeDelRsp(const char* body, std::uint32_t body_len, const std::string& key);
+
   static BlockResult DecodeGdsGetRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
+
   static BlockResult DecodeUcxGetRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
 

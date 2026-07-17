@@ -44,6 +44,7 @@ class AccessLogger {
 
     spdlog::register_logger(logger_);
   }
+
   ~AccessLogger() = default;
   AccessLogger(const AccessLogger&) = delete;
   AccessLogger& operator=(const AccessLogger&) = delete;

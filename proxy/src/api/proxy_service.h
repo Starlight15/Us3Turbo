@@ -34,6 +34,7 @@ class ProxyService final : public Control {
     // 启动后台 TTL 清理线程，周期扫描删除过期 multipart 会话
     cleanup_thread_ = std::thread([this]() { CleanupThreadMain(); });
   }
+
   ~ProxyService() override {
     {
       std::lock_guard lock(cleanup_mu_);

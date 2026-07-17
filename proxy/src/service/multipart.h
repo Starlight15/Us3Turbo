@@ -83,9 +83,11 @@ class Multipart {
 
   [[nodiscard]] int ValidateParts(const std::string& request_id,
                                   const std::vector<PartRecord>& parts);
+
   /* part_size 对齐校验：除最后一个 part 外必须 == part_size_limit */
   [[nodiscard]] int ValidatePartSizes(const std::string& request_id,
                                       const std::vector<PartRecord>& parts);
+
   std::string ComputeFinalETag(const std::vector<PartRecord>& parts);
 
   IUploadIndex* index_;

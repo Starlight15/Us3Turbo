@@ -37,6 +37,7 @@ class GdsMemoryManager : public BufferRegistry<GdsRegEntry> {
     ~Token();
 
     [[nodiscard]] std::string_view str() const noexcept;
+
     [[nodiscard]] bool valid() const noexcept { return tok_ != nullptr; }
 
    private:
@@ -68,6 +69,7 @@ class GdsMemoryManager : public BufferRegistry<GdsRegEntry> {
 
  private:
   GdsMemoryManager();
+
   ~GdsMemoryManager() override;
 
   /** @brief BufferRegistry<GdsRegEntry> 钩子:真正 pin 进 BAR1。 */

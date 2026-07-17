@@ -43,6 +43,7 @@ class BufferRegistry {
     auto it = registered_.find(ptr);
     return it == registered_.end() ? nullptr : &it->second;
   }
+
   [[nodiscard]] Handle* FindLocked(void* ptr) {
     auto it = registered_.find(ptr);
     return it == registered_.end() ? nullptr : &it->second;
@@ -65,6 +66,7 @@ class BufferRegistry {
 
   /** @brief 派生类实现:填充 out(句柄),失败返回 false 并自行记日志。 */
   [[nodiscard]] virtual bool DoRegister(void* ptr, std::size_t size, Handle& out) = 0;
+
   /** @brief 派生类实现:释放 handle 持有的资源。 */
   virtual void DoUnregister(void* ptr, Handle& handle) = 0;
 };

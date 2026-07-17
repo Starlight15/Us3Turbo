@@ -43,6 +43,7 @@ class GetObject {
  private:
   /* 校验 GDS GET 请求合法性。 */
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyGetRequest& req);
+
   /* 校验 UCX GET 请求合法性。 */
   [[nodiscard]] int ValidateUcxRequest(const ClientProxyGetRequest& req);
 

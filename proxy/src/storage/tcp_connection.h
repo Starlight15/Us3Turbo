@@ -22,16 +22,19 @@ class TcpConnection {
   /* 创建 socket 并连接，设置收发超时；已连接则幂等返回 true，失败置 dead 返回
    * false。 */
   bool Connect();
+
   /* 关闭连接并释放 fd。 */
   void Close();
 
   /* 完整收发指定长度；短读/短写内部补齐。成功返回 0，失败置 dead 并关闭后返回
    * -1。 */
   int SendAll(const void* buf, std::size_t len);
+
   int RecvAll(void* buf, std::size_t len);
 
   /* 查询连接存活状态。 */
   bool alive() const { return alive_.load(std::memory_order_acquire); }
+
   /* 标记连接已断开。 */
   void set_dead() { alive_.store(false, std::memory_order_release); }
 

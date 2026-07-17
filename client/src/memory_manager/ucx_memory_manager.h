@@ -42,24 +42,31 @@ class UcxMemoryManager : public BufferRegistry<ucp_mem_h> {
 
  private:
   UcxMemoryManager();
+
   ~UcxMemoryManager() override;
 
   // BufferRegistry<ucp_mem_h> 钩子:真正 ucp_mem_map / ucp_mem_unmap。
   [[nodiscard]] bool DoRegister(void* ptr, std::size_t size, ucp_mem_h& out) override;
+
   void DoUnregister(void* ptr, ucp_mem_h& handle) override;
 
   /** @brief 分阶段 init:任一失败按反向顺序回滚。 */
   [[nodiscard]] bool InitContext();
+
   /** @brief 创建 worker(MULTI,跨线程安全)。 */
   [[nodiscard]] bool InitWorker();
+
   /** @brief 创建 listener 并 query 取回实际绑定地址。 */
   [[nodiscard]] bool InitListener();
+
   /** @brief 启动后台 progress 线程驱动 conn_handler。 */
   void StartProgressThread();
 
   /** @brief 逆序 cleanup 各阶段组件,幂等(nullptr 跳过)。 */
   void CleanupListener();
+
   void CleanupWorker();
+
   void CleanupContext();
 
   /** @brief listener conn_handler:accept 新 ep 完成握手,client 不持有 ep。 */

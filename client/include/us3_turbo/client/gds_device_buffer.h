@@ -25,7 +25,9 @@ class GdsDeviceBuffer {
   GdsDeviceBuffer& operator=(const GdsDeviceBuffer&) = delete;
 
   [[nodiscard]] void* data() const noexcept { return ptr_; }
+
   [[nodiscard]] std::size_t size() const noexcept { return size_; }
+
   [[nodiscard]] bool valid() const noexcept { return ptr_ != nullptr; }
 
  private:

@@ -29,6 +29,7 @@ class UcxMemoryManager;
 class Client {
  public:
   explicit Client(ClientOptions options);
+
   ~Client();
 
   Client(const Client&) = delete;
@@ -114,6 +115,7 @@ class Client {
 
   // 返回 client 进程内的 GDS/UCX manager 单例（Initialize 时已确保可用）。
   [[nodiscard]] GdsMemoryManager* GdsManager() const;
+
   [[nodiscard]] UcxMemoryManager* UcxManager() const;
 };
 

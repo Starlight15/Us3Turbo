@@ -33,12 +33,14 @@ class MongoUploadIndex final : public IUploadIndex {
 
   /* 删除上传会话及其分段记录 */
   void Remove(const std::string& upload_id) override;
+
   /* 清理超过 ttl_ms 的过期上传会话 */
   void RemoveExpired(std::int64_t ttl_ms) override;
 
   /* 更新上传会话的已合并大小 */
   [[nodiscard]] bool UpdateMergedSize(const std::string& upload_id,
                                       std::uint64_t merged_size) override;
+
   /* 更新上传会话的最后合并分段号 */
   [[nodiscard]] bool UpdateLastMergedPart(const std::string& upload_id,
                                           std::int32_t part_number) override;
