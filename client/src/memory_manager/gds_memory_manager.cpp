@@ -1,6 +1,5 @@
 #include "client/src/memory_manager/gds_memory_manager.h"
 
-#include <atomic>
 #include <cstddef>
 #include <mutex>
 #include <string>
@@ -23,10 +22,6 @@ ssize_t StubPut(const void*, const char*, size_t, loff_t,
   return -1;
 }
 
-// BUFFER_ID 特性是否可用。旧驱动不支持 CU_POINTER_ATTRIBUTE_BUFFER_ID 时
-// 会返回 CUDA_ERROR_INVALID_VALUE,首次遇到即降级为 size-only 检查。
-std::atomic<bool> g_buffer_id_supported{true};
-std::once_flag g_buffer_id_warn_once;
 }  // namespace
 
 struct GdsMemoryManager::Impl {
@@ -128,28 +123,19 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
   // 查询当前地址上"住户"的进程内唯一分配 ID。CUDA 保证:同一进程内,
   // 不同分配的 buffer_id 绝不重复,free 后也不会被后来者捡走
   // (见 cuda.h CU_POINTER_ATTRIBUTE_BUFFER_ID 文档)。
+  // 复用检测完全依赖该属性,查询失败直接拒绝,不做 size-only 降级——
+  // 旧驱动/不支持环境下 GDS 视为不可用,由调用方决定是否走非 GDS 路径。
   unsigned long long cur_buffer_id = 0;
-  if (g_buffer_id_supported.load(std::memory_order_relaxed)) {
-    const CUresult pr =
-        cuPointerGetAttribute(&cur_buffer_id, CU_POINTER_ATTRIBUTE_BUFFER_ID,
-                              reinterpret_cast<CUdeviceptr>(mut_ptr));
-    if (pr == CUDA_ERROR_INVALID_VALUE) {
-      // 驱动不支持 BUFFER_ID 属性,后续请求走 size-only 降级路径。
-      g_buffer_id_supported.store(false, std::memory_order_relaxed);
-      std::call_once(g_buffer_id_warn_once, []() {
-        LOG_SYS_WARN(
-            "CU_POINTER_ATTRIBUTE_BUFFER_ID not supported by CUDA driver, "
-            "fallback to size-only reuse detection (may miss same-size reuse)");
-      });
-      cur_buffer_id = 0;  // sentinel: 下面检查时当作"永远不同"
-    } else if (pr != CUDA_SUCCESS) {
-      LOG_SYS_ERROR("cuPointerGetAttribute(BUFFER_ID) failed (ptr={} rc={})",
-                    ptr, static_cast<int>(pr));
-      return false;  // 其它错误(如野指针)仍然失败,不降级。
-    }
+  const CUresult pr =
+      cuPointerGetAttribute(&cur_buffer_id, CU_POINTER_ATTRIBUTE_BUFFER_ID,
+                            reinterpret_cast<CUdeviceptr>(mut_ptr));
+  if (pr != CUDA_SUCCESS) {
+    LOG_SYS_ERROR(
+        "cuPointerGetAttribute(BUFFER_ID) failed (ptr={} rc={}), cannot "
+        "verify address-reuse identity, refusing to register",
+        ptr, static_cast<int>(pr));
+    return false;  // 身份查不到就不能判断复用,直接失败,不降级。
   }
-  // 若 g_buffer_id_supported == false,cur_buffer_id 保持 0,下面 addr_reused
-  // 检查被守卫跳过,退化为 size-only。
 
   // 单次加锁完成幂等注册检查,DoRegister 失败则回滚占位。
   // 重新 pin 的条件:地址被复用(buffer_id 变了) || 旧注册范围不够。
@@ -158,9 +144,7 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
     const std::size_t needed = size + offset;
     auto it = registered_.find(mut_ptr);
     if (it != registered_.end()) {
-      const bool addr_reused =
-          g_buffer_id_supported.load(std::memory_order_relaxed) &&
-          it->second.buffer_id != cur_buffer_id;
+      const bool addr_reused = it->second.buffer_id != cur_buffer_id;
       const bool too_small = it->second.size < needed;
       if (addr_reused || too_small) {
         LOG_SYS_INFO(
