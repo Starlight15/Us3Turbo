@@ -19,9 +19,11 @@ class GdsPutChannel;
 class GdsGetChannel;
 class UcxPutChannel;
 class UcxGetChannel;
+class RdmaPutChannel;
 class PutChannel;
 class GdsMemoryManager;
 class UcxMemoryManager;
+class RdmaMemoryManager;
 
 /**
  * @brief 对象存储 client。
@@ -107,6 +109,7 @@ class Client {
   std::unique_ptr<GdsGetChannel> gds_get_channel_;
   std::unique_ptr<UcxPutChannel> ucx_channel_;
   std::unique_ptr<UcxGetChannel> ucx_get_channel_;
+  std::unique_ptr<RdmaPutChannel> rdma_channel_;
   bool initialized_{false};
 
   [[nodiscard]] bool ValidatePutPath(const ClientProxyPutRequest& req) const;
@@ -117,6 +120,8 @@ class Client {
   [[nodiscard]] GdsMemoryManager* GdsManager() const;
 
   [[nodiscard]] UcxMemoryManager* UcxManager() const;
+
+  [[nodiscard]] RdmaMemoryManager* RdmaManager() const;
 };
 
 }  // namespace us3_turbo::client

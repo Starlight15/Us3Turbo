@@ -74,6 +74,11 @@ class UfileAcClient {
                                         const std::string& client_ucx_addr,
                                         std::uint64_t source_offset, std::uint64_t data_len);
 
+  /* RDMA (libibverbs) 写一个 block 到 backend。token 是 hex 编码的
+   * listener 地址 + MR 描述符。 */
+  [[nodiscard]] BlockResult PutBlockRdma(const std::string& key, const std::string& token,
+                                         std::uint64_t source_offset, std::uint64_t data_len);
+
   /* 尽力删除一个 block；失败通常忽略（TTL 兜底），KEY_NOT_FOUND 视为可接受。 */
   [[nodiscard]] BlockResult DeleteBlock(const std::string& key);
 
@@ -118,6 +123,9 @@ class UfileAcClient {
 
   static BlockResult DecodeUcxGetRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
+
+  static BlockResult DecodeRdmaPutRsp(const char* body, std::uint32_t body_len,
+                                       const std::string& key);
 
   int timeout_ms_;
   std::uint32_t setid_;

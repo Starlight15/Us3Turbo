@@ -20,10 +20,13 @@ add_library(us3_turbo_client
   src/memory_manager/gds_memory_manager.cpp
   src/memory_manager/gds_device_buffer.cpp
   src/memory_manager/ucx_memory_manager.cpp
+  src/memory_manager/rdma_memory_manager.cpp
+  src/memory_manager/rdma_qp.cpp
   src/transport/gds_put_channel.cpp
   src/transport/gds_get_channel.cpp
   src/transport/ucx_put_channel.cpp
-  src/transport/ucx_get_channel.cpp)
+  src/transport/ucx_get_channel.cpp
+  src/transport/rdma_put_channel.cpp)
 
 add_dependencies(us3_turbo_client
   us3_turbo_control_plane_proto)
@@ -52,7 +55,8 @@ target_link_libraries(us3_turbo_client
     ${CUOBJCLIENT_LIBRARY}
     ${CUDART_LIBRARY}
     ${CUDA_DRIVER_LIBRARY}
-    ${UCP_LIBRARY} ${UCS_LIBRARY} ${UCT_LIBRARY} ${UCM_LIBRARY})
+    ${UCP_LIBRARY} ${UCS_LIBRARY} ${UCT_LIBRARY} ${UCM_LIBRARY}
+    ${IBVERBS_LIBRARY} ${RDMACM_LIBRARY})
 
 target_compile_options(us3_turbo_client
   PRIVATE

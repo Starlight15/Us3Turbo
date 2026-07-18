@@ -52,6 +52,10 @@ class ProxyService final : public Control {
   void UcxPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request,
               PutPathResult* response, google::protobuf::Closure* done) override;
 
+  /* RDMA 单块上传，委托 SinglePut。 */
+  void RdmaPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request,
+               PutPathResult* response, google::protobuf::Closure* done) override;
+
   // ===== 分段上传接口（client → proxy） =====
   /* 创建分段上传会话，委托 Multipart。 */
   void CreateMultipartUpload(google::protobuf::RpcController* cntl,

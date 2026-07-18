@@ -83,6 +83,25 @@ BlockResult UfileAcClient::PutBlockUcx(const std::string& key, std::uint64_t rem
   return DecodeUcxPutRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()), key);
 }
 
+/* RDMA PUT */
+
+BlockResult UfileAcClient::PutBlockRdma(const std::string& key, const std::string& token,
+                                        std::uint64_t source_offset, std::uint64_t data_len) {
+  LOG_SYS_DEBUG("PutBlockRdma: key={} offset={} len={}", key, source_offset, data_len);
+
+  std::vector<char> req;
+  EncodeRdmaPutRequest(key, token, source_offset, data_len, setid_,
+                       session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+
+  std::vector<char> rsp_body;
+  BlockResult result;
+  if (SendAndRecv("PutBlockRdma", OSD_RDMA_PUT_RSP, RDMA_PUT_RSP_SIZE, req, rsp_body, result) != 0) {
+    return result;
+  }
+
+  return DecodeRdmaPutRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()), key);
+}
+
 /* DEL (best-effort) */
 
 BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
@@ -433,6 +452,35 @@ BlockResult UfileAcClient::DecodeUcxGetRsp(const char* body, std::uint32_t body_
   r.ret_code = 0;
   r.crc32c = crc;
   r.bytes_written = read;  // GET 语义下复用字段 = bytes_read
+  return r;
+}
+
+BlockResult UfileAcClient::DecodeRdmaPutRsp(const char* body, std::uint32_t body_len,
+                                             const std::string& key) {
+  RdmaPutRsp rsp{};
+  std::string errmsg;
+  if (DecodeRdmaPutResponse(body, body_len, rsp, errmsg) != 0) {
+    LOG_SYS_ERROR("PutBlockRdma: decode failed key={}", key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "decode response failed: " + errmsg;
+    return r;
+  }
+  if (rsp.retcode_ != 0) {
+    const std::int32_t ret = rsp.retcode_;
+    LOG_SYS_ERROR("PutBlockRdma: backend ret={} msg={} key={}", ret, errmsg, key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "backend retcode=" + std::to_string(ret) + " msg=" + errmsg;
+    return r;
+  }
+  const std::uint32_t crc = rsp.crc32c_;
+  const std::uint64_t written = rsp.bytesWritten_;
+  LOG_SYS_DEBUG("PutBlockRdma: ok key={} crc32c={:#x} bytes={}", key, crc, written);
+  BlockResult r;
+  r.ret_code = 0;
+  r.crc32c = crc;
+  r.bytes_written = written;
   return r;
 }
 

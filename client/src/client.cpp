@@ -15,12 +15,14 @@
 #include "client/src/common/trace.h"
 #include "client/src/memory_manager/gds_memory_manager.h"
 #include "client/src/memory_manager/ucx_memory_manager.h"
+#include "client/src/memory_manager/rdma_memory_manager.h"
 #include "client/src/rpc/proxy_rpc.h"
 #include "client/src/transport/gds_get_channel.h"
 #include "client/src/transport/gds_put_channel.h"
 #include "client/src/transport/put_channel.h"
 #include "client/src/transport/ucx_get_channel.h"
 #include "client/src/transport/ucx_put_channel.h"
+#include "client/src/transport/rdma_put_channel.h"
 #include "us3_turbo/common/logger.h"
 
 #include <cuda_runtime.h>
@@ -115,11 +117,21 @@ bool Client::Initialize() {
     ucx_get_channel_.reset();
   }
 
+  // RDMA 同构，Start 失败不致命。
+  RdmaMemoryManager* rdma_mgr = nullptr;
+  if (RdmaMemoryManager::Instance(rdma_mgr)) {
+    rdma_channel_ = std::make_unique<RdmaPutChannel>(opts_, *proxy_, rdma_mgr);
+  } else {
+    LOG_SYS_WARN("RDMA manager unavailable, path=kRdma will fail");
+    rdma_channel_.reset();
+  }
+
   initialized_ = true;
   return true;
 }
 
 void Client::Shutdown() {
+  rdma_channel_.reset();
   ucx_get_channel_.reset();
   ucx_channel_.reset();
   gds_get_channel_.reset();
@@ -150,6 +162,8 @@ PutChannel* Client::SelectChannel(PutDataPath path) const noexcept {
       return gds_channel_.get();
     case PutDataPath::kUcx:
       return ucx_channel_.get();
+    case PutDataPath::kRdma:
+      return rdma_channel_.get();
     default:
       return nullptr;  // kNone / kAll(已在校验阶段拒绝)
   }
@@ -178,7 +192,9 @@ bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
   PutChannel* ch = SelectChannel(req.path);
   if (ch == nullptr) {
     LOG_ERROR(req.req_id, "{} channel not initialized",
-              req.path == PutDataPath::kGds ? "GDS" : "UCX");
+              req.path == PutDataPath::kGds    ? "GDS"
+              : req.path == PutDataPath::kRdma ? "RDMA"
+                                               : "UCX");
     return false;
   }
 
@@ -194,6 +210,8 @@ bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
   // 按 path 回填结果到对应字段。
   if (req.path == PutDataPath::kGds)
     resp.gds_result = res;
+  else if (req.path == PutDataPath::kRdma)
+    resp.rdma_result = res;
   else
     resp.ucx_result = res;
 
@@ -213,6 +231,11 @@ GdsMemoryManager* Client::GdsManager() const {
 UcxMemoryManager* Client::UcxManager() const {
   UcxMemoryManager* mgr = nullptr;
   return UcxMemoryManager::Instance(mgr) ? mgr : nullptr;
+}
+
+RdmaMemoryManager* Client::RdmaManager() const {
+  RdmaMemoryManager* mgr = nullptr;
+  return RdmaMemoryManager::Instance(mgr) ? mgr : nullptr;
 }
 
 bool Client::CreateMultipartUpload(const std::string& bucket, const std::string& key,

@@ -40,6 +40,8 @@ enum MessageType : std::uint32_t {
   OSD_UCX_PUT_RSP = 26,
   OSD_UCX_GET_REQ = 27,
   OSD_UCX_GET_RSP = 28,
+  OSD_RDMA_PUT_REQ = 29,
+  OSD_RDMA_PUT_RSP = 30,
 };
 
 /*
@@ -206,6 +208,34 @@ struct DelRsp {
   char data_[0];  // errmsg bytes
 } __attribute__((packed));
 
+/*
+ * RDMA PUT 请求（sizeof=60）+ 变长 data_。对齐 ufile-ac message.h RdmaPutReq。
+ *   data_   = key bytes || token bytes
+ *   bodyLen_ = RDMA_PUT_REQ_SIZE + keyLen_ + tokenLen_
+ */
+struct RdmaPutReq {
+  std::uint32_t keyLen_;
+  std::uint32_t tokenLen_;
+  std::uint64_t dataLen_;
+  std::uint64_t sourceOffset_;
+  std::uint64_t requestId_;
+  std::uint64_t sessionIdLow_;
+  std::uint64_t sessionIdHigh_;
+  std::uint32_t flags_;
+  char data_[0];
+} __attribute__((packed));
+
+/*
+ * RDMA PUT 响应（sizeof=20）+ 变长 data_（errmsg bytes）。
+ */
+struct RdmaPutRsp {
+  std::int32_t retcode_;
+  std::uint32_t crc32c_;
+  std::uint64_t bytesWritten_;
+  std::uint32_t errMsgLen_;
+  char data_[0];
+} __attribute__((packed));
+
 /* 尺寸常量（用 sizeof，避免硬编码笔误） */
 constexpr std::size_t MESSAGE_HEAD_SIZE = sizeof(Message);
 constexpr std::size_t GDS_PUT_REQ_SIZE = sizeof(GdsPutReq);
@@ -218,6 +248,8 @@ constexpr std::size_t GDS_GET_REQ_SIZE = sizeof(GdsGetReq);
 constexpr std::size_t GDS_GET_RSP_SIZE = sizeof(GdsGetRsp);
 constexpr std::size_t DEL_REQ_SIZE = sizeof(DelReq);
 constexpr std::size_t DEL_RSP_SIZE = sizeof(DelRsp);
+constexpr std::size_t RDMA_PUT_REQ_SIZE = sizeof(RdmaPutReq);
+constexpr std::size_t RDMA_PUT_RSP_SIZE = sizeof(RdmaPutRsp);
 
 /* 编解码函数 */
 
@@ -260,6 +292,17 @@ std::size_t EncodeUcxGetRequest(const std::string& key, std::uint64_t remote_add
 /* 解码 UCX GET 响应体。返回 0=成功，-1=格式错误。 */
 int DecodeUcxGetResponse(const char* buffer, std::size_t len, UcxGetRsp& out_rsp,
                          std::string& out_err);
+
+/* 编码 RDMA PUT 请求，返回总字节数。
+ * 布局: Message(52) + RdmaPutReq(60) + key + token */
+std::size_t EncodeRdmaPutRequest(const std::string& key, const std::string& token,
+                                 std::uint64_t source_offset, std::uint64_t data_len,
+                                 std::uint32_t setid, std::uint64_t session_id,
+                                 std::vector<char>& out_buffer);
+
+/* 解码 RDMA PUT 响应体（不含 Message 头）。返回 0=成功，-1=格式错误。 */
+int DecodeRdmaPutResponse(const char* buffer, std::size_t len, RdmaPutRsp& out_rsp,
+                           std::string& out_err);
 
 /* 编码 DEL 请求，返回总字节数。
  * 布局: Message(52) + DelReq(12) + key */

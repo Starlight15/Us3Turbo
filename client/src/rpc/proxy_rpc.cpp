@@ -106,6 +106,43 @@ bool ProxyRpc::UcxPut(std::string_view req_id, const std::string& bucket, const 
   return resp.ok();
 }
 
+bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket,
+                       const std::string& key, std::uint64_t object_size,
+                       const RdmaDataSource& rdma_source, PutPathResult& res) const {
+  if (!ok()) {
+    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
+    res.ok = false;
+    res.error_message = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  us3_turbo::proxy::ClientProxyPutRequest rpc_request;
+  rpc_request.set_request_id(std::string(req_id));
+  rpc_request.set_bucket(bucket);
+  rpc_request.set_key(key);
+  rpc_request.set_object_size(object_size);
+  rpc_request.set_path(us3_turbo::proxy::PATH_RDMA);
+  rpc_request.mutable_rdma_source()->set_rdma_token(rdma_source.rdma_token);
+
+  us3_turbo::proxy::PutPathResult resp;
+  stub()->RdmaPut(&controller, &rpc_request, &resp, nullptr);
+
+  if (controller.Failed()) {
+    return FailResult(res, controller, req_id, "RDMA");
+  }
+
+  res.ok = resp.ok();
+  res.error_code = resp.error_code();
+  res.error_message = resp.error_message();
+  res.etag = resp.etag();
+  res.crc32c = resp.crc32c();
+  res.bytes_written = resp.bytes_written();
+  return resp.ok();
+}
+
 // ---------------------------------------------------------------------------
 // 分段上传（client → proxy）。与单步 GdsPut/UcxPut 共用同一 brpc channel
 // 与 Control_Stub；proxy 在 Control service 上同时暴露这 4 个 RPC。

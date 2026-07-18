@@ -360,4 +360,74 @@ int DecodeUcxGetResponse(const char* buffer, std::size_t len, UcxGetRsp& out_rsp
   return 0;
 }
 
+// ============================ RDMA PUT ============================
+
+std::size_t EncodeRdmaPutRequest(const std::string& key, const std::string& token,
+                                 std::uint64_t source_offset, std::uint64_t data_len,
+                                 std::uint32_t setid, std::uint64_t session_id,
+                                 std::vector<char>& out_buffer) {
+  const std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
+  const std::uint32_t tok_len = static_cast<std::uint32_t>(token.size());
+  const std::uint32_t body_len =
+      static_cast<std::uint32_t>(RDMA_PUT_REQ_SIZE + key_len + tok_len);
+  const std::uint32_t msg_size_field =
+      static_cast<std::uint32_t>(MESSAGE_HEAD_SIZE + body_len - sizeof(std::uint32_t));
+  const std::size_t total = MESSAGE_HEAD_SIZE + body_len;
+
+  out_buffer.resize(total);
+  char* p = out_buffer.data();
+
+  /* 请求头: 仅 msgSize_ 大端, 其余主机序 */
+  Message msg{};
+  msg.msgSize_ = htonl(msg_size_field);
+  msg.magic_ = MESSAGE_MAGIC_NUMBER;
+  msg.version_ = MESSAGE_VERSION_NUMBER;
+  msg.type_ = OSD_RDMA_PUT_REQ;
+  msg.flowno_ = 0;
+  msg.sessionIdLow_ = session_id;
+  msg.sessionIdHigh_ = 0;
+  msg.setid_ = setid;
+  msg.payload_ = 0;
+  msg.bodyLen_ = body_len;
+  std::memcpy(p, &msg, MESSAGE_HEAD_SIZE);
+  p += MESSAGE_HEAD_SIZE;
+
+  /* RdmaPutReq: 预留字段填 0 */
+  RdmaPutReq req{};
+  req.keyLen_ = key_len;
+  req.tokenLen_ = tok_len;
+  req.dataLen_ = data_len;
+  req.sourceOffset_ = source_offset;
+  req.requestId_ = 0;
+  req.sessionIdLow_ = 0;
+  req.sessionIdHigh_ = 0;
+  req.flags_ = 0;
+  std::memcpy(p, &req, RDMA_PUT_REQ_SIZE);
+  p += RDMA_PUT_REQ_SIZE;
+
+  /* 变长数据: key + token */
+  std::memcpy(p, key.data(), key.size());
+  p += key.size();
+  std::memcpy(p, token.data(), token.size());
+  return total;
+}
+
+int DecodeRdmaPutResponse(const char* buffer, std::size_t len, RdmaPutRsp& out_rsp,
+                           std::string& out_err) {
+  if (len < RDMA_PUT_RSP_SIZE) {
+    out_err = "RdmaPut rsp body too short len=" + std::to_string(len);
+    return -1;
+  }
+  std::memcpy(&out_rsp, buffer, RDMA_PUT_RSP_SIZE);
+  const std::uint32_t errmsg_len = out_rsp.errMsgLen_;
+  const std::size_t var_len = len - RDMA_PUT_RSP_SIZE;
+  if (static_cast<std::size_t>(errmsg_len) > var_len) {
+    out_err = "RdmaPut rsp var overflow errmsg=" + std::to_string(errmsg_len) +
+              " var=" + std::to_string(var_len);
+    return -1;
+  }
+  out_err.assign(buffer + RDMA_PUT_RSP_SIZE, errmsg_len);
+  return 0;
+}
+
 }  // namespace us3_turbo::proxy

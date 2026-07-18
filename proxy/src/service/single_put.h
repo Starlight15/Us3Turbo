@@ -29,6 +29,9 @@ class SinglePut {
   /* UCX 单步上传，写数据 + 写索引 */
   [[nodiscard]] int PutUcx(const ClientProxyPutRequest& request, PutOutput& out);
 
+  /* RDMA 单步上传，写数据 + 写索引 */
+  [[nodiscard]] int PutRdma(const ClientProxyPutRequest& request, PutOutput& out);
+
  private:
   /* 校验 GDS 上传请求合法性 */
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyPutRequest& req);

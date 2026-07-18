@@ -97,6 +97,37 @@ void ProxyService::UcxPut(google::protobuf::RpcController* cntl_base,
                                       out.bytes_written, latency);
 }
 
+void ProxyService::RdmaPut(google::protobuf::RpcController* cntl_base,
+                           const ClientProxyPutRequest* request, PutPathResult* response,
+                           google::protobuf::Closure* done) {
+  brpc::ClosureGuard done_guard(done);
+  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
+
+  const std::string& rid = request->request_id();
+  const auto start = std::chrono::steady_clock::now();
+  LOG_INFO(rid, "start bucket={} key={} size={}", request->bucket(), request->key(),
+           request->object_size());
+
+  PutOutput out;
+  int ret = single_put_->PutRdma(*request, out);
+  const auto latency = utils::ElapsedMs(start);
+
+  if (ret != 0) {
+    LOG_WARN(rid, "failed code={}", ret);
+    cntl->SetFailed(ret, "%s", ProxyErrorMessage(ret));
+    AccessLogger::Instance().LogRequest("RdmaPut", rid, request->bucket(), request->key(), ret, 0,
+                                        latency);
+    return;
+  }
+  response->set_ok(true);
+  response->set_etag(out.etag);
+  response->set_bytes_written(out.bytes_written);
+  if (out.crc32c != 0) response->set_crc32c(out.crc32c);
+  LOG_INFO(rid, "success etag={} bytes={}", out.etag, out.bytes_written);
+  AccessLogger::Instance().LogRequest("RdmaPut", rid, request->bucket(), request->key(), 0,
+                                      out.bytes_written, latency);
+}
+
 /* 分段上传: 薄委托, ret!=0 → set_error_message+SetFailed; part/complete/abort
  * 无 bucket/key, 日志用"-"占位 */
 

@@ -71,6 +71,12 @@ class ProxyRpc {
                             const std::string& key, std::uint64_t object_size,
                             const UcxDataSource& ucx_source, PutPathResult& res) const;
 
+  /** @brief RDMA (libibverbs) 通路:token 随 RPC 透传,backend RDMA CM 反向连接后
+   * ibv_post_send(RDMA_READ)。 */
+  [[nodiscard]] bool RdmaPut(std::string_view req_id, const std::string& bucket,
+                             const std::string& key, std::uint64_t object_size,
+                             const RdmaDataSource& rdma_source, PutPathResult& res) const;
+
   // ===== 分段上传接口（client → proxy）=====
 
   /** @brief 初始化分段上传，返回 upload_id。 */

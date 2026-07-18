@@ -84,3 +84,12 @@ target_include_directories(us3_turbo_ucx_get_example
 
 target_link_libraries(us3_turbo_ucx_get_example
   PRIVATE Us3Turbo::client)
+
+# RDMA 链路 example：host 内存，libibverbs RDMA CM（经 client lib 链接）。
+add_executable(us3_turbo_rdma_put_example gds/rdma_put_example.cpp)
+
+target_include_directories(us3_turbo_rdma_put_example
+  PRIVATE ${EXAMPLES_PRIVATE_INCLUDES})
+
+target_link_libraries(us3_turbo_rdma_put_example
+  PRIVATE Us3Turbo::client)

@@ -12,7 +12,8 @@ enum class PutDataPath : std::uint8_t {
   kNone = 0,
   kGds = 1 << 0,
   kUcx = 1 << 1,
-  kAll = kGds | kUcx,
+  kRdma = 1 << 2,
+  kAll = kGds | kUcx | kRdma,
 };
 
 inline PutDataPath operator|(PutDataPath a, PutDataPath b) {
@@ -36,6 +37,12 @@ struct UcxDataSource {
   std::string client_ucx_addr;
 };
 
+/** @brief RDMA (libibverbs) 通路数据源:hex-encoded token 含 listener ip:port +
+ * rkey + addr + size。 */
+struct RdmaDataSource {
+  std::string rdma_token;
+};
+
 /** @brief client → proxy 统一 PUT 请求;对应通路 source 由 PutObject 内部按 path
  * 填充。 */
 struct ClientProxyPutRequest {
@@ -46,6 +53,7 @@ struct ClientProxyPutRequest {
   PutDataPath path{PutDataPath::kNone};
   std::optional<GdsDataSource> gds_source;
   std::optional<UcxDataSource> ucx_source;
+  std::optional<RdmaDataSource> rdma_source;
 };
 
 /** @brief 单条通路的执行结果。ok=false 时 error_code/error_message 描述失败。
@@ -64,6 +72,7 @@ struct ClientProxyPutResponse {
   std::string object_id;
   std::optional<PutPathResult> gds_result;
   std::optional<PutPathResult> ucx_result;
+  std::optional<PutPathResult> rdma_result;
 };
 
 // ========== GET（GDS）控制面消息 ==========
