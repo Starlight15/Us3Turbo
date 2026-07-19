@@ -1,15 +1,14 @@
 # rtest/bench — 性能基准工具
 
-测量 GDS / UCX 分段上传的性能，定位瓶颈点。
+测量 GDS 分段上传的性能，定位瓶颈点。
 
 ## 产物
 
 | 可执行 | 通路 | buffer | 链接 |
 |--------|------|--------|------|
 | `us3_turbo_bench_gds_multipart` | GDS | device 显存 | CUDA (cufile + cudart) |
-| `us3_turbo_bench_ucx_multipart` | UCX | host 内存 | 无 CUDA |
 
-单源 `multipart_bench.cpp`，编译期宏 `BENCH_GDS` / `BENCH_UCX` 选通路。
+单源 `multipart_bench.cpp`，编译期宏 `BENCH_GDS` 选通路。
 
 ## 用法
 
@@ -22,13 +21,26 @@ us3_turbo_bench_gds_multipart \
 us3_turbo_bench_gds_multipart \
   --total 256M --part-size 16M --concurrency 8 --reps 3 --warmup 1
 
-# UCX（必须设 UCX_NET_DEVICES=mlx5_2:1，否则默认 mlx5_0 跨网段超时）
-UCX_NET_DEVICES=mlx5_2:1 us3_turbo_bench_ucx_multipart \
-  --total 64M --part-size 16M --reps 5
-
-# CSV 输出（便于 GDS vs UCX 横向对比）
+# CSV 输出
 us3_turbo_bench_gds_multipart --total 64M --csv > gds.csv
-us3_turbo_bench_ucx_multipart --total 64M --csv > ucx.csv
+```
+
+## RDMA 基准
+
+RDMA 单步/分段基准通过 `scripts/run-rdma-bench.sh` 一键运行：
+
+```bash
+# 单步并发压测
+./scripts/run-rdma-bench.sh --mode single --size 256M --conc 1,2,4,8
+
+# 分段上传
+./scripts/run-rdma-bench.sh --mode multipart --total 256M --part-size 16M --conc 8
+
+# 单步 + 分段全部
+./scripts/run-rdma-bench.sh --mode both --total 256M --conc 1,2,4,8
+
+# 开启 CRC 校验 + latency trace
+./scripts/run-rdma-bench.sh --mode single --verify-crc32c --trace
 ```
 
 ## 参数

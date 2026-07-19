@@ -1,2 +1,3 @@
-# regression/ — 回归测试，GDS 路径
+# regression/ — 回归测试，GDS + RDMA 路径
 add_subdirectory(gds)
+add_subdirectory(rdma)
