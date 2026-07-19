@@ -2,10 +2,10 @@
 
 // rdma_memory_manager.h — RDMA (libibverbs) 链路的 client 端内存管理器。
 //
-// 对标 UcxMemoryManager：持有 RDMA CM listener，RegisterBuffer 注册 ibv_mr，
+// RDMA 内存管理器：持有 RDMA CM listener，RegisterBuffer 注册 ibv_mr，
 // AcquireDescriptor 产 hex-encoded token 供 RdmaPutChannel 透传。
 //
-// 反向连接模式（与 UCX CLIENT_SERVER 对齐）：
+// 反向连接模式：
 //   client 创建 listener → backend RdmaQp::Connect 反向连接 → backend RDMA READ。
 
 #include <atomic>

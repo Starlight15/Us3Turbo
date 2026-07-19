@@ -47,7 +47,7 @@ using detail::TraceLatency;
 
 }  // namespace
 
-// RDMA 链路单次尝试：AcquireDescriptor → RdmaPut。与 GdsPutChannel/UcxPutChannel 独立。
+// RDMA 链路单次尝试：AcquireDescriptor → RdmaPut。与 GdsPutChannel 独立。
 bool RdmaPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                               PutPathResult& res) const {
   assert(rdma_mgr_ != nullptr);

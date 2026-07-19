@@ -1,9 +1,9 @@
 // rtest/common.h — 回归测试共享 helper（与通路无关，header-only，无 CUDA
 // 依赖）。
 //
-// GDS 与 UCX 测试文件同名、逻辑平行；把 ParseSize/HumanBytes/时间戳/pattern
+// GDS 测试工具函数
 // 填充/逐字节校验收进此头，避免在 10 个文件里复制 examples 各自内联重写的版本。
-// GDS 文件在 D2H 后调用 VerifyHostBuffer，UCX 直接对 host GET buffer 调用。
+// GDS 文件在 D2H 后调用 VerifyHostBuffer。
 #pragma once
 
 #include <chrono>
@@ -76,7 +76,7 @@ inline std::string MakeTimestampSuffix() {
                             .count());
 }
 
-// 确定性 i%251 pattern 填入 host buffer（GDS 作 H2D 暂存，UCX 直接作上传/读回
+// 确定性 i%251 pattern 填入 host buffer（GDS 作 H2D 暂存
 // buffer）。offset_base 让多 part 对象各段填不同 pattern。
 inline void FillHostPattern(std::vector<std::byte>& buf, std::uint64_t offset_base = 0) {
   for (std::size_t i = 0; i < buf.size(); ++i)

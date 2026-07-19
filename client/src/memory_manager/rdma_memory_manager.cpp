@@ -167,7 +167,7 @@ bool RdmaMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
   }
   void* mut_ptr = const_cast<void*>(ptr);
 
-  // [诊断插桩] 分阶段计时（与 UcxMemoryManager 同构）。
+  // [诊断插桩] 分阶段计时。
   using diag_clk = std::chrono::steady_clock;
   const auto t0 = diag_clk::now();
 
@@ -189,7 +189,7 @@ bool RdmaMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
     t2 = diag_clk::now();
   }
 
-  // Token 编码（锁外，对标 UCX 的 rkey_pack）。
+  // Token 编码（锁外）。
   const auto t3 = diag_clk::now();
 
   out.token = EncodeToken(listen_ip_.c_str(), listen_port_,

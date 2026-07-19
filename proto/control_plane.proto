@@ -5,25 +5,23 @@ package us3_turbo.proxy;
 option cc_generic_services = true;
 
 // Mode B：所有控制面经 proxy。client 只与 proxy 交互；统一 PutObject 接口按
-// PutDataPath 选择通路（PATH_GDS / PATH_UCX；PATH_ALL 推迟到后续版本）。
-// 两条链路各对应一个独立 RPC（GdsPut / UcxPut），保持代码与测试隔离：
+// PutDataPath 选择通路（PATH_GDS / PATH_RDMA；PATH_ALL 推迟到后续版本）。
+// 每条链路各对应一个独立 RPC（GdsPut / RdmaPut），保持代码与测试隔离：
 //
 //   client → PutObject(req{path,...}, buffer, resp)
 //          ├─ PATH_GDS → AcquireToken(device) → GdsPut → resp.gds_result
-//          └─ PATH_UCX → AcquireDescriptor(host) → UcxPut → resp.ucx_result
-//   proxy : GdsPut/UcxPut 校验后同步转发 backend，回 PutPathResult
-//   backend: GdsPut → cuObj RDMA-READ token；UcxPut → ucp_get_nbx 反向拉
+//          └─ PATH_RDMA → AcquireDescriptor(host) → RdmaPut
+//   proxy : GdsPut/RdmaPut 校验后同步转发 backend
 //
-// gds 与 ucx 两条链路第一版不做任何共同逻辑抽象，各自独立实现。
+// 各链路第一版不做任何共同逻辑抽象，各自独立实现。
 // request_id 保留作跨端日志关联。wire 内部协同重编，无外部兼容承诺。
 
-// PUT 通路选择。bitflags 语义但 v1 仅支持单路（PATH_GDS / PATH_UCX）；
+// PUT 通路选择。bitflags 语义但 v1 仅支持单路（PATH_GDS / PATH_RDMA）；
 // PATH_NONE=0 作无效默认（client 校验拒绝）；PATH_ALL 推迟（单 buffer 无法
 // 同时喂 device 显存 + host 内存）。
 enum PutDataPath {
   PATH_NONE = 0;
   PATH_GDS  = 1;
-  PATH_UCX  = 2;
   PATH_RDMA = 3;
   PATH_ALL  = 4;
 }
@@ -33,15 +31,6 @@ message GdsDataSource {
   string rdma_token = 1;
 }
 
-// UCX 通路数据源：host buffer 虚拟地址 + packed rkey + client UCX listener 地址。
-// UCX RMA 连接式，backend 须据 client_ucx_addr 主动 dial 建 ep 后 ucp_get_nbx。
-// packed_rkey 为 ucp_rkey_pack 导出的裸字节，故用 bytes（非 UTF-8 安全）。
-message UcxDataSource {
-  uint64 remote_addr     = 1;
-  bytes  packed_rkey     = 2;
-  string client_ucx_addr = 3;
-}
-
 // RDMA (libibverbs) 通路数据源：hex-encoded token 含 listener ip:port + rkey + addr + size。
 // Backend 解码后经 RDMA CM 反向连接 client listener，再 ibv_post_send(RDMA_READ)。
 message RdmaDataSource {
@@ -49,7 +38,7 @@ message RdmaDataSource {
 }
 
 // client → proxy 统一 PUT 请求。path 必填；对应通路的 source 按需填充
-//（PATH_GDS→gds_source，PATH_UCX→ucx_source）。optional 未设则不序列化。
+//（PATH_GDS→gds_source，PATH_RDMA→rdma_source）。optional 未设则不序列化。
 message ClientProxyPutRequest {
   string                     request_id  = 1;
   string                     bucket      = 2;
@@ -57,7 +46,6 @@ message ClientProxyPutRequest {
   uint64                     object_size = 4;
   PutDataPath                path        = 5;
   optional GdsDataSource     gds_source  = 10;
-  optional UcxDataSource     ucx_source  = 11;
   optional RdmaDataSource    rdma_source = 12;
 }
 
@@ -76,17 +64,15 @@ message PutPathResult {
 message ClientProxyPutResponse {
   string                       object_id  = 1;
   optional PutPathResult       gds_result = 10;
-  optional PutPathResult       ucx_result = 11;
 }
 
 // ========== 分段上传控制面消息 ==========
 // 设计：client 只与 proxy 的 Control 服务交互（CreateMultipartUpload /
-// UploadPart{Gds,Ucx} / CompleteMultipartUpload）；proxy 内存态会话 + 按 4MB
-// 切分后经 BackendDataPlane.PutBlock 调 backend。单步 GdsPut/UcxPut 保留不变，
-// 分段路径与之完全隔离。part_number 从 1 开始、客户端分配；block_no 从 0
-// 开始、proxy 分配。request_id 贯穿三层做日志关联。
+// UploadPart{Gds,Rdma} / CompleteMultipartUpload）；proxy 内存态会话。
+// 单步 GdsPut/RdmaPut 保留不变，分段路径与之完全隔离。part_number 从 1 开始、
+// 客户端分配；block_no 从 0 开始、proxy 分配。request_id 贯穿三层做日志关联。
 
-// 初始化分段上传。path 锁定整条会话的通路（PATH_GDS / PATH_UCX），后续
+// 初始化分段上传。path 锁定整条会话的通路（PATH_GDS / PATH_RDMA），后续
 // UploadPart 必须与会话 path 匹配，否则 proxy 拒绝。
 message CreateMultipartUploadRequest {
   string      request_id = 1;
@@ -111,18 +97,6 @@ message UploadPartGdsRequest {
   string rdma_token  = 5;
 }
 
-// 上传单个 part — UCX 路径。remote_addr 为本 part host buffer 起始虚拟地址，
-// proxy 切分后按 remote_addr + source_offset 传给 backend（地址加偏移）。
-message UploadPartUcxRequest {
-  string request_id      = 1;
-  string upload_id       = 2;
-  uint32 part_number     = 3;
-  uint64 part_size       = 4;
-  uint64 remote_addr     = 5;
-  bytes  packed_rkey     = 6;
-  string client_ucx_addr = 7;
-}
-
 // 上传单个 part — RDMA (libibverbs) 路径。rdma_token 编码了 client listener
 // 地址 + rkey + addr + size，backend 解码后反向 RDMA CM connect →
 // ibv_post_send(RDMA_READ)。单 part 直接作为单 block 写入，不再切分。
@@ -134,7 +108,7 @@ message UploadPartRdmaRequest {
   string rdma_token  = 5;
 }
 
-// UploadPart 响应（GDS/UCX 共用）。etag 为本 part 的 ETag（proxy 汇总 block
+// UploadPart 响应（GDS/RDMA 共用）。etag 为本 part 的 ETag（proxy 汇总 block
 // etag 得到）；crc32c 仅在 backend 启用 CRC 计算时返回。
 message UploadPartResponse {
   bool             ok            = 1;
@@ -175,12 +149,10 @@ message AbortMultipartUploadResponse {
   string error_message = 2;
 }
 
-// ========== GET（GDS / UCX）控制面消息 ==========
-// 两段式：StatObject 查对象布局（client 据此分配 buffer）+ GdsGet/UcxGet 拉数据。
+// ========== GET（GDS）控制面消息 ==========
+// 两段式：StatObject 查对象布局（client 据此分配 buffer）+ GdsGet 拉数据。
 // GDS GET：backend 走 RDMA-WRITE 推数据到 client 注册的 GPU buffer（与 PUT 的
 // RDMA-READ 方向相反），故 client 须传 rdma_token + gpu_offset。
-// UCX GET：backend 走 ucp_put_nbx 推数据到 client 注册的 host buffer（与 PUT 的
-// ucp_get_nbx 方向相反），故 client 须传 remote_addr + packed_rkey + dest_offset。
 
 // 查对象布局（client GetObject 第一步，用于分配显存 buffer）。
 message StatObjectRequest {
@@ -199,14 +171,12 @@ message StatObjectResponse {
 
 // client → proxy GET 请求。object_size 须与 StatObject 返回一致
 // （proxy 据此校验，防止 client 拿旧布局注册了错误大小的 buffer）。
-// GDS 与 UCX 各用独立 RPC（GdsGet / UcxGet），按 source 字段区分。
 message ClientProxyGetRequest {
   string        request_id  = 1;
   string        bucket      = 2;
   string        key         = 3;
   uint64        object_size = 4;
   GdsDataSource gds_source  = 10;
-  UcxDataSource ucx_source  = 11;
 }
 
 // GET 执行结果。crc32c/hash 为 proxy 按块重组后的校验值，与 fileidx.hash
@@ -230,16 +200,7 @@ message GdsBlockSource {
   uint64 block_size    = 3;
 }
 
-// UCX block 数据源：remote_addr 已由 proxy 加上 source_offset，backend 直接
-// ucp_get_nbx(ep, buf, block_size, remote_addr, rkey)。
-message UcxBlockSource {
-  uint64 remote_addr     = 1;
-  bytes  packed_rkey     = 2;
-  string client_ucx_addr = 3;
-  uint64 block_size      = 4;
-}
-
-// proxy 向 backend 发送的 block 级请求。oneof source 区分 GDS/UCX。
+// proxy 向 backend 发送的 block 级请求。oneof source 区分 GDS/RDMA。
 message ProxyBackendPutBlockRequest {
   string      request_id  = 1;
   string      upload_id   = 2;
@@ -247,7 +208,6 @@ message ProxyBackendPutBlockRequest {
   uint32      block_no    = 4;  // part 内 block 序号（从 0 开始）
   oneof source {
     GdsBlockSource gds_source  = 10;
-    UcxBlockSource ucx_source  = 11;
   }
 }
 
@@ -259,17 +219,15 @@ message ProxyBackendPutBlockResponse {
 }
 
 // 单一 service，proxy 与 backend 都实现（brpc 按 service descriptor full_name
-// 去重，一进程一实例）。GdsPut / UcxPut 两个独立 RPC，内部代码独立、无共享逻辑。
+// 去重，一进程一实例）。GdsPut / RdmaPut 两个独立 RPC，内部代码独立、无共享逻辑。
 service Control {
   rpc GdsPut(ClientProxyPutRequest) returns (PutPathResult);
-  rpc UcxPut(ClientProxyPutRequest) returns (PutPathResult);
   rpc RdmaPut(ClientProxyPutRequest) returns (PutPathResult);
 
   // ===== 分段上传接口（client → proxy） =====
   rpc CreateMultipartUpload(CreateMultipartUploadRequest)
       returns (CreateMultipartUploadResponse);
   rpc UploadPartGds(UploadPartGdsRequest) returns (UploadPartResponse);
-  rpc UploadPartUcx(UploadPartUcxRequest) returns (UploadPartResponse);
   rpc UploadPartRdma(UploadPartRdmaRequest) returns (UploadPartResponse);
   rpc CompleteMultipartUpload(CompleteMultipartUploadRequest)
       returns (CompleteMultipartUploadResponse);
@@ -279,7 +237,6 @@ service Control {
   // ===== GET 接口（client → proxy） =====
   rpc StatObject(StatObjectRequest) returns (StatObjectResponse);
   rpc GdsGet(ClientProxyGetRequest) returns (GetPathResult);
-  rpc UcxGet(ClientProxyGetRequest) returns (GetPathResult);
 }
 
 // Backend 数据面 block 级服务（proxy → backend）。与 Control 同进程注册：

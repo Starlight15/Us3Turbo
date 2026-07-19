@@ -26,18 +26,12 @@ class SinglePut {
   /* GDS 单步上传，写数据 + 写索引 */
   [[nodiscard]] int PutGds(const ClientProxyPutRequest& request, PutOutput& out);
 
-  /* UCX 单步上传，写数据 + 写索引 */
-  [[nodiscard]] int PutUcx(const ClientProxyPutRequest& request, PutOutput& out);
-
   /* RDMA 单步上传，写数据 + 写索引 */
   [[nodiscard]] int PutRdma(const ClientProxyPutRequest& request, PutOutput& out);
 
  private:
   /* 校验 GDS 上传请求合法性 */
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyPutRequest& req);
-
-  /* 校验 UCX 上传请求合法性 */
-  [[nodiscard]] int ValidateUcxRequest(const ClientProxyPutRequest& req);
 
   /* 写对象索引并填充输出 */
   [[nodiscard]] bool WriteObjectIndex(const std::string& request_id, const std::string& bucket,

@@ -25,9 +25,8 @@ struct GetOutput {
   std::string hash;
 };
 
-/* 读取逻辑层（GDS / UCX）。镜像 SinglePut 的结构：校验 → 编排 backend 调用 →
-   填输出。GDS 与 UCX 完全独立实现。 */
-class GetObject {
+/* 读取逻辑层（GDS）。镜像 SinglePut 的结构：校验 → 编排 backend 调用 →
+   如果同时需要两个通路请分别调用。 */class GetObject {
  public:
   explicit GetObject(IUploadIndex* index, UfileAcClient* client) : index_(index), client_(client) {}
 
@@ -37,15 +36,11 @@ class GetObject {
   /* GDS 路径 GET：按块 RDMA 读取 + crc32c 重组校验。 */
   [[nodiscard]] int GetGds(const ClientProxyGetRequest& request, GetOutput& out);
 
-  /* UCX 路径 GET：按块 UCX 读取 + crc32c 重组校验。 */
-  [[nodiscard]] int GetUcx(const ClientProxyGetRequest& request, GetOutput& out);
 
  private:
   /* 校验 GDS GET 请求合法性。 */
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyGetRequest& req);
 
-  /* 校验 UCX GET 请求合法性。 */
-  [[nodiscard]] int ValidateUcxRequest(const ClientProxyGetRequest& req);
 
   IUploadIndex* index_;
   UfileAcClient* client_;

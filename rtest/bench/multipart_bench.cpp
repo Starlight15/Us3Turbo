@@ -1,9 +1,6 @@
-// multipart_bench.cpp — GDS / UCX 分段上传性能基准（rtest/bench）。
+// multipart_bench.cpp — GDS 分段上传性能基准（rtest/bench）。
 //
-// 通过编译期宏选通路：
-//   BENCH_GDS=1 → GDS（device 显存，链 CUDA；worker 各自 cudaMalloc + H2D）
-//   BENCH_UCX=1 → UCX（host 内存，无 CUDA 依赖）
-// 两者逻辑共享同一份 main，仅 buffer 类型与上传 API 不同。
+// 编译期宏 BENCH_GDS=1 → GDS（device 显存，链 CUDA；worker 各自 cudaMalloc + H2D）。
 //
 // 测量维度：
 //   1. 阶段耗时 —— 每轮记录 Create / ΣUploadPart / Complete 的 wall time，
@@ -12,15 +9,12 @@
 //   2. 吞吐 —— 串行聚合吞吐 + 多 worker 并发聚合吞吐（共享 Client，brpc
 //      channel 与内存管理器单例线程安全）。
 //   3. 单轮时延分布（min/p50/p95/max）。
-//   4. 可选 CSV 输出，便于横向对比 GDS vs UCX。
+//   4. 可选 CSV 输出。
 //
-// 用法（GDS）：
+// 用法：
 //   us3_turbo_bench_gds_multipart \
 //     --proxy 192.168.1.198:9100 --total 64M --part-size 4M \
 //     --concurrency 1 --reps 5 [--csv]
-// 用法（UCX）：
-//   UCX_NET_DEVICES=mlx5_2:1 us3_turbo_bench_ucx_multipart \
-//     --proxy 192.168.1.198:9100 --total 64M --part-size 4M --reps 5
 //
 // 并发压测：
 //   --concurrency 8 --reps 3 --total 256M --part-size 4M
@@ -64,11 +58,8 @@ using ms_double = std::chrono::duration<double, std::milli>;
 #if defined(BENCH_GDS)
 constexpr char kPathName[] = "gds";
 constexpr bool kIsGds = true;
-#elif defined(BENCH_UCX)
-constexpr char kPathName[] = "ucx";
-constexpr bool kIsGds = false;
 #else
-#error "BENCH_GDS or BENCH_UCX must be defined"
+#error "BENCH_GDS must be defined"
 #endif
 
 // ---- 参数 ----
@@ -119,10 +110,8 @@ double Mean(const std::vector<double>& v) {
 }
 
 // ---- 上传一轮 multipart，返回各阶段耗时 ----
-// GDS: dev_buf 为 device 指针；UCX: host_buf 为 host 指针。两者互斥，由 kIsGds
-// 在编译期裁剪未用分支，避免 UCX target 链接 CUDA。
 RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::uint32_t round_idx,
-                         std::uint32_t worker_idx, const auto& data_buf) {
+                         std::uint32_t worker_idx, void* dev_buf) {
   using namespace us3_turbo::client;
   RoundLatency lat;
   lat.bytes = a.total;
@@ -132,7 +121,7 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::
 
   std::string upload_id, error;
   const auto t_create0 = clk::now();
-  const PutDataPath path = kIsGds ? PutDataPath::kGds : PutDataPath::kUcx;
+  const PutDataPath path = PutDataPath::kGds;
   if (!client.CreateMultipartUpload(a.bucket, key, path, upload_id, error)) {
     std::cerr << "[w" << worker_idx << " r" << round_idx
               << "] CreateMultipartUpload failed: " << error << "\n";
@@ -153,16 +142,9 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::
     const std::uint64_t off = static_cast<std::uint64_t>(i - 1) * a.part_size;
     const std::uint64_t len = std::min(a.part_size, a.total - off);
     std::string etag;
-    bool ok = false;
-#if defined(BENCH_GDS)
-    ok = client.UploadPartGds(
-        upload_id, i, ConstBufferView{.data = static_cast<char*>(data_buf) + off, .size = len},
+    bool ok = client.UploadPartGds(
+        upload_id, i, ConstBufferView{.data = static_cast<char*>(dev_buf) + off, .size = len},
         etag, error);
-#else  // BENCH_UCX
-    ok = client.UploadPartUcx(
-        upload_id, i, ConstBufferView{.data = static_cast<std::byte*>(data_buf) + off, .size = len},
-        etag, error);
-#endif
     if (!ok) {
       std::cerr << "[w" << worker_idx << " r" << round_idx << "] UploadPart " << i
                 << " failed: " << error << "\n";
@@ -210,10 +192,7 @@ struct WorkerStats {
 void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
             const std::vector<std::byte>& host_pattern, std::barrier<StartSetter>& sync,
             std::atomic<clk::time_point>& start, WorkerStats& stats) {
-  using namespace us3_turbo::client;
-
-  // buffer 分配：GDS 用 device 显存（H2D 填充 pattern），UCX 直接用 host。
-#if defined(BENCH_GDS)
+  // buffer 分配：GDS 用 device 显存（H2D 填充 pattern）。
   void* dev = nullptr;
   cudaError_t e = cudaMalloc(&dev, a.total);
   if (e != cudaSuccess) {
@@ -229,12 +208,6 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
   }
   stats.ready = true;
   void* data_buf = dev;
-#else  // BENCH_UCX
-  std::vector<std::byte> host(a.total);
-  std::memcpy(host.data(), host_pattern.data(), a.total);
-  stats.ready = true;
-  void* data_buf = host.data();
-#endif
 
   // warmup：不计入统计。
   for (std::uint32_t r = 0; r < a.warmup; ++r) {
@@ -258,11 +231,7 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
   stats.end = clk::now();
   (void)t_start;
 
-#if defined(BENCH_GDS)
   cudaFree(dev);
-#else
-  // host vector 析构释放。
-#endif
 }
 
 // ---- 打印与 CSV ----

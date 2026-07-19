@@ -20,7 +20,7 @@
 namespace us3_turbo::client {
 
 /**
- * @brief proxy 控制面 RPC client:GdsPut / UcxPut 共用一条 brpc channel。
+ * @brief proxy 控制面 RPC client:GdsPut / RdmaPut 共用一条 brpc channel。
  */
 class ProxyRpc {
  public:
@@ -66,11 +66,6 @@ class ProxyRpc {
                             const std::string& key, std::uint64_t object_size,
                             const GdsDataSource& gds_source, PutPathResult& res) const;
 
-  /** @brief UCX 通路:描述符随 RPC 透传,backend ucp_get_nbx 反向拉取。 */
-  [[nodiscard]] bool UcxPut(std::string_view req_id, const std::string& bucket,
-                            const std::string& key, std::uint64_t object_size,
-                            const UcxDataSource& ucx_source, PutPathResult& res) const;
-
   /** @brief RDMA (libibverbs) 通路:token 随 RPC 透传,backend RDMA CM 反向连接后
    * ibv_post_send(RDMA_READ)。 */
   [[nodiscard]] bool RdmaPut(std::string_view req_id, const std::string& bucket,
@@ -90,12 +85,6 @@ class ProxyRpc {
   [[nodiscard]] bool UploadPartGds(std::string_view req_id, const std::string& upload_id,
                                    std::uint32_t part_number, std::uint64_t part_size,
                                    const std::string& rdma_token, PutPathResult& res) const;
-
-  /** @brief UCX 路径上传单个 part：描述符随 RPC 透传。 */
-  [[nodiscard]] bool UploadPartUcx(std::string_view req_id, const std::string& upload_id,
-                                   std::uint32_t part_number, std::uint64_t part_size,
-                                   std::uint64_t remote_addr, const std::string& packed_rkey,
-                                   const std::string& client_ucx_addr, PutPathResult& res) const;
 
   /** @brief RDMA (libibverbs) 路径上传单个 part：rdma_token 随 RPC 透传。 */
   [[nodiscard]] bool UploadPartRdma(std::string_view req_id, const std::string& upload_id,
@@ -131,12 +120,6 @@ class ProxyRpc {
   [[nodiscard]] bool GdsGet(std::string_view req_id, const std::string& bucket,
                             const std::string& key, std::uint64_t object_size,
                             const GdsDataSource& gds_source, GetPathResult& res) const;
-
-  /** @brief UCX 通路 GET：描述符随 RPC 透传，backend ucp_put_nbx 推数据到
-   * client。 */
-  [[nodiscard]] bool UcxGet(std::string_view req_id, const std::string& bucket,
-                            const std::string& key, std::uint64_t object_size,
-                            const UcxDataSource& ucx_source, GetPathResult& res) const;
 
  private:
   void ApplyTimeout(brpc::Controller& controller) const {

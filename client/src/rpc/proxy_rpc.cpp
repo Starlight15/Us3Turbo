@@ -66,46 +66,6 @@ bool ProxyRpc::GdsPut(std::string_view req_id, const std::string& bucket, const 
   return resp.ok();
 }
 
-bool ProxyRpc::UcxPut(std::string_view req_id, const std::string& bucket, const std::string& key,
-                      std::uint64_t object_size, const UcxDataSource& ucx_source,
-                      PutPathResult& res) const {
-  if (!ok()) {
-    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
-    res.ok = false;
-    res.error_message = std::string{"proxy channel not ready: "} + init_error();
-    return false;
-  }
-
-  brpc::Controller controller;
-  ApplyTimeout(controller);
-
-  us3_turbo::proxy::ClientProxyPutRequest rpc_request;
-  rpc_request.set_request_id(std::string(req_id));
-  rpc_request.set_bucket(bucket);
-  rpc_request.set_key(key);
-  rpc_request.set_object_size(object_size);
-  rpc_request.set_path(us3_turbo::proxy::PATH_UCX);
-  auto* ucx = rpc_request.mutable_ucx_source();
-  ucx->set_remote_addr(ucx_source.remote_addr);
-  ucx->set_packed_rkey(ucx_source.packed_rkey);
-  ucx->set_client_ucx_addr(ucx_source.client_ucx_addr);
-
-  us3_turbo::proxy::PutPathResult resp;
-  stub()->UcxPut(&controller, &rpc_request, &resp, nullptr);
-
-  if (controller.Failed()) {
-    return FailResult(res, controller, req_id, "UCX");
-  }
-
-  res.ok = resp.ok();
-  res.error_code = resp.error_code();
-  res.error_message = resp.error_message();
-  res.etag = resp.etag();
-  res.crc32c = resp.crc32c();
-  res.bytes_written = resp.bytes_written();
-  return resp.ok();
-}
-
 bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const std::string& key,
                        std::uint64_t object_size, const RdmaDataSource& rdma_source,
                        PutPathResult& res) const {
@@ -144,8 +104,8 @@ bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const
 }
 
 // ---------------------------------------------------------------------------
-// 分段上传（client → proxy）。与单步 GdsPut/UcxPut 共用同一 brpc channel
-// 与 Control_Stub；proxy 在 Control service 上同时暴露这 4 个 RPC。
+// 分段上传（client → proxy）。与单步 GdsPut/RdmaPut 共用同一 brpc channel
+// 与 Control_Stub。
 // ---------------------------------------------------------------------------
 
 bool ProxyRpc::CreateMultipartUpload(std::string_view req_id, const std::string& bucket,
@@ -201,40 +161,6 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, const std::string& upload_
   stub()->UploadPartGds(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     return FailResult(res, controller, req_id, "UploadPartGds");
-  }
-  res.ok = resp.ok();
-  res.error_message = resp.error_message();
-  res.etag = resp.etag();
-  res.bytes_written = resp.bytes_written();
-  if (resp.has_crc32c()) res.crc32c = resp.crc32c();
-  return resp.ok();
-}
-
-bool ProxyRpc::UploadPartUcx(std::string_view req_id, const std::string& upload_id,
-                             std::uint32_t part_number, std::uint64_t part_size,
-                             std::uint64_t remote_addr, const std::string& packed_rkey,
-                             const std::string& client_ucx_addr, PutPathResult& res) const {
-  if (!ok()) {
-    res.ok = false;
-    res.error_message = std::string{"proxy channel not ready: "} + init_error();
-    return false;
-  }
-  brpc::Controller controller;
-  ApplyTimeout(controller);
-
-  ::us3_turbo::proxy::UploadPartUcxRequest req;
-  req.set_request_id(std::string(req_id));
-  req.set_upload_id(upload_id);
-  req.set_part_number(part_number);
-  req.set_part_size(part_size);
-  req.set_remote_addr(remote_addr);
-  req.set_packed_rkey(packed_rkey);
-  req.set_client_ucx_addr(client_ucx_addr);
-
-  ::us3_turbo::proxy::UploadPartResponse resp;
-  stub()->UploadPartUcx(&controller, &req, &resp, nullptr);
-  if (controller.Failed()) {
-    return FailResult(res, controller, req_id, "UploadPartUcx");
   }
   res.ok = resp.ok();
   res.error_message = resp.error_message();
@@ -400,51 +326,6 @@ bool ProxyRpc::GdsGet(std::string_view req_id, const std::string& bucket, const 
     res.ok = false;
     res.error_message = controller.ErrorText();
     LOG_ERROR(req_id, "GdsGet RPC failed: {} (error={})", controller.ErrorText(),
-              is_timeout ? "timeout" : "data-plane");
-    return false;
-  }
-
-  res.ok = resp.ok();
-  res.error_code = resp.error_code();
-  res.error_message = resp.error_message();
-  res.crc32c = resp.crc32c();
-  res.bytes_read = resp.bytes_read();
-  res.hash = resp.hash();
-  return resp.ok();
-}
-
-bool ProxyRpc::UcxGet(std::string_view req_id, const std::string& bucket, const std::string& key,
-                      std::uint64_t object_size, const UcxDataSource& ucx_source,
-                      GetPathResult& res) const {
-  if (!ok()) {
-    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
-    res.ok = false;
-    res.error_message = std::string{"proxy channel not ready: "} + init_error();
-    return false;
-  }
-
-  brpc::Controller controller;
-  ApplyTimeout(controller);
-
-  us3_turbo::proxy::ClientProxyGetRequest rpc_request;
-  rpc_request.set_request_id(std::string(req_id));
-  rpc_request.set_bucket(bucket);
-  rpc_request.set_key(key);
-  rpc_request.set_object_size(object_size);
-  auto* ucx = rpc_request.mutable_ucx_source();
-  ucx->set_remote_addr(ucx_source.remote_addr);
-  ucx->set_packed_rkey(ucx_source.packed_rkey);
-  ucx->set_client_ucx_addr(ucx_source.client_ucx_addr);
-
-  us3_turbo::proxy::GetPathResult resp;
-  stub()->UcxGet(&controller, &rpc_request, &resp, nullptr);
-
-  if (controller.Failed()) {
-    const bool is_timeout =
-        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) || (controller.ErrorCode() == ETIMEDOUT);
-    res.ok = false;
-    res.error_message = controller.ErrorText();
-    LOG_ERROR(req_id, "UcxGet RPC failed: {} (error={})", controller.ErrorText(),
               is_timeout ? "timeout" : "data-plane");
     return false;
   }

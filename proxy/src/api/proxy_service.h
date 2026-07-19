@@ -20,7 +20,7 @@ namespace us3_turbo::proxy {
 
 /* Proxy 唯一 brpc Service（Mode B），实现 Control proto，委托给服务层。
  * 仅负责 ClosureGuard、proto↔域对象转换、int→cntl/response、Access 日志；
- * 7 个 RPC 共处本类（brpc 按 descriptor 去重），GDS/UCX 经服务层隔离。
+ * RPC 共处本类（brpc 按 descriptor 去重），GDS/RDMA 经服务层隔离。
  * 后台 TTL 清理线程定期删除过期 multipart 会话；构造后成员恒定，handler
  * 并发安全。 */
 class ProxyService final : public Control {
@@ -48,10 +48,6 @@ class ProxyService final : public Control {
   void GdsPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request,
               PutPathResult* response, google::protobuf::Closure* done) override;
 
-  /* UCX 单块上传，委托 SinglePut。 */
-  void UcxPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request,
-              PutPathResult* response, google::protobuf::Closure* done) override;
-
   /* RDMA 单块上传，委托 SinglePut。 */
   void RdmaPut(google::protobuf::RpcController* cntl, const ClientProxyPutRequest* request,
                PutPathResult* response, google::protobuf::Closure* done) override;
@@ -65,10 +61,6 @@ class ProxyService final : public Control {
 
   /* GDS 分段上传 part，委托 Multipart。 */
   void UploadPartGds(google::protobuf::RpcController* cntl, const UploadPartGdsRequest* request,
-                     UploadPartResponse* response, google::protobuf::Closure* done) override;
-
-  /* UCX 分段上传 part，委托 Multipart。 */
-  void UploadPartUcx(google::protobuf::RpcController* cntl, const UploadPartUcxRequest* request,
                      UploadPartResponse* response, google::protobuf::Closure* done) override;
 
   /* RDMA (libibverbs) 分段上传 part，委托 Multipart。 */
@@ -94,10 +86,6 @@ class ProxyService final : public Control {
 
   /* GDS 下载，委托 GetObject。 */
   void GdsGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request,
-              GetPathResult* response, google::protobuf::Closure* done) override;
-
-  /* UCX 下载，委托 GetObject。 */
-  void UcxGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request,
               GetPathResult* response, google::protobuf::Closure* done) override;
 
  private:

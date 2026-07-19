@@ -38,33 +38,6 @@ int SinglePut::ValidateGdsRequest(const ClientProxyPutRequest& req) {
   return 0;
 }
 
-int SinglePut::ValidateUcxRequest(const ClientProxyPutRequest& req) {
-  const std::string& rid = req.request_id();
-  if (req.bucket().empty() || req.key().empty()) {
-    LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
-    return PROXY_ERR_INVALID_PARAM;
-  }
-  if (req.object_size() == 0 ||
-      req.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
-    LOG_WARN(rid, "object_size={} out of range [1, {}] bucket={}/{}", req.object_size(),
-             FLAGS_max_single_put_bytes, req.bucket(), req.key());
-    return PROXY_ERR_INVALID_PARAM;
-  }
-  if (req.path() != PATH_UCX) {
-    LOG_WARN(rid, "path={} != PATH_UCX", static_cast<int>(req.path()));
-    return PROXY_ERR_PATH_NOT_SUPPORTED;
-  }
-  if (!req.has_ucx_source()) {
-    LOG_WARN(rid, "ucx_source missing bucket={}/{}", req.bucket(), req.key());
-    return PROXY_ERR_MISSING_SOURCE;
-  }
-  const auto& usrc = req.ucx_source();
-  if (usrc.remote_addr() == 0 || usrc.packed_rkey().empty() || usrc.client_ucx_addr().empty()) {
-    LOG_WARN(rid, "ucx source fields incomplete bucket={}/{}", req.bucket(), req.key());
-    return PROXY_ERR_MISSING_SOURCE;
-  }
-  return 0;
-}
 
 int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
   const std::string& rid = req.request_id();
@@ -92,32 +65,6 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
   return 0;
 }
 
-int SinglePut::PutUcx(const ClientProxyPutRequest& req, PutOutput& out) {
-  const std::string& rid = req.request_id();
-
-  /* 校验 */
-  int ret = ValidateUcxRequest(req);
-  if (ret != 0) return ret;
-
-  /* 生成对象标识 + 写单块 */
-  const std::string obj_id = utils::GenUuid();
-  const std::string block_key = obj_id + "_0";
-  const auto& usrc = req.ucx_source();
-  const auto res = client_->PutBlockUcx(block_key, usrc.remote_addr(), usrc.packed_rkey(),
-                                        usrc.client_ucx_addr(), 0, req.object_size());
-  if (res.ret_code != 0) {
-    LOG_ERROR(rid, "ufile-ac failed: {}", res.error);
-    return res.ret_code;
-  }
-  LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}", block_key, res.crc32c, res.bytes_written);
-
-  /* 写对象索引 + 填充输出 */
-  if (!WriteObjectIndex(rid, req.bucket(), req.key(), obj_id, req.object_size(), res.crc32c, out)) {
-    LOG_ERROR(rid, "WriteObjectIndex failed for key={}", req.key());
-    return PROXY_ERR_INDEX_FAILED;
-  }
-  return 0;
-}
 
 int SinglePut::PutRdma(const ClientProxyPutRequest& req, PutOutput& out) {
   const std::string& rid = req.request_id();

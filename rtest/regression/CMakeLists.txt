@@ -1,3 +1,2 @@
-# regression/ — 回归测试，分 GDS/UCX 两条路径
+# regression/ — 回归测试，GDS 路径
 add_subdirectory(gds)
-add_subdirectory(ucx)

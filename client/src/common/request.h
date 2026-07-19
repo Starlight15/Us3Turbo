@@ -11,9 +11,8 @@ namespace us3_turbo::client {
 enum class PutDataPath : std::uint8_t {
   kNone = 0,
   kGds = 1 << 0,
-  kUcx = 1 << 1,
   kRdma = 1 << 2,
-  kAll = kGds | kUcx | kRdma,
+  kAll = kGds | kRdma,
 };
 
 inline PutDataPath operator|(PutDataPath a, PutDataPath b) {
@@ -27,14 +26,6 @@ inline bool HasPath(PutDataPath flags, PutDataPath check) {
 /** @brief GDS 通路数据源:cuObj RDMA token(显存地址 + remote key 自描述串)。 */
 struct GdsDataSource {
   std::string rdma_token;
-};
-
-/** @brief UCX 通路数据源:host buffer 虚拟地址 + packed rkey + client UCX
- * listener 地址。 */
-struct UcxDataSource {
-  std::uint64_t remote_addr{0};
-  std::string packed_rkey;
-  std::string client_ucx_addr;
 };
 
 /** @brief RDMA (libibverbs) 通路数据源:hex-encoded token 含 listener ip:port +
@@ -52,7 +43,6 @@ struct ClientProxyPutRequest {
   std::uint64_t object_size{0};
   PutDataPath path{PutDataPath::kNone};
   std::optional<GdsDataSource> gds_source;
-  std::optional<UcxDataSource> ucx_source;
   std::optional<RdmaDataSource> rdma_source;
 };
 
@@ -71,7 +61,6 @@ struct PutPathResult {
 struct ClientProxyPutResponse {
   std::string object_id;
   std::optional<PutPathResult> gds_result;
-  std::optional<PutPathResult> ucx_result;
   std::optional<PutPathResult> rdma_result;
 };
 

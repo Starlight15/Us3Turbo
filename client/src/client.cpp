@@ -15,14 +15,11 @@
 #include "client/src/common/trace.h"
 #include "client/src/memory_manager/gds_memory_manager.h"
 #include "client/src/memory_manager/rdma_memory_manager.h"
-#include "client/src/memory_manager/ucx_memory_manager.h"
 #include "client/src/rpc/proxy_rpc.h"
 #include "client/src/transport/gds_get_channel.h"
 #include "client/src/transport/gds_put_channel.h"
 #include "client/src/transport/put_channel.h"
 #include "client/src/transport/rdma_put_channel.h"
-#include "client/src/transport/ucx_get_channel.h"
-#include "client/src/transport/ucx_put_channel.h"
 #include "us3_turbo/common/logger.h"
 
 #include <cuda_runtime.h>
@@ -106,17 +103,6 @@ bool Client::Initialize() {
     gds_get_channel_.reset();
   }
 
-  // UCX 同构,Start 失败不致命。
-  UcxMemoryManager* ucx_mgr = nullptr;
-  if (UcxMemoryManager::Instance(ucx_mgr)) {
-    ucx_channel_ = std::make_unique<UcxPutChannel>(opts_, *proxy_, ucx_mgr);
-    ucx_get_channel_ = std::make_unique<UcxGetChannel>(opts_, *proxy_, ucx_mgr);
-  } else {
-    LOG_SYS_WARN("UCX manager unavailable, path=kUcx will fail");
-    ucx_channel_.reset();
-    ucx_get_channel_.reset();
-  }
-
   // RDMA 同构，Start 失败不致命。
   RdmaMemoryManager* rdma_mgr = nullptr;
   if (RdmaMemoryManager::Instance(rdma_mgr)) {
@@ -132,8 +118,6 @@ bool Client::Initialize() {
 
 void Client::Shutdown() {
   rdma_channel_.reset();
-  ucx_get_channel_.reset();
-  ucx_channel_.reset();
   gds_get_channel_.reset();
   gds_channel_.reset();
   proxy_.reset();
@@ -160,8 +144,6 @@ PutChannel* Client::SelectChannel(PutDataPath path) const noexcept {
   switch (path) {
     case PutDataPath::kGds:
       return gds_channel_.get();
-    case PutDataPath::kUcx:
-      return ucx_channel_.get();
     case PutDataPath::kRdma:
       return rdma_channel_.get();
     default:
@@ -192,9 +174,7 @@ bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
   PutChannel* ch = SelectChannel(req.path);
   if (ch == nullptr) {
     LOG_ERROR(req.req_id, "{} channel not initialized",
-              req.path == PutDataPath::kGds    ? "GDS"
-              : req.path == PutDataPath::kRdma ? "RDMA"
-                                               : "UCX");
+              req.path == PutDataPath::kGds ? "GDS" : "RDMA");
     return false;
   }
 
@@ -212,8 +192,6 @@ bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
     resp.gds_result = res;
   else if (req.path == PutDataPath::kRdma)
     resp.rdma_result = res;
-  else
-    resp.ucx_result = res;
 
   return res.ok;
 }
@@ -226,11 +204,6 @@ bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
 GdsMemoryManager* Client::GdsManager() const {
   GdsMemoryManager* mgr = nullptr;
   return GdsMemoryManager::Instance(mgr) ? mgr : nullptr;
-}
-
-UcxMemoryManager* Client::UcxManager() const {
-  UcxMemoryManager* mgr = nullptr;
-  return UcxMemoryManager::Instance(mgr) ? mgr : nullptr;
 }
 
 RdmaMemoryManager* Client::RdmaManager() const {
@@ -247,9 +220,7 @@ bool Client::CreateMultipartUpload(const std::string& bucket, const std::string&
   }
   const std::string req_id = detail::MakeReqId();
   const ::us3_turbo::proxy::PutDataPath proto_path =
-      (path == PutDataPath::kGds)    ? ::us3_turbo::proxy::PATH_GDS
-      : (path == PutDataPath::kRdma) ? ::us3_turbo::proxy::PATH_RDMA
-                                     : ::us3_turbo::proxy::PATH_UCX;
+      (path == PutDataPath::kGds) ? ::us3_turbo::proxy::PATH_GDS : ::us3_turbo::proxy::PATH_RDMA;
   return proxy_->CreateMultipartUpload(req_id, bucket, key, proto_path, out_upload_id, out_error);
 }
 
@@ -312,69 +283,6 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   if (trace) {
     const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
     detail::TraceLatency(req_id, "UploadPartGds", stages, buffer.size);
-  }
-
-  out_etag = res.etag;
-  LOG_INFO(req_id, "upload={} part={} size={} etag={}", upload_id, part_number, buffer.size,
-           out_etag);
-  return true;
-}
-
-bool Client::UploadPartUcx(const std::string& upload_id, std::uint32_t part_number,
-                           ConstBufferView buffer, std::string& out_etag,
-                           std::string& out_error) const {
-  if (!initialized_) {
-    out_error = "Client not initialized";
-    return false;
-  }
-  auto* mgr = UcxManager();
-  if (mgr == nullptr) {
-    out_error = "UCX manager unavailable";
-    return false;
-  }
-
-  // 分段 part 上限：须 ≤ multipart_part_size（默认 4MiB，与 proxy 对齐）。
-  // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
-  // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
-  if (buffer.size > opts_.multipart_part_size) {
-    out_error = "part size " + std::to_string(buffer.size) + " exceeds multipart_part_size (" +
-                std::to_string(opts_.multipart_part_size) + ")";
-    return false;
-  }
-
-  const std::string req_id = detail::MakeReqId();
-
-  // [诊断插桩] 复用现有 latency_trace 开关(bench --trace 已透传到
-  // opts_.latency_trace)拆分 acquire(client 侧注册/token)与 rpc(网络+backend
-  // 可见耗时)两阶段。验证完毕后可整块删除。
-  const bool trace = opts_.latency_trace;
-  auto t0 = trace ? detail::clk::now() : detail::clk::time_point{};
-
-  UcxMemoryManager::Descriptor desc;
-  if (!mgr->AcquireDescriptor(buffer.data, buffer.size, desc)) {
-    out_error = "failed to acquire UCX descriptor";
-    return false;
-  }
-  auto t_acquire = trace ? detail::clk::now() : detail::clk::time_point{};
-
-  PutPathResult res;
-  const bool rpc_ok = proxy_->UploadPartUcx(req_id, upload_id, part_number, buffer.size,
-                                            desc.remote_addr, desc.rkey, desc.client_ucx_addr, res);
-  auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
-
-  if (!rpc_ok || !res.ok) {
-    out_error = res.error_message;
-    if (out_error.empty()) out_error = "UploadPartUcx rpc failed";
-    return false;
-  }
-
-  if (opts_.verify_crc32c && res.crc32c != 0) {
-    VerifyPartCrc32c(req_id, buffer, res.crc32c, false, "UploadPartUcx");
-  }
-
-  if (trace) {
-    const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
-    detail::TraceLatency(req_id, "UploadPartUcx", stages, buffer.size);
   }
 
   out_etag = res.etag;
@@ -505,19 +413,6 @@ bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
     return false;
   }
   return gds_get_channel_->GetOnce(bucket, key, buffer, res);
-}
-
-bool Client::GetObjectUcx(const std::string& bucket, const std::string& key,
-                          MutableBufferView buffer, GetPathResult& res) const {
-  if (!initialized_) {
-    LOG_SYS_ERROR("Client not initialized");
-    return false;
-  }
-  if (ucx_get_channel_ == nullptr) {
-    LOG_SYS_ERROR("UCX get channel not initialized");
-    return false;
-  }
-  return ucx_get_channel_->GetOnce(bucket, key, buffer, res);
 }
 
 }  // namespace us3_turbo::client

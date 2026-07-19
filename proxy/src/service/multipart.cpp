@@ -68,41 +68,6 @@ int Multipart::ValidateUploadPartGds(const std::string& request_id, const std::s
   return 0;
 }
 
-int Multipart::ValidateUploadPartUcx(const std::string& request_id, const std::string& upload_id,
-                                     std::uint32_t part_number, std::uint64_t part_size,
-                                     std::uint64_t remote_addr, const std::string& packed_rkey,
-                                     const std::string& client_ucx_addr, UploadRecord& out_upload) {
-  /* 1) 读取 upload 元信息 */
-  UploadRecord upload;
-  if (!index_->Get(upload_id, upload)) {
-    LOG_WARN(request_id, "UploadPartUcx upload_id not found upload={}", upload_id);
-    return PROXY_ERR_INVALID_PARAM;
-  }
-  if (upload.path != PATH_UCX) {
-    LOG_WARN(request_id, "UploadPartUcx session path={} != PATH_UCX upload={}",
-             static_cast<int>(upload.path), upload_id);
-    return PROXY_ERR_PATH_NOT_SUPPORTED;
-  }
-
-  /* 2) 基础参数校验 */
-  if (part_number == 0 || part_size == 0) {
-    LOG_WARN(request_id, "UploadPartUcx upload={} part={} part_size={} zero", upload_id,
-             part_number, part_size);
-    return PROXY_ERR_INVALID_PARAM;
-  }
-  if (part_size > static_cast<std::uint64_t>(FLAGS_multipart_part_size)) {
-    LOG_WARN(request_id, "UploadPartUcx upload={} part={} size={} > max {}", upload_id, part_number,
-             part_size, FLAGS_multipart_part_size);
-    return PROXY_ERR_INVALID_PART_SIZE;
-  }
-  if (remote_addr == 0 || packed_rkey.empty() || client_ucx_addr.empty()) {
-    LOG_WARN(request_id, "UploadPartUcx upload={} part={} ucx source fields incomplete", upload_id,
-             part_number);
-    return PROXY_ERR_MISSING_SOURCE;
-  }
-  out_upload = upload;
-  return 0;
-}
 
 int Multipart::ValidateUploadPartRdma(const std::string& request_id, const std::string& upload_id,
                                       std::uint32_t part_number, std::uint64_t part_size,
@@ -182,8 +147,8 @@ int Multipart::CreateUpload(const std::string& request_id, const std::string& bu
     LOG_WARN(request_id, "bucket/key empty bucket={} key={}", bucket, key);
     return PROXY_ERR_INVALID_PARAM;
   }
-  if (path != PATH_GDS && path != PATH_UCX && path != PATH_RDMA) {
-    LOG_WARN(request_id, "path={} not GDS/UCX/RDMA bucket={}/{}", static_cast<int>(path), bucket,
+  if (path != PATH_GDS && path != PATH_RDMA) {
+    LOG_WARN(request_id, "path={} not GDS/RDMA bucket={}/{}", static_cast<int>(path), bucket,
              key);
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
@@ -242,56 +207,6 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
   return 0;
 }
 
-int Multipart::UploadPartUcx(const std::string& request_id, const std::string& upload_id,
-                             std::uint32_t part_number, std::uint64_t part_size,
-                             std::uint64_t remote_addr, const std::string& packed_rkey,
-                             const std::string& client_ucx_addr, UploadPartOutput& out) {
-  /* 1) 校验 */
-  UploadRecord upload;
-  int ret = ValidateUploadPartUcx(request_id, upload_id, part_number, part_size, remote_addr,
-                                  packed_rkey, client_ucx_addr, upload);
-  if (ret != 0) return ret;
-
-  /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
-   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockUcx 已支持整 part
-   *（≤ MAX_VALUE_LENGTH=16MB），一次远程 RMA 读 + 一次落盘，消除 block
-   *间串行往返。 全局 block 序号 = part_number-1（1 block/part），与 GET 按
-   * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
-   * (part-1)）。 */
-  const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
-  const std::uint64_t file_offset = static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
-  const std::string block_key = GenerateBlockKey(upload.obj_id, part_number - 1);
-
-  LOG_INFO(request_id, "upload={} part={} size={} block_key={} offset={}", upload_id, part_number,
-           part_size, block_key, file_offset);
-
-  if (block_key.size() > KEY_MAX_LENGTH) {
-    LOG_ERROR(request_id, "upload={} part={} block_key too long: {} > {}", upload_id, part_number,
-              block_key.size(), KEY_MAX_LENGTH);
-    return PROXY_ERR_INVALID_PARAM;
-  }
-
-  /* 写单块（整 part）。失败时无已写 block，直接返回，无需回滚。 */
-  const auto result = client_->PutBlockUcx(block_key, remote_addr, packed_rkey, client_ucx_addr,
-                                           /*source_offset=*/0, part_size);
-  if (result.ret_code != 0) {
-    LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id, part_number,
-              result.error);
-    return result.ret_code;
-  }
-  LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}", upload_id, part_number,
-            block_key, result.crc32c);
-
-  /* 写索引 + 填输出；索引失败回滚已写块。 */
-  const std::vector<std::uint32_t> crcs{result.crc32c};
-  if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out)) {
-    LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id, part_number);
-    const std::vector<std::string> written_keys{block_key};
-    CleanupWrittenBlocks(request_id, written_keys);
-    return PROXY_ERR_INDEX_FAILED;
-  }
-  return 0;
-}
 
 int Multipart::UploadPartRdma(const std::string& request_id, const std::string& upload_id,
                               std::uint32_t part_number, std::uint64_t part_size,

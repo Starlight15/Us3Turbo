@@ -1,6 +1,6 @@
 // rdma_put_example.cpp — RDMA PUT 端到端验证。
 //
-// 与 ucx_put_example 对应：用 host 内存走 RDMA 链路（底层 libibverbs RDMA CM）。
+// RDMA PUT 端到端验证：用 host 内存走 RDMA 链路（底层 libibverbs RDMA CM）。
 // client 创建 listener + 注册 MR → 生成 token → proxy RdmaPut → backend RDMA_READ。
 //
 // 单步用法：

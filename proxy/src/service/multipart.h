@@ -38,11 +38,6 @@ class Multipart {
                                   std::uint32_t part_number, std::uint64_t part_size,
                                   const std::string& rdma_token, UploadPartOutput& out);
 
-  [[nodiscard]] int UploadPartUcx(const std::string& request_id, const std::string& upload_id,
-                                  std::uint32_t part_number, std::uint64_t part_size,
-                                  std::uint64_t remote_addr, const std::string& packed_rkey,
-                                  const std::string& client_ucx_addr, UploadPartOutput& out);
-
   [[nodiscard]] int UploadPartRdma(const std::string& request_id, const std::string& upload_id,
                                    std::uint32_t part_number, std::uint64_t part_size,
                                    const std::string& rdma_token, UploadPartOutput& out);
@@ -68,14 +63,6 @@ class Multipart {
   [[nodiscard]] int ValidateUploadPartGds(const std::string& request_id,
                                           const std::string& upload_id, std::uint32_t part_number,
                                           std::uint64_t part_size, const std::string& rdma_token,
-                                          UploadRecord& out_upload);
-
-  /* UploadPartUcx 子阶段: 校验 upload 会话 + part 参数 */
-  [[nodiscard]] int ValidateUploadPartUcx(const std::string& request_id,
-                                          const std::string& upload_id, std::uint32_t part_number,
-                                          std::uint64_t part_size, std::uint64_t remote_addr,
-                                          const std::string& packed_rkey,
-                                          const std::string& client_ucx_addr,
                                           UploadRecord& out_upload);
 
   /* UploadPartRdma 子阶段: 校验 upload 会话 + part 参数 */

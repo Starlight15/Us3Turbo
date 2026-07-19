@@ -4,7 +4,7 @@
 
 namespace us3_turbo::client {
 
-/** @brief 上传用的只读数据缓冲区(GDS=device 显存,UCX=host 内存)。 */
+/** @brief 上传用的只读数据缓冲区(GDS=device 显存,RDMA=host 内存)。 */
 struct ConstBufferView {
   const void* data{nullptr};
   std::size_t size{0};
