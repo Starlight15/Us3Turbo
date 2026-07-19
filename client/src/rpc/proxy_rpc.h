@@ -97,6 +97,11 @@ class ProxyRpc {
                                    std::uint64_t remote_addr, const std::string& packed_rkey,
                                    const std::string& client_ucx_addr, PutPathResult& res) const;
 
+  /** @brief RDMA (libibverbs) 路径上传单个 part：rdma_token 随 RPC 透传。 */
+  [[nodiscard]] bool UploadPartRdma(std::string_view req_id, const std::string& upload_id,
+                                    std::uint32_t part_number, std::uint64_t part_size,
+                                    const std::string& rdma_token, PutPathResult& res) const;
+
   /** @brief 完成分段上传，返回最终 object_id/etag/size。 */
   struct CompletedMultipart {
     bool ok{false};

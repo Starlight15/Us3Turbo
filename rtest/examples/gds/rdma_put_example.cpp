@@ -3,9 +3,13 @@
 // 与 ucx_put_example 对应：用 host 内存走 RDMA 链路（底层 libibverbs RDMA CM）。
 // client 创建 listener + 注册 MR → 生成 token → proxy RdmaPut → backend RDMA_READ。
 //
-// 用法：
+// 单步用法：
 //   us3_turbo_rdma_put_example --proxy 192.168.1.198:9100 [--size 100M]
 //   [--verify-crc32c] [--concurrency 8] [--reps 50] [--trace]
+//
+// 分段用法（--multipart）：
+//   us3_turbo_rdma_put_example --multipart --proxy 192.168.1.198:9100
+//   [--size 256M] [--part-size 4M] [--concurrency 8] [--verify-crc32c] [--trace]
 
 #include <algorithm>
 #include <atomic>
@@ -67,6 +71,8 @@ int main(int argc, char** argv) {
   std::uint32_t concurrency = 1;
   std::uint32_t reps = 1;
   bool trace = false;
+  bool multipart = false;
+  std::uint64_t part_size = 4ULL * 1024ULL * 1024ULL;  // 默认 4MB
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -100,6 +106,14 @@ int main(int argc, char** argv) {
       if (reps == 0) reps = 1;
     } else if (arg == "--trace") {
       trace = true;
+    } else if (arg == "--multipart") {
+      multipart = true;
+    } else if (arg == "--part-size") {
+      std::string v;
+      if (!need(v) || !ParseSize(v, part_size)) {
+        std::cerr << "bad --part-size\n";
+        return 2;
+      }
     } else {
       std::cerr << "unknown arg: " << arg << "\n";
       return 2;
@@ -117,8 +131,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // concurrency==1 且 reps==1 时走原单次路径
-  if (concurrency == 1 && reps == 1) {
+  // concurrency==1 且 reps==1 且非分段时走原单次路径
+  if (!multipart && concurrency == 1 && reps == 1) {
     std::vector<std::byte> host(bytes);
     for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
 
@@ -140,6 +154,94 @@ int main(int argc, char** argv) {
     const auto& r = resp.rdma_result.value();
     std::cout << "OK bytes=" << r.bytes_written << " etag=" << r.etag << " crc32c=" << std::hex
               << r.crc32c << std::dec << "\n";
+    return 0;
+  }
+
+  // =========================================================================
+  // 分段上传路径（--multipart）
+  // =========================================================================
+  if (multipart) {
+    if (bytes < part_size) {
+      std::cerr << "total size (" << bytes << ") < part_size (" << part_size << ")\n";
+      return 2;
+    }
+    const std::uint32_t num_parts =
+        static_cast<std::uint32_t>((bytes + part_size - 1) / part_size);
+
+    // 准备数据：单块 host buffer 对应整对象（每 part 从中切片引用）
+    std::vector<std::byte> host(bytes);
+    for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
+
+    // 创建分段上传会话
+    std::string upload_id;
+    std::string err;
+    if (!client.CreateMultipartUpload("test-bucket", "obj-rdma-mp", PutDataPath::kRdma, upload_id,
+                                      err)) {
+      std::cerr << "CreateMultipartUpload FAILED: " << err << "\n";
+      client.Shutdown();
+      return 1;
+    }
+    std::cout << "upload_id=" << upload_id << " parts=" << num_parts
+              << " part_size=" << part_size << " total=" << bytes << "\n";
+
+    // 并发上传各 part
+    std::atomic<std::uint64_t> ok_parts{0};
+    std::atomic<std::uint64_t> fail_parts{0};
+    std::atomic<std::uint64_t> total_bytes{0};
+    std::barrier part_gate(static_cast<std::ptrdiff_t>(concurrency));
+
+    auto part_worker = [&](std::uint32_t start_part) {
+      part_gate.arrive_and_wait();
+
+      for (std::uint32_t p = start_part; p < num_parts; p += concurrency) {
+        const std::uint64_t offset = static_cast<std::uint64_t>(p) * part_size;
+        const std::uint64_t sz =
+            std::min(part_size, bytes - offset);
+
+        std::string etag;
+        std::string perr;
+        ConstBufferView buf{host.data() + offset, sz};
+        if (client.UploadPartRdma(upload_id, p + 1, buf, etag, perr)) {
+          ok_parts.fetch_add(1, std::memory_order_relaxed);
+          total_bytes.fetch_add(sz, std::memory_order_relaxed);
+        } else {
+          fail_parts.fetch_add(1, std::memory_order_relaxed);
+          std::cerr << "[part=" << (p + 1) << "] UploadPartRdma FAILED: " << perr << "\n";
+        }
+      }
+    };
+
+    const auto t_begin = std::chrono::steady_clock::now();
+    std::vector<std::thread> threads;
+    threads.reserve(concurrency);
+    for (std::uint32_t t = 0; t < concurrency; ++t) threads.emplace_back(part_worker, t);
+    for (auto& th : threads) th.join();
+
+    if (fail_parts.load() > 0) {
+      std::cerr << "some parts failed, aborting upload\n";
+      std::string aerr;
+      client.AbortMultipartUpload(upload_id, aerr);
+      client.Shutdown();
+      return 1;
+    }
+
+    // 完成分段上传
+    Client::CompletedMultipart cmpl;
+    if (!client.CompleteMultipartUpload(upload_id, {}, cmpl)) {
+      std::cerr << "CompleteMultipartUpload FAILED: " << cmpl.error << "\n";
+      client.Shutdown();
+      return 1;
+    }
+    const auto t_end = std::chrono::steady_clock::now();
+
+    client.Shutdown();
+
+    const double sec = std::chrono::duration<double>(t_end - t_begin).count();
+    const double mib = static_cast<double>(total_bytes.load()) / (1024.0 * 1024.0);
+    std::cout << "multipart ok object_id=" << cmpl.object_id << " etag=" << cmpl.etag
+              << " size=" << cmpl.object_size << " parts=" << ok_parts.load()
+              << " wall_sec=" << sec << " throughput_MiBps=" << (sec > 0 ? mib / sec : 0.0)
+              << "\n";
     return 0;
   }
 

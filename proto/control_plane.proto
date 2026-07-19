@@ -123,6 +123,17 @@ message UploadPartUcxRequest {
   string client_ucx_addr = 7;
 }
 
+// 上传单个 part — RDMA (libibverbs) 路径。rdma_token 编码了 client listener
+// 地址 + rkey + addr + size，backend 解码后反向 RDMA CM connect →
+// ibv_post_send(RDMA_READ)。单 part 直接作为单 block 写入，不再切分。
+message UploadPartRdmaRequest {
+  string request_id  = 1;
+  string upload_id   = 2;
+  uint32 part_number = 3;  // 从 1 开始，客户端分配
+  uint64 part_size   = 4;  // 本 part 总大小
+  string rdma_token  = 5;
+}
+
 // UploadPart 响应（GDS/UCX 共用）。etag 为本 part 的 ETag（proxy 汇总 block
 // etag 得到）；crc32c 仅在 backend 启用 CRC 计算时返回。
 message UploadPartResponse {
@@ -259,6 +270,7 @@ service Control {
       returns (CreateMultipartUploadResponse);
   rpc UploadPartGds(UploadPartGdsRequest) returns (UploadPartResponse);
   rpc UploadPartUcx(UploadPartUcxRequest) returns (UploadPartResponse);
+  rpc UploadPartRdma(UploadPartRdmaRequest) returns (UploadPartResponse);
   rpc CompleteMultipartUpload(CompleteMultipartUploadRequest)
       returns (CompleteMultipartUploadResponse);
   rpc AbortMultipartUpload(AbortMultipartUploadRequest)

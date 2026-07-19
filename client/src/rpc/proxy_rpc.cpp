@@ -106,9 +106,9 @@ bool ProxyRpc::UcxPut(std::string_view req_id, const std::string& bucket, const 
   return resp.ok();
 }
 
-bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket,
-                       const std::string& key, std::uint64_t object_size,
-                       const RdmaDataSource& rdma_source, PutPathResult& res) const {
+bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const std::string& key,
+                       std::uint64_t object_size, const RdmaDataSource& rdma_source,
+                       PutPathResult& res) const {
   if (!ok()) {
     LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
     res.ok = false;
@@ -235,6 +235,37 @@ bool ProxyRpc::UploadPartUcx(std::string_view req_id, const std::string& upload_
   stub()->UploadPartUcx(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
     return FailResult(res, controller, req_id, "UploadPartUcx");
+  }
+  res.ok = resp.ok();
+  res.error_message = resp.error_message();
+  res.etag = resp.etag();
+  res.bytes_written = resp.bytes_written();
+  if (resp.has_crc32c()) res.crc32c = resp.crc32c();
+  return resp.ok();
+}
+
+bool ProxyRpc::UploadPartRdma(std::string_view req_id, const std::string& upload_id,
+                              std::uint32_t part_number, std::uint64_t part_size,
+                              const std::string& rdma_token, PutPathResult& res) const {
+  if (!ok()) {
+    res.ok = false;
+    res.error_message = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  ::us3_turbo::proxy::UploadPartRdmaRequest req;
+  req.set_request_id(std::string(req_id));
+  req.set_upload_id(upload_id);
+  req.set_part_number(part_number);
+  req.set_part_size(part_size);
+  req.set_rdma_token(rdma_token);
+
+  ::us3_turbo::proxy::UploadPartResponse resp;
+  stub()->UploadPartRdma(&controller, &req, &resp, nullptr);
+  if (controller.Failed()) {
+    return FailResult(res, controller, req_id, "UploadPartRdma");
   }
   res.ok = resp.ok();
   res.error_message = resp.error_message();

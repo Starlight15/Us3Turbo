@@ -71,6 +71,10 @@ class ProxyService final : public Control {
   void UploadPartUcx(google::protobuf::RpcController* cntl, const UploadPartUcxRequest* request,
                      UploadPartResponse* response, google::protobuf::Closure* done) override;
 
+  /* RDMA (libibverbs) 分段上传 part，委托 Multipart。 */
+  void UploadPartRdma(google::protobuf::RpcController* cntl, const UploadPartRdmaRequest* request,
+                      UploadPartResponse* response, google::protobuf::Closure* done) override;
+
   /* 完成分段上传，委托 Multipart。 */
   void CompleteMultipartUpload(google::protobuf::RpcController* cntl,
                                const CompleteMultipartUploadRequest* request,

@@ -77,6 +77,11 @@ class Client {
                                    ConstBufferView buffer, std::string& out_etag,
                                    std::string& out_error) const;
 
+  /** @brief RDMA (libibverbs) 路径上传单个 part：为本 part 独立注册 MR + 编码 token。 */
+  [[nodiscard]] bool UploadPartRdma(const std::string& upload_id, std::uint32_t part_number,
+                                    ConstBufferView buffer, std::string& out_etag,
+                                    std::string& out_error) const;
+
   /** @brief 完成分段上传，返回最终 object_id/etag/size。 */
   [[nodiscard]] bool CompleteMultipartUpload(const std::string& upload_id,
                                              const std::vector<PartInfo>& parts,

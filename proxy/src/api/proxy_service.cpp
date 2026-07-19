@@ -237,6 +237,42 @@ void ProxyService::UploadPartUcx(google::protobuf::RpcController* cntl_base,
                                       latency);
 }
 
+void ProxyService::UploadPartRdma(google::protobuf::RpcController* cntl_base,
+                                  const UploadPartRdmaRequest* request,
+                                  UploadPartResponse* response, google::protobuf::Closure* done) {
+  brpc::ClosureGuard done_guard(done);
+  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
+
+  const std::string& rid = request->request_id();
+  const auto start = std::chrono::steady_clock::now();
+  LOG_INFO(rid, "start upload={} part={} size={}", request->upload_id(), request->part_number(),
+           request->part_size());
+
+  UploadPartOutput out;
+  int ret = multipart_->UploadPartRdma(request->request_id(), request->upload_id(),
+                                       request->part_number(), request->part_size(),
+                                       request->rdma_token(), out);
+  const auto latency = utils::ElapsedMs(start);
+
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "failed code={}", ret);
+    response->set_ok(false);
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "UploadPartRdma failed: %s", msg);
+    AccessLogger::Instance().LogRequest("UploadPartRdma", rid, kDash, kDash, ret, 0, latency);
+    return;
+  }
+  response->set_ok(true);
+  response->set_etag(out.etag);
+  response->set_bytes_written(out.bytes_written);
+  if (out.crc32c != 0) response->set_crc32c(out.crc32c);
+  LOG_INFO(rid, "success part={} etag={} bytes={}", request->part_number(), out.etag,
+           out.bytes_written);
+  AccessLogger::Instance().LogRequest("UploadPartRdma", rid, kDash, kDash, 0, out.bytes_written,
+                                      latency);
+}
+
 void ProxyService::CompleteMultipartUpload(google::protobuf::RpcController* cntl_base,
                                            const CompleteMultipartUploadRequest* request,
                                            CompleteMultipartUploadResponse* response,

@@ -14,15 +14,15 @@
 #include "client/src/common/request.h"
 #include "client/src/common/trace.h"
 #include "client/src/memory_manager/gds_memory_manager.h"
-#include "client/src/memory_manager/ucx_memory_manager.h"
 #include "client/src/memory_manager/rdma_memory_manager.h"
+#include "client/src/memory_manager/ucx_memory_manager.h"
 #include "client/src/rpc/proxy_rpc.h"
 #include "client/src/transport/gds_get_channel.h"
 #include "client/src/transport/gds_put_channel.h"
 #include "client/src/transport/put_channel.h"
+#include "client/src/transport/rdma_put_channel.h"
 #include "client/src/transport/ucx_get_channel.h"
 #include "client/src/transport/ucx_put_channel.h"
-#include "client/src/transport/rdma_put_channel.h"
 #include "us3_turbo/common/logger.h"
 
 #include <cuda_runtime.h>
@@ -247,7 +247,9 @@ bool Client::CreateMultipartUpload(const std::string& bucket, const std::string&
   }
   const std::string req_id = detail::MakeReqId();
   const ::us3_turbo::proxy::PutDataPath proto_path =
-      (path == PutDataPath::kGds) ? ::us3_turbo::proxy::PATH_GDS : ::us3_turbo::proxy::PATH_UCX;
+      (path == PutDataPath::kGds)    ? ::us3_turbo::proxy::PATH_GDS
+      : (path == PutDataPath::kRdma) ? ::us3_turbo::proxy::PATH_RDMA
+                                     : ::us3_turbo::proxy::PATH_UCX;
   return proxy_->CreateMultipartUpload(req_id, bucket, key, proto_path, out_upload_id, out_error);
 }
 
@@ -373,6 +375,69 @@ bool Client::UploadPartUcx(const std::string& upload_id, std::uint32_t part_numb
   if (trace) {
     const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
     detail::TraceLatency(req_id, "UploadPartUcx", stages, buffer.size);
+  }
+
+  out_etag = res.etag;
+  LOG_INFO(req_id, "upload={} part={} size={} etag={}", upload_id, part_number, buffer.size,
+           out_etag);
+  return true;
+}
+
+bool Client::UploadPartRdma(const std::string& upload_id, std::uint32_t part_number,
+                            ConstBufferView buffer, std::string& out_etag,
+                            std::string& out_error) const {
+  if (!initialized_) {
+    out_error = "Client not initialized";
+    return false;
+  }
+  auto* mgr = RdmaManager();
+  if (mgr == nullptr) {
+    out_error = "RDMA manager unavailable";
+    return false;
+  }
+
+  // 分段 part 上限：须 ≤ multipart_part_size（默认 4MiB，与 proxy 对齐）。
+  // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
+  // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
+  if (buffer.size > opts_.multipart_part_size) {
+    out_error = "part size " + std::to_string(buffer.size) + " exceeds multipart_part_size (" +
+                std::to_string(opts_.multipart_part_size) + ")";
+    return false;
+  }
+
+  const std::string req_id = detail::MakeReqId();
+
+  // [诊断插桩] 复用现有 latency_trace 开关拆分 acquire(rkey+token) 与 rpc 两阶段。
+  const bool trace = opts_.latency_trace;
+  auto t0 = trace ? detail::clk::now() : detail::clk::time_point{};
+
+  // 为本 part 独立注册 MR + 编码 token（offset=0，相对本 part buffer）。
+  RdmaMemoryManager::Descriptor desc;
+  if (!mgr->AcquireDescriptor(buffer.data, buffer.size, desc)) {
+    out_error = "failed to acquire RDMA descriptor";
+    return false;
+  }
+  auto t_acquire = trace ? detail::clk::now() : detail::clk::time_point{};
+
+  PutPathResult res;
+  const bool rpc_ok =
+      proxy_->UploadPartRdma(req_id, upload_id, part_number, buffer.size, desc.token, res);
+  auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
+
+  if (!rpc_ok || !res.ok) {
+    out_error = res.error_message;
+    if (out_error.empty()) out_error = "UploadPartRdma rpc failed";
+    return false;
+  }
+
+  // 可选 CRC 校验（RDMA 为 host buffer，无需 D2H）。
+  if (opts_.verify_crc32c && res.crc32c != 0) {
+    VerifyPartCrc32c(req_id, buffer, res.crc32c, false, "UploadPartRdma");
+  }
+
+  if (trace) {
+    const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
+    detail::TraceLatency(req_id, "UploadPartRdma", stages, buffer.size);
   }
 
   out_etag = res.etag;
