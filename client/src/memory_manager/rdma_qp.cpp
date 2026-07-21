@@ -200,7 +200,7 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
 
   qp->cq_ = ibv_create_cq(ctx, kCqSize, nullptr, nullptr, 0);
   if (qp->cq_ == nullptr) {
-    if (owns_pd) ibv_dealloc_pd(qp->pd_);
+    if (owns_pd) { ibv_dealloc_pd(qp->pd_); qp->pd_ = nullptr; }
     delete qp;
     rdma_destroy_id(new_id);
     return nullptr;
@@ -217,7 +217,7 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
   qp_attr.qp_type = IBV_QPT_RC;
 
   if (rdma_create_qp(new_id, qp->pd_, &qp_attr) != 0) {
-    if (owns_pd) ibv_dealloc_pd(qp->pd_);
+    if (owns_pd) { ibv_dealloc_pd(qp->pd_); qp->pd_ = nullptr; }
     delete qp;
     rdma_destroy_id(new_id);
     return nullptr;
@@ -239,6 +239,7 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
     if (ibv_modify_qp(new_id->qp, &attr,
                       IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT |
                           IBV_QP_ACCESS_FLAGS) != 0) {
+      qp->cm_id_ = nullptr;  // Prevent Cleanup() from destroying; destroyed below
       delete qp;
       rdma_destroy_id(new_id);
       return nullptr;
@@ -252,6 +253,7 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
   conn_param.rnr_retry_count = kRnrRetry;
 
   if (rdma_accept(new_id, &conn_param) != 0) {
+    qp->cm_id_ = nullptr;  // Prevent Cleanup() from destroying; destroyed below
     delete qp;
     rdma_destroy_id(new_id);
     return nullptr;
