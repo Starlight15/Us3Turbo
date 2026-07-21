@@ -1,11 +1,7 @@
-// test_multipart_invalid_part_size.cpp — T1.1 中间 part < part_size 应被拒绝
+// test_multipart_invalid_part_size.cpp — T1.1 part < 4M 在 Complete 时被拒。
 //
-// 验证: 3 个 3MB part（均 < proxy multipart_part_size=4MB）在 UploadPart 时被
-// 接受（UploadPart 仅拒 >4MB/0），但在 CompleteMultipartUpload 时被 proxy 的
-// ValidatePartSizes 拒绝，out.error 含 "invalid part size"。
-// RDMA 路径：host 内存，无 CUDA 依赖。
+// 验证: 中间 part 小于 multipart_part_size,Complete 返回 "invalid part size"。
 
-#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>

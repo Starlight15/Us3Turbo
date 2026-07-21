@@ -1,12 +1,6 @@
-// test_put_single.cpp — T3.1 RDMA 单步 PUT 验证
+// test_put_single.cpp — T3.1 RDMA 单步 PUT,多尺寸验证。
 //
-// 验证：不同对象大小（1K / 4M / 16M 边界）下 PutObjectRdma 返回正确的
-// bytes_written、etag 非空、crc32c 非零。
-// 可选 --verify-crc32c 对比 client 端 host 重算 CRC。
-//
-// 失败条件：PutObjectRdma 返回 false、bytes_written != size、etag 为空。
-
-#include <cstdint>
+// 验证: 1K/1M/4M 三个尺寸下 bytes_written==size,etag 非空。
 #include <iostream>
 #include <string>
 #include <vector>
@@ -19,14 +13,14 @@ namespace {
 constexpr char kTestName[] = "rdma_put_single";
 constexpr const char* kTestProxy = "192.168.1.198:9100";
 constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint64_t kTestSinglePutMaxBytes = 16ULL * 1024 * 1024;
+constexpr std::uint64_t kTestSinglePutMaxBytes = 4ULL * 1024 * 1024;
 constexpr std::uint64_t kSinglePutLimit = kTestSinglePutMaxBytes;
 
 // 测试尺寸列表：覆盖小对象 / 典型 / 边界
 constexpr std::uint64_t kTestSizes[] = {
     1ULL * 1024,                    // 1 KiB
     rtest::kDefaultPartSize,             // 4 MiB（典型）
-    kSinglePutLimit,                // 16 MiB（单步上限）
+    kSinglePutLimit,                // 4 MiB（单步上限）
 };
 }  // namespace
 

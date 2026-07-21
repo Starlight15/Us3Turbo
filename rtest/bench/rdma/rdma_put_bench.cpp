@@ -1,20 +1,6 @@
-// rdma_put_bench.cpp — RDMA 单步 PUT 性能基准（rtest/bench/rdma）。
+// rdma_put_bench.cpp — RDMA 单步 PUT 性能基准。
 //
-// 测量维度：
-//   1. 吞吐 —— 多 worker 并发 RDMA PUT 聚合吞吐（MiB/s, ops/s）
-//   2. 时延分布 —— min/p50/p95/p99/max per-PUT latency
-//
-// 用法：
-//   us3_turbo_bench_rdma_put \
-//     --proxy 192.168.1.198:9100 \
-//     --size 100M --count 100 --concurrency 8
-//
-// 模型：
-//   进程内共享一个 Client（PutObject 为 const，brpc channel 与
-//   RdmaMemoryManager 单例均线程安全）；每个 worker 线程拥有独立的 host
-//   buffer，从共享原子计数器领取对象序号并发上传。
-//   首次 PutObject 时在内部分配 RDMA QP + 注册 MR，无需显式 Register。
-
+// 测量: 多 worker 并发吞吐 (MiB/s, ops/s) 和 per-PUT 时延分布 (min/p50/p95/p99)。
 #include <atomic>
 #include <barrier>
 #include <cstdint>

@@ -102,7 +102,7 @@ bool MongoUploadIndex::ListParts(const std::string& upload_id, std::vector<PartR
 }
 
 void MongoUploadIndex::Remove(const std::string& upload_id) {
-  /* 1) delete parts, 2) delete minit — idempotent */
+  /* 1. delete parts → delete minit，幂等。 */
   client_->DeleteParts(upload_id);
   client_->DeleteMinit(upload_id);
 }

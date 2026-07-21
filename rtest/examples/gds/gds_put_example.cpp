@@ -1,7 +1,4 @@
 // gds_put_example.cpp — GDS 单步 PUT 最简示例。
-//
-// 演示: cudaMalloc → H2D → PutObjectGds → 打印结果。
-// 运行: us3_turbo_gds_put_example [proxy_addr]
 
 #include <cstdint>
 #include <cstdlib>
@@ -15,7 +12,6 @@
 
 #include <cuda_runtime.h>
 
-// ---- 本地常量 ----
 constexpr const char* kTestProxy = "192.168.1.198:9100";
 constexpr const char* kTestBucket = "test-bucket";
 constexpr std::uint64_t kTestObjectSize = 4ULL * 1024 * 1024;
@@ -26,18 +22,15 @@ int main(int argc, char** argv) {
   const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
   constexpr std::uint64_t kSize = kTestObjectSize;
 
-  // 1. 分配 GPU buffer + 填充测试数据
   void* dev = nullptr;
   cudaMalloc(&dev, kSize);
   std::vector<std::byte> host(kSize);
   rtest::FillHostPattern(host);
   cudaMemcpy(dev, host.data(), kSize, cudaMemcpyHostToDevice);
 
-  // 2. 初始化 client
   Client client(ClientOptions{.endpoint = proxy_addr});
   client.Initialize();
 
-  // 3. PUT
   ClientProxyPutResponse resp;
   client.PutObjectGds(ClientProxyPutRequest{.bucket = kTestBucket,
                                              .key = "gds-demo",

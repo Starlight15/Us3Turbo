@@ -1,7 +1,4 @@
 // gds_multipart_example.cpp — GDS 分段上传最简示例。
-//
-// 演示: CreateMultipartUpload → UploadPartGds → CompleteMultipartUpload。
-// 运行: us3_turbo_gds_multipart_example [proxy_addr]
 
 #include <cstdint>
 #include <cstdlib>
@@ -15,7 +12,6 @@
 
 #include <cuda_runtime.h>
 
-// ---- 本地常量 ----
 constexpr const char* kTestProxy = "192.168.1.198:9100";
 constexpr const char* kTestBucket = "test-bucket";
 constexpr std::uint32_t kTestNumParts = 2;
@@ -25,33 +21,27 @@ int main(int argc, char** argv) {
 
   const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
   constexpr std::uint64_t kPartSize = rtest::kDefaultPartSize;
-  constexpr std::uint32_t kNumParts = kTestNumParts;
-  constexpr std::uint64_t kTotal = kPartSize * kNumParts;
+  constexpr std::uint64_t kTotal = kPartSize * kTestNumParts;
 
-  // 1. 分配 GPU buffer + 填充测试数据
   void* dev = nullptr;
   cudaMalloc(&dev, kPartSize);
   std::vector<std::byte> host(kPartSize);
   rtest::FillHostPattern(host);
   cudaMemcpy(dev, host.data(), kPartSize, cudaMemcpyHostToDevice);
 
-  // 2. 初始化 client
   Client client(ClientOptions{.endpoint = proxy_addr});
   client.Initialize();
 
-  // 3. 创建分段上传会话
   std::string upload_id, err;
   client.CreateMultipartUpload(kTestBucket, "gds-mp-demo", PutDataPath::kGds, upload_id, err);
 
-  // 4. 上传每个 part（复用同一 GPU buffer）
   std::vector<Client::PartInfo> parts;
-  for (std::uint32_t i = 1; i <= kNumParts; ++i) {
+  for (std::uint32_t i = 1; i <= kTestNumParts; ++i) {
     std::string etag;
     client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = kPartSize}, etag, err);
     parts.push_back({i, etag});
   }
 
-  // 5. 完成分段上传
   Client::CompletedMultipart done;
   client.CompleteMultipartUpload(upload_id, parts, done);
 

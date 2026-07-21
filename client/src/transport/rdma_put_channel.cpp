@@ -1,4 +1,4 @@
-// rdma_put_channel.cpp — RDMA 链路的 PutChannel 实现。
+// rdma_put_channel.cpp — RDMA 链路 PutChannel 实现。
 
 #include "client/src/transport/rdma_put_channel.h"
 
@@ -29,7 +29,9 @@ using detail::LatencyStage;
 using detail::MakeReqId;
 using detail::TraceLatency;
 
-// CRC32C 校验（options.verify_crc32c）：RDMA 对 host buffer 直算，无需 D2H。
+/*
+ * RDMA CRC32C 校验：host buffer 直算，无需 D2H。
+ */
 [[nodiscard]] bool VerifyRdmaCrc32c(const std::string& req_id, ConstBufferView host_buffer,
                                      std::uint32_t remote_crc32c, const ClientProxyPutRequest& req) {
   const std::uint32_t local = Crc32c(std::span<const std::byte>(
@@ -60,11 +62,13 @@ bool RdmaPutChannel::ValidateRdmaRequest(const ClientProxyPutRequest& req,
   return true;
 }
 
-// RDMA 链路单次尝试：AcquireDescriptor → RdmaPut。与 GdsPutChannel 独立。
+/*
+ * 单次 RDMA PUT：校验 → AcquireDescriptor → proxy.RdmaPut → 可选 CRC。
+ */
 bool RdmaPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                               PutPathResult& res) const {
   assert(rdma_mgr_ != nullptr);
-  const std::string req_id = MakeReqId();  // 每次新生成,跨端日志关联
+  const std::string req_id = MakeReqId();
 
   if (!ValidateRdmaRequest(req, buffer)) {
     return false;
@@ -74,7 +78,7 @@ bool RdmaPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView b
   auto t0 = trace ? clk::now() : clk::time_point{};
 
   RdmaMemoryManager::Descriptor desc;
-  if (!rdma_mgr_->AcquireDescriptor(buffer.data, buffer.size, desc)) {  // 懒注册
+  if (!rdma_mgr_->AcquireDescriptor(buffer.data, buffer.size, desc)) {
     return false;
   }
   RdmaDataSource rdma_source{desc.token};

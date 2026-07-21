@@ -157,8 +157,7 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd, const RdmaQpConfig& 
   rdma_cm_id* new_id = event->id;
   rdma_ack_cm_event(event);
 
-  // 将 new_id 迁移到独立事件通道，避免 ESTABLISHED / DISCONNECTED 事件
-  // 与 listener 通道上的 CONNECT_REQUEST 冲突。
+  // 迁移到独立事件通道，避免 ESTABLISHED/DISCONNECTED 与 CONNECT_REQUEST 冲突。
   rdma_event_channel* new_ec = rdma_create_event_channel();
   if (new_ec == nullptr) {
     rdma_destroy_id(new_id);

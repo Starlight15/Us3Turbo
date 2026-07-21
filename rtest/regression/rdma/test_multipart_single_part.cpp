@@ -1,11 +1,7 @@
-// test_multipart_single_part.cpp — T1.3 单 part = 整对象
+// test_multipart_single_part.cpp — T1.3 单 part = 整对象。
 //
-// 验证: 单 part（part_number=1）的"不分段的分段上传" Complete 成功且
-// object_size==part_size。
-// 1 block/part: 单 part = 单块（block_size=part_size）。
-// RDMA 路径：host 内存，无 CUDA 依赖。
+// 验证: 单 part RDMA 分段上传 Complete 成功且 object_size==part_size。
 
-#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>

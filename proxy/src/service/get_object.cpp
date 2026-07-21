@@ -63,7 +63,7 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
   int ret = ValidateGdsRequest(req);
   if (ret != 0) return ret;
 
-  /* 1) 查布局，校验 object_size 与 fileidx 一致 */
+  /* 1. 查布局，校验 object_size 与 fileidx 一致。 */
   FileIdxRecord rec;
   if (!index_->GetFileIdx(req.bucket(), req.key(), rec)) {
     LOG_WARN(rid, "object not found bucket={}/{}", req.bucket(), req.key());
@@ -75,7 +75,7 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
     return PROXY_ERR_INVALID_PARAM;
   }
 
-  /* 2) 按 block_size 切块串行读，token 复用仅 gpu_offset 递增 */
+  /* 2. 按 block_size 切块串行读。 */
   const std::uint64_t block_size = rec.block_size;
   const std::uint64_t block_count = (rec.filesize + block_size - 1) / block_size;
   const std::string& rdma_token = req.gds_source().rdma_token();
@@ -101,7 +101,7 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
               result.bytes_written);
   }
 
-  /* 3) 重组 hash 与 fileidx 比对，数据完整性兜底 */
+  /* 3. 重组 hash 与 fileidx 比对。 */
   const std::string hash = utils::CombineBlockCRC32s(crcs);
   if (hash != rec.hash) {
     LOG_ERROR(rid, "hash mismatch: computed={} fileidx={} bucket={}/{}", hash, rec.hash,

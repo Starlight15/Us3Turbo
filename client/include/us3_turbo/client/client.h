@@ -21,8 +21,9 @@ class RdmaPutChannel;
 class GdsMemoryManager;
 class RdmaMemoryManager;
 
-/**
- * @brief 对象存储 client。
+/*
+ * 对象存储 client：GDS (CUDA cuObj) / RDMA (libibverbs) 双通路。
+ * 单步 PUT、分段上传、GET 接口。
  */
 class Client {
  public:

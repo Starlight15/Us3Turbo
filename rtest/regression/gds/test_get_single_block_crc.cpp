@@ -1,12 +1,6 @@
-// test_get_single_block_crc.cpp — T2.1 GET 单块对象 crc32c
+// test_get_single_block_crc.cpp — T2.1 GET 单块对象 CRC 一致性。
 //
-// 验证: single PUT 一个 2MB 对象（< max_single_put_bytes=16MB → 单块）后 GET
-// 读回， result.crc32c 非零、hash 非空，且
-// get.crc32c==put.crc32c、get.hash==put.etag （single PUT 存
-// block_size=filesize → GET 恒单块 → crc32c=crcs[0]、
-// hash=Crc32cToETag(crc)==put.etag）。
-// 失败条件: crc32c==0、hash 空、get/put crc 或 hash 不一致、bytes_read!=size。
-
+// 验证: single PUT 后 GET 读回,crc32c/hash/bytes_read 与 PUT 结果一致。
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -22,7 +16,7 @@ namespace {
 constexpr char kTestName[] = "gds_get_single_block_crc";
 constexpr const char* kTestProxy = "192.168.1.198:9100";
 constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint64_t kTestSinglePutMaxBytes = 16ULL * 1024 * 1024;
+constexpr std::uint64_t kTestSinglePutMaxBytes = 4ULL * 1024 * 1024;
 constexpr std::uint64_t kSinglePutLimit = kTestSinglePutMaxBytes;
 constexpr std::uint64_t kBlockSize = rtest::kDefaultPartSize;
 }  // namespace
@@ -31,7 +25,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   std::string proxy_addr = kTestProxy;
-  std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M（< 4M 单块，≤16M 单步上限）
+  std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M（< 4M 单块，≤4M 单步上限）
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -58,7 +52,7 @@ int main(int argc, char** argv) {
   }
 
   if (size > kSinglePutLimit || size >= kBlockSize) {
-    std::cerr << "[FAIL] " << kTestName << ": size must be <= 16M and < 4M for single-block, got "
+    std::cerr << "[FAIL] " << kTestName << ": size must be <= 4M and < 4M for single-block, got "
               << rtest::HumanBytes(size) << "\n";
     return 2;
   }

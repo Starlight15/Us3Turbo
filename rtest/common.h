@@ -17,14 +17,13 @@
 
 
 namespace rtest {
-
 // 分段上传默认 part 大小，须与 proxy FLAGS_multipart_part_size /
 // ClientOptions::multipart_part_size 一致。
 constexpr std::uint64_t kDefaultPartSize = 4ULL * 1024 * 1024;  // 4 MiB
 
-// ---- 工具函数 ----
 
-// 解析 "16M"/"4M"/"2M" 等（1024 进制）。签名对齐 multipart/get examples。
+
+// 解析 "4M"/"1M" 等（1024 进制）。签名对齐 multipart/get examples。
 inline bool ParseSize(std::string_view s, std::uint64_t& out) {
   if (s.empty()) return false;
   std::uint64_t num = 0;

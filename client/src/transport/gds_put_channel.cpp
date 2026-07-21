@@ -1,4 +1,4 @@
-// gds_put_channel.cpp — GDS 链路的 PutChannel 实现。
+// gds_put_channel.cpp — GDS 链路 PutChannel 实现。
 
 #include "client/src/transport/gds_put_channel.h"
 
@@ -32,8 +32,8 @@ using detail::LatencyStage;
 using detail::MakeReqId;
 using detail::TraceLatency;
 
-/**
- * @brief CRC32C 校验（options.verify_crc32c）：GDS 需 D2H 拷贝后计算。
+/*
+ * GDS CRC32C 校验：D2H 后计算。
  */
 [[nodiscard]] bool VerifyGdsCrc32c(const std::string& req_id, ConstBufferView device_buffer,
                                    std::uint32_t remote_crc32c, const ClientProxyPutRequest& req) {
@@ -71,10 +71,13 @@ bool GdsPutChannel::ValidateGdsRequest(const ClientProxyPutRequest& req,
   return true;
 }
 
+/*
+ * 单次 GDS PUT：校验 → AcquireToken → proxy.GdsPut → 可选 CRC。
+ */
 bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                             PutPathResult& res) const {
   assert(gds_mgr_ != nullptr);
-  const std::string req_id = MakeReqId();  // 每次新生成,跨端日志关联
+  const std::string req_id = MakeReqId();
 
   if (!ValidateGdsRequest(req, buffer)) {
     return false;
@@ -84,7 +87,7 @@ bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView bu
   auto t0 = trace ? clk::now() : clk::time_point{};
 
   GdsMemoryManager::Token token;
-  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token)) {  // 懒注册
+  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token)) {
     return false;
   }
   GdsDataSource gds_source{std::string(token.str())};

@@ -1,13 +1,7 @@
-// test_get_multi_block_hash.cpp — T2.2 GET 多块对象 hash
+// test_get_multi_block_hash.cpp — T2.2 GET 多块对象 hash 验证。
 //
-// 验证: 8MB 对象经 multipart 上传 [4M,4M]（multipart 存 block_size=part_size
-// → 2 块）后 GET 读回，result.crc32c==0、hash 非空、bytes_read==8MB。
-// 关键修正: single PUT 不可能传 >max_single_put_bytes（被拒；且 single PUT 存
-// block_size=filesize → 恒单块 → crc32c 永非 0）。故必须用 multipart。
-// PUT 无 hash 字段、公开 StatObject 不返回 hash，故无 hash_put/hash_get 直比。
-// 失败条件: crc32c!=0、hash 空、bytes_read!=total。
+// 验证: 多 part 对象 PUT 后 GET 读回,hash 非空且与 etag 一致,逐字节比对通过。
 
-#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>

@@ -1,13 +1,7 @@
-// test_multipart_part_number_violation.cpp — T1.2 part_number 重复 / 跳号
+// test_multipart_part_number_violation.cpp — T1.2 part_number 重复/跳号。
 //
-// 两个子场景，默认 part-size 4M（确保唯一违例是 part_number，非 part 大小）。
-// 场景A 重复 part_number（1,1,2）：行为依赖 MongoDB partlist_col 是否有
-//   (upload_id,seq) 唯一索引——无则 Complete 时 "invalid parameter"，有则重复
-//   UploadPart 时 "index write failed"。测试记录实际行为，接受任一非静默结果。
-// 场景B 跳号（1,3 跳过 2）：ValidateParts 允许间隙，故跳号在 Complete step7
-//   merged_size!=sum 处失败 → "internal error"。无专门 missing/sequence 错误，
-//   测试匹配"非空错误"以兼容未来改进。Complete 成功（静默错误状态）才算失败。
-// 失败条件: 任一场景出现静默状态——操作返回 false 但 error 为空，或跳号时
+// 验证: Scene A 重复 part_number 非静默失败,Scene B 跳号被检测。
+
 //   Complete 成功。
 // RDMA 路径：host 内存，无 CUDA 依赖。
 
@@ -91,7 +85,7 @@ int main(int argc, char** argv) {
     return false;
   };
 
-  // ============================ 场景 A：重复 part_number ============================
+  // ---- Scene A: 重复 part_number (1,1,2) ----
   std::cout << "\n--- Scene A: duplicate part_number (1,1,2) ---\n";
   bool scene_a_pass = false;
   std::string scene_a_reason;
@@ -142,7 +136,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  // ============================ 场景 B：跳号 (1,3) ============================
+  // ---- Scene B: 跳号 (1,3) ----
   std::cout << "\n--- Scene B: gap (part 1, part 3 — skip 2) ---\n";
   bool scene_b_pass = false;
   bool scene_b_skipped = false;

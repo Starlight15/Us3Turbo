@@ -1,13 +1,7 @@
-// test_multipart_single_part.cpp — T1.3 单 part = 整对象
+// test_multipart_single_part.cpp — T1.3 单 part = 整对象。
 //
-// 验证: 单 part（part_number=1）的"不分段的分段上传" Complete 成功且
-// object_size==part_size。
-// 1 block/part: 单 part = 单块（block_size=part_size）→ GET 单块 →
-// crc32c=该块 crc（非 0）、hash=Crc32cToETag(crc)。可选 GET 校验断言 hash 非空
-// + bytes_read，不断言 crc32c 具体值。 失败条件: Complete 失败或
-// object_size!=part_size。
+// 验证: 单 part 分段上传 Complete 成功且 object_size==part_size。可选 GET 校验 hash。
 
-#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>

@@ -1,6 +1,6 @@
 #pragma once
 
-// gds_put_channel.h — GDS(CUObj RDMA)链路的 PutChannel 实现。
+// gds_put_channel.h — GDS (CUDA cuObj RDMA) 链路 PutChannel。
 
 #include <cstddef>
 
@@ -12,8 +12,9 @@ namespace us3_turbo::client {
 
 class ProxyRpc;
 
-/** @brief GDS 链路的 PutChannel:device 显存走 cuObj RDMA token + backend 反向
- * RDMA-READ。 */
+/*
+ * GDS PutChannel：GPU 显存走 cuObj RDMA token，backend 反向 RDMA-READ。
+ */
 class GdsPutChannel final : public PutChannel {
  public:
   GdsPutChannel(const ClientOptions& options, const ProxyRpc& proxy, GdsMemoryManager* gds_mgr)
@@ -22,7 +23,6 @@ class GdsPutChannel final : public PutChannel {
   [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                              PutPathResult& res) const override;
 
-  /** @brief 请求校验：检查 buffer 为目标通路类型、大小合法。 */
   [[nodiscard]] bool ValidateGdsRequest(const ClientProxyPutRequest& req,
                                          ConstBufferView buffer) const;
 

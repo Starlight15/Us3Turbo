@@ -1,15 +1,4 @@
-// rtest/bench/harness.h — 共享 bench 基础设施（通路无关，header-only，无 CUDA 依赖）。
-//
-// 提供 bench 文件间复用的类型别名、统计函数、参数基类和结果结构体。
-// 不包含任何通路特定逻辑（CUDA/ibverbs）。具体 bench 文件通过派生 BaseArgs
-// 添加通路特定字段，通过 RunOneRound 自定义测量逻辑。
-//
-// 用法：
-//   1. 派生 Args : rtest::bench::BaseArgs，添加通路特定参数
-//   2. 定义 RunOneRound() 返回 RoundResult
-//   3. main() 中 ParseArgs → 初始化 client → 跑 warmup+reps → ComputeStats → PrintReport
-//
-// 命名空间：rtest::bench
+// harness.h — bench 共享基础设施（通路无关，header-only）。
 
 #pragma once
 

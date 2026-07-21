@@ -36,7 +36,7 @@ void Multipart::CleanupWrittenBlocks(const std::string& request_id,
 int Multipart::ValidateUploadPartGds(const std::string& request_id, const std::string& upload_id,
                                      std::uint32_t part_number, std::uint64_t part_size,
                                      const std::string& rdma_token, UploadRecord& out_upload) {
-  /* 1) 读取 upload 元信息 */
+  /* 1. 读取 upload 元信息。 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "UploadPartGds upload_id not found upload={}", upload_id);
@@ -48,7 +48,7 @@ int Multipart::ValidateUploadPartGds(const std::string& request_id, const std::s
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
 
-  /* 2) 基础参数校验 */
+  /* 2. 基础参数校验。 */
   if (part_number == 0 || part_size == 0) {
     LOG_WARN(request_id, "UploadPartGds upload={} part={} part_size={} zero", upload_id,
              part_number, part_size);
@@ -72,7 +72,7 @@ int Multipart::ValidateUploadPartGds(const std::string& request_id, const std::s
 int Multipart::ValidateUploadPartRdma(const std::string& request_id, const std::string& upload_id,
                                       std::uint32_t part_number, std::uint64_t part_size,
                                       const std::string& rdma_token, UploadRecord& out_upload) {
-  /* 1) 读取 upload 元信息 */
+  /* 1. 读取 upload 元信息。 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "UploadPartRdma upload_id not found upload={}", upload_id);
@@ -84,7 +84,7 @@ int Multipart::ValidateUploadPartRdma(const std::string& request_id, const std::
     return PROXY_ERR_PATH_NOT_SUPPORTED;
   }
 
-  /* 2) 基础参数校验 */
+  /* 2. 基础参数校验。 */
   if (part_number == 0 || part_size == 0) {
     LOG_WARN(request_id, "UploadPartRdma upload={} part={} part_size={} zero", upload_id,
              part_number, part_size);
@@ -109,10 +109,10 @@ bool Multipart::WritePartIndex(const std::string& request_id, const std::string&
                                std::uint64_t file_offset,
                                const std::vector<std::uint32_t>& block_crcs,
                                UploadPartOutput& out) {
-  /* 1) 计算 part etag */
+  /* 1. 计算 part etag。 */
   const std::string part_etag = utils::CombineBlockCRC32s(block_crcs);
 
-  /* 2) 写 part 索引 */
+  /* 2. 写 part 索引。 */
   PartRecord part;
   part.part_number = part_number;
   part.part_size = part_size;
@@ -128,11 +128,11 @@ bool Multipart::WritePartIndex(const std::string& request_id, const std::string&
     return false;
   }
 
-  /* 3) 更新 upload 合并进度 */
+  /* 3. 更新 upload 合并进度。 */
   index_->UpdateMergedSize(upload_id, file_offset + part_size);
   index_->UpdateLastMergedPart(upload_id, static_cast<std::int32_t>(part_number));
 
-  /* 4) 填充输出 */
+  /* 4. 填充输出。 */
   out.etag = part_etag;
   out.crc32c = block_crcs.empty() ? 0 : block_crcs[0];
   out.bytes_written = part_size;
@@ -161,18 +161,13 @@ int Multipart::CreateUpload(const std::string& request_id, const std::string& bu
 int Multipart::UploadPartGds(const std::string& request_id, const std::string& upload_id,
                              std::uint32_t part_number, std::uint64_t part_size,
                              const std::string& rdma_token, UploadPartOutput& out) {
-  /* 1) 校验 */
+  /* 1. 校验参数。 */
   UploadRecord upload;
   int ret =
       ValidateUploadPartGds(request_id, upload_id, part_number, part_size, rdma_token, upload);
   if (ret != 0) return ret;
 
-  /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
-   * 不再按 4MB 切分串行写多块：ufile-ac 单次 PutBlockGds 已支持整 part
-   *（≤ MAX_VALUE_LENGTH=16MB），一次 RDMA 读 + 一次落盘，消除 block
-   *间串行往返。 全局 block 序号 = part_number-1（1 block/part），与 GET 按
-   * fileidx.block_size = part_size 读回对齐（GET key = first_object + "_" +
-   * (part-1)）。 */
+  /* 整 part 一次写入。block_key = obj_id + "_" + (part_number-1)，与 GET 对齐。 */
   const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
   const std::uint64_t file_offset = static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
   const std::string block_key = GenerateBlockKey(upload.obj_id, part_number - 1);
@@ -186,7 +181,7 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
     return PROXY_ERR_INVALID_PARAM;
   }
 
-  /* 写单块（整 part）。失败时无已写 block，直接返回，无需回滚。 */
+  /* 2. 写整 part 到 backend。 */
   const auto result = client_->PutBlockGds(block_key, rdma_token, /*gpu_offset=*/0, part_size);
   if (result.ret_code != 0) {
     LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id, part_number,
@@ -211,17 +206,13 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
 int Multipart::UploadPartRdma(const std::string& request_id, const std::string& upload_id,
                               std::uint32_t part_number, std::uint64_t part_size,
                               const std::string& rdma_token, UploadPartOutput& out) {
-  /* 1) 校验 */
+  /* 1. 校验参数。 */
   UploadRecord upload;
   int ret =
       ValidateUploadPartRdma(request_id, upload_id, part_number, part_size, rdma_token, upload);
   if (ret != 0) return ret;
 
-  /* 每个 part 作为单个 block 一次写入（block 粒度 = part 粒度）。
-   * ufile-ac 单次 PutBlockRdma 已支持整 part（≤ MAX_VALUE_LENGTH=16MB），
-   * 一次 RDMA READ + 一次落盘，消除 block 间串行往返。 全局 block 序号 =
-   * part_number-1（1 block/part），与 GET 按 fileidx.block_size = part_size
-   * 读回对齐（GET key = first_object + "_" + (part-1)）。 */
+  /* 整 part 一次写入。block_key = obj_id + "_" + (part_number-1)，与 GET 对齐。 */
   const std::uint64_t part_size_limit = static_cast<std::uint64_t>(FLAGS_multipart_part_size);
   const std::uint64_t file_offset = static_cast<std::uint64_t>(part_number - 1) * part_size_limit;
   const std::string block_key = GenerateBlockKey(upload.obj_id, part_number - 1);
@@ -259,7 +250,7 @@ int Multipart::UploadPartRdma(const std::string& request_id, const std::string& 
 int Multipart::CompleteUpload(
     const std::string& request_id, const std::string& upload_id,
     const std::vector<CompleteMultipartUploadRequest_PartInfo>& client_parts, CompleteOutput& out) {
-  /* 1) 读取 upload 元信息 */
+  /* 1. 读取 upload 元信息。 */
   UploadRecord upload;
   if (!index_->Get(upload_id, upload)) {
     LOG_WARN(request_id, "upload_id not found upload={}", upload_id);
@@ -269,15 +260,15 @@ int Multipart::CompleteUpload(
   std::vector<PartRecord> parts;
   index_->ListParts(upload_id, parts);
 
-  /* 2) 按 part_number 升序排序 */
+  /* 2. 按 part_number 升序排序。 */
   std::sort(parts.begin(), parts.end(),
             [](const PartRecord& a, const PartRecord& b) { return a.part_number < b.part_number; });
 
-  /* 3) 校验升序无重复 */
+  /* 3. 校验升序无重复。 */
   int ret = ValidateParts(request_id, parts);
   if (ret != 0) return ret;
 
-  /* 4) 校验所有 part valid */
+  /* 4. 校验所有 part valid。 */
   for (const auto& p : parts) {
     if (!p.valid) {
       LOG_WARN(request_id, "upload={} part {} not valid", upload_id, p.part_number);
@@ -285,11 +276,11 @@ int Multipart::CompleteUpload(
     }
   }
 
-  /* 5) part_size 对齐校验 */
+  /* 5. part_size 对齐校验。 */
   ret = ValidatePartSizes(request_id, parts);
   if (ret != 0) return ret;
 
-  /* 6) 校验 client part 列表 etag 匹配 */
+  /* 6. 校验 client part etag 与索引匹配。 */
   if (!client_parts.empty()) {
     if (client_parts.size() != parts.size()) {
       LOG_WARN(request_id, "upload={} client parts={} != actual={}", upload_id, client_parts.size(),
@@ -305,7 +296,7 @@ int Multipart::CompleteUpload(
     }
   }
 
-  /* 7) 校验 merged_size 与 parts 求和一致 */
+  /* 7. 校验 merged_size 与 parts 求和一致。 */
   std::uint64_t parts_sum = 0;
   for (const auto& p : parts) parts_sum += p.part_size;
   if (upload.merged_size != parts_sum) {
@@ -315,7 +306,7 @@ int Multipart::CompleteUpload(
   }
   const std::uint64_t total_size = upload.merged_size;
 
-  /* 8) 重建全局有序 block crcs 用于对象内容哈希 */
+  /* 8. 重建全局有序 block crcs。 */
   std::vector<std::uint32_t> object_crcs;
   for (const auto& p : parts) {
     if (p.block_crcs.empty()) {
@@ -327,7 +318,7 @@ int Multipart::CompleteUpload(
   }
   const std::string object_hash = utils::CombineBlockCRC32s(object_crcs);
 
-  /* 9) 写 fileidx_col 对象元数据供 s3proxy 读取 */
+  /* 9. 写 fileidx_col 对象元数据。 */
   const std::string final_etag = ComputeFinalETag(parts);
 
   LOG_INFO(request_id,

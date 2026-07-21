@@ -27,17 +27,16 @@ namespace us3_turbo::client {
 
 namespace {
 
-/* log_level 字符串 → spdlog 级别（ClientOptions::log_level）。 */
 spdlog::level::level_enum ParseLogLevel(std::string_view s) {
   if (s == "debug") return spdlog::level::debug;
   if (s == "warn") return spdlog::level::warn;
   if (s == "error") return spdlog::level::err;
-  return spdlog::level::info;  // "info" / 未知
+  return spdlog::level::info;
 }
 
-/**
- * @brief client 侧对 part 数据算 CRC32C，与 proxy 返回的 PutPathResult.crc32c
- * 比对做端到端校验（options.verify_crc32c 开启时）。
+/*
+ * 对 part 数据算 CRC32C，与 proxy 返回的 crc32c 比对。
+ * is_device=true 时先 D2H 再计算。
  */
 [[nodiscard]] bool VerifyPartCrc32c(std::string_view req_id, ConstBufferView buffer,
                                     std::uint32_t remote_crc32c, bool is_device,
@@ -63,8 +62,8 @@ spdlog::level::level_enum ParseLogLevel(std::string_view s) {
   return false;
 }
 
-/**
- * @brief 判断指针是否位于 device 显存。失败按 host 指针处理。
+/*
+ * 判断指针是否位于 device 显存。失败按 host 处理。
  */
 [[nodiscard]] bool IsDevicePointer(const void* ptr) {
   cudaPointerAttributes attr{};
@@ -80,10 +79,8 @@ Client::~Client() = default;
 bool Client::Initialize() {
   if (initialized_) return true;
 
-  // 初始化日志（client 默认仅控制台 sink）。
   us3_turbo::common::Logger::Init(ParseLogLevel(opts_.log_level));
 
-  // 单 brpc channel 指向 proxy,线程安全,可被多 worker 并发调用。
   proxy_ = std::make_unique<ProxyRpc>(opts_.endpoint, opts_.rpc_timeout);
   if (!proxy_->ok()) {
     LOG_SYS_ERROR("proxy channel({}) init failed: {}", opts_.endpoint, proxy_->init_error());
@@ -91,7 +88,6 @@ bool Client::Initialize() {
     return false;
   }
 
-  // manager 不可用则 channel 留空,该 path 落到 SelectChannel 返回 nullptr。
   GdsMemoryManager* gds_mgr = nullptr;
   if (GdsMemoryManager::Instance(gds_mgr)) {
     gds_channel_ = std::make_unique<GdsPutChannel>(opts_, *proxy_, gds_mgr);
@@ -102,7 +98,6 @@ bool Client::Initialize() {
     gds_get_channel_.reset();
   }
 
-  // RDMA 同构，Start 失败不致命。
   RdmaMemoryManager* rdma_mgr = nullptr;
   if (RdmaMemoryManager::Instance(rdma_mgr)) {
     rdma_channel_ = std::make_unique<RdmaPutChannel>(opts_, *proxy_, rdma_mgr);
@@ -125,6 +120,9 @@ void Client::Shutdown() {
 
 bool Client::initialized() const { return initialized_; }
 
+/*
+ * GDS 单步 PUT：校验 → 大小检查 → retry-once → 回填 gds_result。
+ */
 bool Client::PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buffer,
                            ClientProxyPutResponse& resp) const {
   if (!initialized_) {
@@ -136,7 +134,6 @@ bool Client::PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buff
     return false;
   }
 
-  // 大小上限校验。
   const auto max_put = opts_.put_single_max_bytes;
   if (max_put != 0 && buffer.size > max_put) {
     LOG_WARN(req.req_id,
@@ -155,6 +152,9 @@ bool Client::PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buff
   return res.ok;
 }
 
+/*
+ * RDMA 单步 PUT：校验 → 大小检查 → retry-once → 回填 rdma_result。
+ */
 bool Client::PutObjectRdma(const ClientProxyPutRequest& req, ConstBufferView buffer,
                             ClientProxyPutResponse& resp) const {
   if (!initialized_) {
@@ -166,7 +166,6 @@ bool Client::PutObjectRdma(const ClientProxyPutRequest& req, ConstBufferView buf
     return false;
   }
 
-  // 大小上限校验。
   const auto max_put = opts_.put_single_max_bytes;
   if (max_put != 0 && buffer.size > max_put) {
     LOG_WARN(req.req_id,
@@ -185,10 +184,7 @@ bool Client::PutObjectRdma(const ClientProxyPutRequest& req, ConstBufferView buf
   return res.ok;
 }
 
-// ===========================================================================
-// 分段上传。与单步 PutObject 隔离：不复用 PutChannel，直接调 proxy RPC，
-// 每个 part 独立注册 token/descriptor。
-// ===========================================================================
+// ---- 分段上传 ----
 
 GdsMemoryManager* Client::GdsManager() const {
   GdsMemoryManager* mgr = nullptr;
@@ -213,6 +209,9 @@ bool Client::CreateMultipartUpload(const std::string& bucket, const std::string&
   return proxy_->CreateMultipartUpload(req_id, bucket, key, proto_path, out_upload_id, out_error);
 }
 
+/*
+ * GDS 分段上传单个 part：注册 token → proxy.UploadPartGds → 可选 CRC。
+ */
 bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_number,
                            ConstBufferView buffer, std::string& out_etag,
                            std::string& out_error) const {
@@ -226,9 +225,6 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
     return false;
   }
 
-  // 分段 part 上限：须 ≤ multipart_part_size（默认 4MiB，与 proxy 对齐）。
-  // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
-  // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
   if (buffer.size > opts_.multipart_part_size) {
     out_error = "part size " + std::to_string(buffer.size) + " exceeds multipart_part_size (" +
                 std::to_string(opts_.multipart_part_size) + ")";
@@ -237,13 +233,9 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
 
   const std::string req_id = detail::MakeReqId();
 
-  // [诊断插桩] 复用现有 latency_trace 开关(bench --trace 已透传到
-  // opts_.latency_trace)拆分 acquire(client 侧注册/token)与 rpc(网络+backend
-  // 可见耗时)两阶段。验证完毕后可整块删除。
   const bool trace = opts_.latency_trace;
   auto t0 = trace ? detail::clk::now() : detail::clk::time_point{};
 
-  // 为本 part 独立注册 token（offset=0，相对本 part buffer）。
   GdsMemoryManager::Token token;
   if (!mgr->AcquireToken(buffer.data, buffer.size, 0, token)) {
     out_error = "failed to acquire GDS token";
@@ -256,7 +248,6 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   const bool rpc_ok =
       proxy_->UploadPartGds(req_id, upload_id, part_number, buffer.size, rdma_token, res);
   auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
-  // Token 析构自动释放（RAII），无需显式 ReleaseToken。
 
   if (!rpc_ok || !res.ok) {
     out_error = res.ok ? res.error_message : res.error_message;
@@ -264,7 +255,6 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
     return false;
   }
 
-  // 可选 CRC 校验（仅当 server 返回了 crc32c）。
   if (opts_.verify_crc32c && res.crc32c != 0) {
     VerifyPartCrc32c(req_id, buffer, res.crc32c, IsDevicePointer(buffer.data), "UploadPartGds");
   }
@@ -280,6 +270,9 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   return true;
 }
 
+/*
+ * RDMA 分段上传单个 part：注册 MR → proxy.UploadPartRdma → 可选 CRC。
+ */
 bool Client::UploadPartRdma(const std::string& upload_id, std::uint32_t part_number,
                             ConstBufferView buffer, std::string& out_etag,
                             std::string& out_error) const {
@@ -293,9 +286,6 @@ bool Client::UploadPartRdma(const std::string& upload_id, std::uint32_t part_num
     return false;
   }
 
-  // 分段 part 上限：须 ≤ multipart_part_size（默认 4MiB，与 proxy 对齐）。
-  // 非 last part 必须恰好等于此值；仅 last part 可小于此值。
-  // 违反规则将在 CompleteMultipartUpload 时被 proxy 拒绝。
   if (buffer.size > opts_.multipart_part_size) {
     out_error = "part size " + std::to_string(buffer.size) + " exceeds multipart_part_size (" +
                 std::to_string(opts_.multipart_part_size) + ")";
@@ -304,11 +294,9 @@ bool Client::UploadPartRdma(const std::string& upload_id, std::uint32_t part_num
 
   const std::string req_id = detail::MakeReqId();
 
-  // [诊断插桩] 复用现有 latency_trace 开关拆分 acquire(rkey+token) 与 rpc 两阶段。
   const bool trace = opts_.latency_trace;
   auto t0 = trace ? detail::clk::now() : detail::clk::time_point{};
 
-  // 为本 part 独立注册 MR + 编码 token（offset=0，相对本 part buffer）。
   RdmaMemoryManager::Descriptor desc;
   if (!mgr->AcquireDescriptor(buffer.data, buffer.size, desc)) {
     out_error = "failed to acquire RDMA descriptor";
@@ -327,7 +315,6 @@ bool Client::UploadPartRdma(const std::string& upload_id, std::uint32_t part_num
     return false;
   }
 
-  // 可选 CRC 校验（RDMA 为 host buffer，无需 D2H）。
   if (opts_.verify_crc32c && res.crc32c != 0) {
     VerifyPartCrc32c(req_id, buffer, res.crc32c, false, "UploadPartRdma");
   }
@@ -358,7 +345,7 @@ bool Client::CompleteMultipartUpload(const std::string& upload_id,
   }
   ProxyRpc::CompletedMultipart rpc_out;
   if (!proxy_->CompleteMultipartUpload(req_id, upload_id, proto_parts, rpc_out)) {
-    out = rpc_out;  // 失败时也拷贝 error
+    out = rpc_out;
     return false;
   }
   out = std::move(rpc_out);
@@ -374,9 +361,7 @@ bool Client::AbortMultipartUpload(const std::string& upload_id, std::string& out
   return proxy_->AbortMultipartUpload(req_id, upload_id, out_error);
 }
 
-// ===========================================================================
-// GET（StatObject / GetObjectGds）
-// ===========================================================================
+// ---- GET ----
 
 bool Client::StatObject(const std::string& bucket, const std::string& key,
                         std::uint64_t& out_object_size, std::string& out_error) const {

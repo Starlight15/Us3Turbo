@@ -1,30 +1,6 @@
-// gds_multipart_bench.cpp — GDS 分段上传性能基准（rtest/bench/gds）。
+// gds_multipart_bench.cpp — GDS 分段上传性能基准。
 //
-// 测量维度：
-//   1. 阶段耗时 —— 每轮记录 Create / ΣUploadPart / Complete 的 wall time，
-//      拆出"数据面"（UploadPart，含 block 级 PutBlock×N）与"控制面"
-//      （Create+Complete，即 dbgate 索引读写）。
-//   2. 吞吐 —— 串行聚合吞吐 + 多 worker 并发聚合吞吐（共享 Client，brpc
-//      channel 与内存管理器单例线程安全）。
-//   3. 单轮时延分布（min/p50/p95/max）。
-//   4. 可选 CSV 输出。
-//
-// 用法：
-//   us3_turbo_bench_gds_multipart \
-//     --proxy 192.168.1.198:9100 --total 64M --part-size 4M \
-//     --concurrency 1 --reps 5 [--csv]
-//
-// 并发压测：
-//   --concurrency 8 --reps 3 --total 256M --part-size 4M
-//
-// 说明：
-//   - part_size 默认 4M（rtest::kDefaultPartSize）。非 last part 必须
-//     恰好等于该值；当 total 不能被 part_size 整除时，最后一段 part <
-//     part_size，由 proxy 在 Complete 时校验，符合 S3 语义。
-//   - reps：每 worker 重复完整 multipart 上传的轮数，串行模式下即采样数。
-//   - warmup：正式计时前的预热轮数（不计入统计），用于 token/descriptor 懒注册
-//     与连接池预热，消除首轮冷启动偏差。
-
+// 测量: 阶段耗时 (Create/UploadPart/Complete)、吞吐、per-round 时延、可选 CSV 输出。
 #include <atomic>
 #include <barrier>
 #include <cstdint>
@@ -236,7 +212,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       std::cout << "usage: us3_turbo_bench_" << kPathName << "_multipart [options]\n"
                 << "  --proxy ADDR        proxy endpoint (default " << "192.168.1.198:9100" << ")\n"
                 << "  --total SIZE        total object size (default 64M)\n"
-                << "  --part-size SIZE    part size (default 4M, <=16M)\n"
+                << "  --part-size SIZE    part size (default 4M, <=4M)\n"
                 << "  --reps N            reps per worker (default 5)\n"
                 << "  --warmup N          warmup rounds (default 0)\n"
                 << "  --concurrency N     workers (default 1)\n"
@@ -263,9 +239,9 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     std::cerr << "concurrency must be > 0\n";
     return false;
   }
-  if (a.part_size > 16ULL * 1024 * 1024) {
+  if (a.part_size > 4ULL * 1024 * 1024) {
     std::cerr << "part-size " << rtest::HumanBytes(a.part_size)
-              << " > 16M (backend MAX_VALUE_LENGTH)\n";
+              << " > 4M (backend MAX_VALUE_LENGTH)\n";
     return false;
   }
   return true;
