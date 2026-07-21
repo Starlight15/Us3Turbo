@@ -107,7 +107,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       a.trace = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "usage: us3_turbo_bench_" << kPathName << "_put [options]\n"
-                << "  --proxy HOST:PORT        proxy endpoint (default " << rtest::kDefaultProxy << ")\n"
+                << "  --proxy HOST:PORT        proxy endpoint (default " << "192.168.1.198:9100" << ")\n"
                 << "  --size N[K|M|G]          object size (default 4M)\n"
                 << "  --count N                number of objects (default 10)\n"
                 << "  --concurrency N          worker threads (default 1)\n"

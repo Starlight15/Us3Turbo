@@ -19,12 +19,14 @@
 
 namespace {
 constexpr char kTestName[] = "gds_multipart_invalid_part_size";
+constexpr const char* kTestProxy = "192.168.1.198:9100";
+constexpr const char* kTestBucket = "test-bucket";
 }
 
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  std::string proxy_addr = rtest::kDefaultProxy;
+  std::string proxy_addr = kTestProxy;
   std::uint64_t part_size = 3ULL * 1024 * 1024;  // 默认 3M（< 4M）
 
   for (int i = 1; i < argc; ++i) {
@@ -52,7 +54,7 @@ int main(int argc, char** argv) {
   }
 
   constexpr std::uint32_t num_parts = 3;
-  const std::string bucket = rtest::kDefaultBucket;
+  const std::string bucket = kTestBucket;
   const std::string key = std::string("rtest-t11-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T1.1 GDS " << kTestName << " ===\n"

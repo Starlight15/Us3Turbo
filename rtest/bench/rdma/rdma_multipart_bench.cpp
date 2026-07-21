@@ -209,7 +209,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       a.csv = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "usage: us3_turbo_bench_" << kPathName << "_multipart [options]\n"
-                << "  --proxy ADDR        proxy endpoint (default " << rtest::kDefaultProxy << ")\n"
+                << "  --proxy ADDR        proxy endpoint (default " << "192.168.1.198:9100" << ")\n"
                 << "  --total SIZE        total object size (default 64M)\n"
                 << "  --part-size SIZE    part size (default 4M, <=16M)\n"
                 << "  --reps N            reps per worker (default 5)\n"

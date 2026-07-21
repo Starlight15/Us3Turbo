@@ -15,11 +15,16 @@
 
 #include <cuda_runtime.h>
 
+// ---- 本地常量 ----
+constexpr const char* kTestProxy = "192.168.1.198:9100";
+constexpr const char* kTestBucket = "test-bucket";
+constexpr std::uint64_t kTestObjectSize = 4ULL * 1024 * 1024;
+
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : rtest::kDefaultProxy;
-  constexpr std::uint64_t kSize = rtest::kDefaultObjectSize;
+  const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
+  constexpr std::uint64_t kSize = kTestObjectSize;
 
   // 1. 分配 GPU buffer + 填充测试数据
   void* dev = nullptr;
@@ -34,7 +39,7 @@ int main(int argc, char** argv) {
 
   // 3. PUT
   ClientProxyPutResponse resp;
-  client.PutObjectGds(ClientProxyPutRequest{.bucket = rtest::kDefaultBucket,
+  client.PutObjectGds(ClientProxyPutRequest{.bucket = kTestBucket,
                                              .key = "gds-demo",
                                              .object_size = kSize,
                                              .path = PutDataPath::kGds},
