@@ -14,17 +14,17 @@
 
 namespace {
 constexpr char kTestName[] = "gds_get_single_block_crc";
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint64_t kTestSinglePutMaxBytes = 4ULL * 1024 * 1024;
-constexpr std::uint64_t kSinglePutLimit = kTestSinglePutMaxBytes;
 constexpr std::uint64_t kBlockSize = rtest::kDefaultPartSize;
 }  // namespace
 
+
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+  constexpr const char* kProxy = "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
+  constexpr std::uint64_t kSinglePutMax = 4ULL * 1024 * 1024;
 
-  std::string proxy_addr = kTestProxy;
+  std::string proxy_addr = kProxy;
   std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M（< 4M 单块，≤4M 单步上限）
 
   for (int i = 1; i < argc; ++i) {
@@ -51,13 +51,13 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (size > kSinglePutLimit || size >= kBlockSize) {
+  if (size > kSinglePutMax || size >= kBlockSize) {
     std::cerr << "[FAIL] " << kTestName << ": size must be <= 4M and < 4M for single-block, got "
               << rtest::HumanBytes(size) << "\n";
     return 2;
   }
 
-  const std::string bucket = kTestBucket;
+  const std::string bucket = kBucket;
   const std::string key = std::string("rtest-t21-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.1 GDS " << kTestName << " ===\n"

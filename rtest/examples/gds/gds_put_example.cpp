@@ -12,15 +12,12 @@
 
 #include <cuda_runtime.h>
 
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint64_t kTestObjectSize = 4ULL * 1024 * 1024;
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
-  constexpr std::uint64_t kSize = kTestObjectSize;
+  const char* kProxy = (argc > 1) ? argv[1] : "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
+  constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;
 
   void* dev = nullptr;
   cudaMalloc(&dev, kSize);
@@ -28,11 +25,11 @@ int main(int argc, char** argv) {
   rtest::FillHostPattern(host);
   cudaMemcpy(dev, host.data(), kSize, cudaMemcpyHostToDevice);
 
-  Client client(ClientOptions{.endpoint = proxy_addr});
+  Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
   ClientProxyPutResponse resp;
-  client.PutObjectGds(ClientProxyPutRequest{.bucket = kTestBucket,
+  client.PutObjectGds(ClientProxyPutRequest{.bucket = kBucket,
                                              .key = "gds-demo",
                                              .object_size = kSize,
                                              .path = PutDataPath::kGds},

@@ -13,15 +13,12 @@
 
 #include <cuda_runtime.h>
 
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint64_t kTestObjectSize = 4ULL * 1024 * 1024;
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
-  constexpr std::uint64_t kSize = kTestObjectSize;
+  const char* kProxy = (argc > 1) ? argv[1] : "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
+  constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;
 
   /* PUT buffer 和 GET buffer 同时存活，避免 cuObj descriptor 失效。 */
   void* dev_put = nullptr;
@@ -33,25 +30,23 @@ int main(int argc, char** argv) {
   rtest::FillHostPattern(host);
   cudaMemcpy(dev_put, host.data(), kSize, cudaMemcpyHostToDevice);
 
-  Client client(ClientOptions{.endpoint = proxy_addr});
+  Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
   ClientProxyPutResponse put_resp;
-  client.PutObjectGds(ClientProxyPutRequest{.bucket = kTestBucket,
-                                             .key = "gds-get-demo",
-                                             .object_size = kSize,
-                                             .path = PutDataPath::kGds},
+  client.PutObjectGds(ClientProxyPutRequest{.bucket = kBucket, .key = "gds-get-demo",
+                                             .object_size = kSize, .path = PutDataPath::kGds},
                        ConstBufferView{.data = dev_put, .size = kSize}, put_resp);
   std::cout << "PUT etag=" << put_resp.gds_result.value().etag << "\n";
 
   std::uint64_t obj_size = 0;
   std::string stat_err;
-  client.StatObject(kTestBucket, "gds-get-demo", obj_size, stat_err);
+  client.StatObject(kBucket, "gds-get-demo", obj_size, stat_err);
   std::cout << "StatObject size=" << rtest::HumanBytes(obj_size) << "\n";
 
   cudaMemset(dev_get, 0xAA, kSize);
   GetPathResult get_res;
-  client.GetObjectGds(kTestBucket, "gds-get-demo",
+  client.GetObjectGds(kBucket, "gds-get-demo",
                       MutableBufferView{.data = dev_get, .size = obj_size}, get_res);
   std::cout << "GET bytes_read=" << get_res.bytes_read << "\n";
 

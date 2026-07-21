@@ -9,28 +9,26 @@
 #include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint32_t kTestNumParts = 2;
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
+  const char* kProxy = (argc > 1) ? argv[1] : "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
   constexpr std::uint64_t kPartSize = rtest::kDefaultPartSize;
-  constexpr std::uint64_t kTotal = kPartSize * kTestNumParts;
+  constexpr std::uint32_t kNumParts = 2;
+  constexpr std::uint64_t kTotal = kPartSize * kNumParts;
 
   std::vector<std::byte> host(kTotal);
   rtest::FillHostPattern(host);
 
-  Client client(ClientOptions{.endpoint = proxy_addr});
+  Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
   std::string upload_id, err;
-  client.CreateMultipartUpload(kTestBucket, "rdma-mp-demo", PutDataPath::kRdma, upload_id, err);
+  client.CreateMultipartUpload(kBucket, "rdma-mp-demo", PutDataPath::kRdma, upload_id, err);
 
   std::vector<Client::PartInfo> parts;
-  for (std::uint32_t i = 1; i <= kTestNumParts; ++i) {
+  for (std::uint32_t i = 1; i <= kNumParts; ++i) {
     const std::uint64_t off = (i - 1) * kPartSize;
     std::string etag;
     client.UploadPartRdma(upload_id, i,

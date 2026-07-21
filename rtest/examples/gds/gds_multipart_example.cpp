@@ -12,16 +12,14 @@
 
 #include <cuda_runtime.h>
 
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint32_t kTestNumParts = 2;
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
+  const char* kProxy = (argc > 1) ? argv[1] : "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
   constexpr std::uint64_t kPartSize = rtest::kDefaultPartSize;
-  constexpr std::uint64_t kTotal = kPartSize * kTestNumParts;
+  constexpr std::uint32_t kNumParts = 2;
+  constexpr std::uint64_t kTotal = kPartSize * kNumParts;
 
   void* dev = nullptr;
   cudaMalloc(&dev, kPartSize);
@@ -29,14 +27,14 @@ int main(int argc, char** argv) {
   rtest::FillHostPattern(host);
   cudaMemcpy(dev, host.data(), kPartSize, cudaMemcpyHostToDevice);
 
-  Client client(ClientOptions{.endpoint = proxy_addr});
+  Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
   std::string upload_id, err;
-  client.CreateMultipartUpload(kTestBucket, "gds-mp-demo", PutDataPath::kGds, upload_id, err);
+  client.CreateMultipartUpload(kBucket, "gds-mp-demo", PutDataPath::kGds, upload_id, err);
 
   std::vector<Client::PartInfo> parts;
-  for (std::uint32_t i = 1; i <= kTestNumParts; ++i) {
+  for (std::uint32_t i = 1; i <= kNumParts; ++i) {
     std::string etag;
     client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = kPartSize}, etag, err);
     parts.push_back({i, etag});

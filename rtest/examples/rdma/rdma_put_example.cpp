@@ -9,27 +9,22 @@
 #include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint64_t kTestObjectSize = 4ULL * 1024 * 1024;
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : kTestProxy;
-  constexpr std::uint64_t kSize = kTestObjectSize;
+  const char* kProxy = (argc > 1) ? argv[1] : "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
+  constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;
 
   std::vector<std::byte> host(kSize);
   rtest::FillHostPattern(host);
 
-  Client client(ClientOptions{.endpoint = proxy_addr});
+  Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
   ClientProxyPutResponse resp;
-  client.PutObjectRdma(ClientProxyPutRequest{.bucket = kTestBucket,
-                                              .key = "rdma-demo",
-                                              .object_size = kSize,
-                                              .path = PutDataPath::kRdma},
+  client.PutObjectRdma(ClientProxyPutRequest{.bucket = kBucket, .key = "rdma-demo",
+                                              .object_size = kSize, .path = PutDataPath::kRdma},
                         ConstBufferView{.data = host.data(), .size = kSize}, resp);
 
   client.Shutdown();

@@ -15,14 +15,15 @@
 
 namespace {
 constexpr char kTestName[] = "gds_multipart_part_number_violation";
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
 }
+
 
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+  constexpr const char* kProxy = "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
 
-  std::string proxy_addr = kTestProxy;
+  std::string proxy_addr = kProxy;
   std::uint64_t part_size = rtest::kDefaultPartSize;  // 默认 4M（== proxy part 上限）
 
   for (int i = 1; i < argc; ++i) {
@@ -49,7 +50,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::string bucket = kTestBucket;
+  const std::string bucket = kBucket;
   const std::uint64_t ts_seed = 0;  // 仅占位，实际用 MakeTimestampSuffix
   (void)ts_seed;
   const std::string key_a = std::string("rtest-t12a-gds-") + rtest::MakeTimestampSuffix();

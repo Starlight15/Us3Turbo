@@ -12,14 +12,15 @@
 
 namespace {
 constexpr char kTestName[] = "rdma_multipart_single_part";
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
 }
+
 
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+  constexpr const char* kProxy = "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
 
-  std::string proxy_addr = kTestProxy;
+  std::string proxy_addr = kProxy;
   std::uint64_t part_size = rtest::kDefaultPartSize;  // 默认 4M（== proxy part 上限）
   bool verify = false;
 
@@ -49,7 +50,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::string bucket = kTestBucket;
+  const std::string bucket = kBucket;
   const std::string key = std::string("rtest-t13-rdma-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T1.3 RDMA " << kTestName << " ===\n"

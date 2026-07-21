@@ -14,23 +14,22 @@
 
 namespace {
 constexpr char kTestName[] = "gds_put_single";
-constexpr const char* kTestProxy = "192.168.1.198:9100";
-constexpr const char* kTestBucket = "test-bucket";
-constexpr std::uint64_t kTestSinglePutMaxBytes = 4ULL * 1024 * 1024;
-constexpr std::uint64_t kSinglePutLimit = kTestSinglePutMaxBytes;
 
 // 测试尺寸列表：覆盖小对象 / 典型 / 边界
 constexpr std::uint64_t kTestSizes[] = {
     1ULL * 1024,                    // 1 KiB
     rtest::kDefaultPartSize,             // 4 MiB（典型）
-    kSinglePutLimit,                // 4 MiB（单步上限）
+    4ULL * 1024 * 1024,                // 4 MiB
 };
 }  // namespace
 
+
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+  constexpr const char* kProxy = "192.168.1.198:9100";
+  constexpr const char* kBucket = "test-bucket";
 
-  std::string proxy_addr = kTestProxy;
+  std::string proxy_addr = kProxy;
   bool verify_crc = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -53,7 +52,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::string bucket = kTestBucket;
+  const std::string bucket = kBucket;
 
   std::cout << "=== T3.1 GDS " << kTestName << " ===\n"
             << "  proxy      : " << proxy_addr << "\n"
