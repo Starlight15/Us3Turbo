@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# test_gds_pimpl.sh — 验证 ClientCore PImpl 重构后的 GDS 端到端功能
+# run-gds-example.sh — 运行 GDS PUT 端到端示例验证。
 #
 # 功能：
 #   1. 强制 kill 旧的 backend/proxy 进程
 #   2. 在 192.168.1.198 上启动 backend + proxy
-#   3. 运行 gds_put_example（硬编码连接到 192.168.1.198）
+#   3. 运行 us3_turbo_gds_put_example（硬编码连接到 192.168.1.198）
 #   4. 测试完成后自动 kill 所有进程
 
 set -euo pipefail

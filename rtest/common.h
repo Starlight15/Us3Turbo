@@ -1,9 +1,8 @@
-// rtest/common.h — 回归测试共享 helper（与通路无关，header-only，无 CUDA
-// 依赖）。
+// rtest/common.h — 回归测试与示例的共享 helper（通路无关，header-only，无 CUDA
+// 依赖）。GDS/RDMA/UCX 各通路通用。
 //
-// GDS 测试工具函数
-// 填充/逐字节校验收进此头，避免在 10 个文件里复制 examples 各自内联重写的版本。
-// GDS 文件在 D2H 后调用 VerifyHostBuffer。
+// 提供 ParseSize / HumanBytes / FillHostPattern / VerifyHostBuffer /
+// MakeTimestampSuffix 等工具，避免在 examples/bench/regression 中重复实现。
 #pragma once
 
 #include <chrono>

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# test_gds_bench.sh — 拉起 backend + proxy 后跑 GDS PUT 基准测试。
+# run-gds-bench.sh — 拉起 backend + proxy 后跑 GDS PUT 基准测试。
 #
 # 功能:
 #   1. 强制 kill 旧的 backend/proxy 进程
 #   2. 在 192.168.1.198 上启动 backend + proxy
-#   3. 运行 gds_bench_example(参数透传:对象大小 / 数量 / 并发 等)
+#   3. 运行 us3_turbo_bench_gds_put(参数透传:对象大小 / 数量 / 并发 等)
 #   4. 测试完成后自动 kill 所有进程
 #
 # 用法:
-#   bash examples/test_gds_bench.sh [bench options...]
+#   bash rtest/scripts/run-gds-bench.sh [bench options...]
 #     --size 100M --count 100 --concurrency 8
 #   默认: --size 100M --count 10 --concurrency 1
 
@@ -35,7 +35,7 @@ PROXY_EP="${PROXY_HOST}:${PROXY_PORT}"
 BACKEND_EP="${BACKEND_HOST}:${BACKEND_PORT}"
 
 # backend 端 CRC32C 计算（true=扫接收数据算 crc/etag，false=跳过测裸传速率）。
-# 用环境变量覆盖：BACKEND_COMPUTE_CRC32C=false bash examples/test_gds_bench.sh ...
+# 用环境变量覆盖：BACKEND_COMPUTE_CRC32C=false bash rtest/scripts/run-gds-bench.sh ...
 BACKEND_COMPUTE_CRC32C="${BACKEND_COMPUTE_CRC32C:-true}"
 
 # ============================================================
@@ -44,7 +44,7 @@ BACKEND_COMPUTE_CRC32C="${BACKEND_COMPUTE_CRC32C:-true}"
 
 BACKEND_BIN="${BUILD_DIR}/backend/us3_turbo_backend"
 PROXY_BIN="${BUILD_DIR}/proxy/us3_turbo_proxy"
-BENCH_BIN="${BUILD_DIR}/rtest/examples/us3_turbo_gds_bench_example"
+BENCH_BIN="${BUILD_DIR}/rtest/bench/gds/us3_turbo_bench_gds_put"
 
 # ---- 检查二进制存在 ----
 for bin in "$BACKEND_BIN" "$PROXY_BIN" "$BENCH_BIN"; do

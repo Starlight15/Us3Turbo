@@ -1,15 +1,15 @@
-// gds_bench_example.cpp — GDS PUT 基准测试。
+// gds_put_bench.cpp — GDS 单步 PUT 性能基准。
 //
-// 可指定对象大小、数量、并发数,测量 GDS 上传的吞吐与时延。
+// 可指定对象大小、数量、并发数，测量 GDS 上传的吞吐与时延。
 //
 // 用法:
-//   us3_turbo_gds_bench_example \
+//   us3_turbo_bench_gds_put \
 //     --proxy 192.168.1.198:9100 \
 //     --size 100M --count 100 --concurrency 8
 //
 // 模型:进程内共享一个 Client(PutObject 为 const,brpc channel 与
 // GdsMemoryManager 单例均线程安全);每个 worker 线程拥有独立的 device
-// buffer,从共享原子计数器领取对象序号并发上传。buffer 注册由各 worker
+// buffer,从共享原子计数器领取对象序号并发上传。
 // 首次 PutObject 时在 GdsPutChannel 内部懒注册,无需显式 Register。
 
 #include <algorithm>

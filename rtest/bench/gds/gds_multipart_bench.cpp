@@ -1,6 +1,4 @@
-// multipart_bench.cpp — GDS 分段上传性能基准（rtest/bench）。
-//
-// 编译期宏 BENCH_GDS=1 → GDS（device 显存，链 CUDA；worker 各自 cudaMalloc + H2D）。
+// gds_multipart_bench.cpp — GDS 分段上传性能基准（rtest/bench/gds）。
 //
 // 测量维度：
 //   1. 阶段耗时 —— 每轮记录 Create / ΣUploadPart / Complete 的 wall time，
@@ -20,7 +18,7 @@
 //   --concurrency 8 --reps 3 --total 256M --part-size 4M
 //
 // 说明：
-//   - part_size 默认 16M（= proxy multipart_part_size 上限）。非 last part 必须
+//   - part_size 默认 4M（rtest::kDefaultPartSize）。非 last part 必须
 //     恰好等于该值；当 total 不能被 part_size 整除时，最后一段 part <
 //     part_size， 由 proxy 在 Complete 时校验，符合 S3 语义。
 //   - reps：每 worker 重复完整 multipart 上传的轮数，串行模式下即采样数。
@@ -45,22 +43,14 @@
 #include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
-#if defined(BENCH_GDS)
 #include <cuda_runtime.h>
-#endif
 
 namespace {
 
 using clk = std::chrono::steady_clock;
 using ms_double = std::chrono::duration<double, std::milli>;
 
-// ---- 编译期通路选择 ----
-#if defined(BENCH_GDS)
 constexpr char kPathName[] = "gds";
-constexpr bool kIsGds = true;
-#else
-#error "BENCH_GDS must be defined"
-#endif
 
 // ---- 参数 ----
 struct Args {
@@ -354,7 +344,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
                 << "  --proxy ADDR        proxy endpoint (default "
                    "192.168.1.198:9100)\n"
                 << "  --total SIZE        total object size (default 64M)\n"
-                << "  --part-size SIZE    part size (default 16M, <=16M)\n"
+                << "  --part-size SIZE    part size (default 4M, <=16M)\n"
                 << "  --reps N            reps per worker (default 5)\n"
                 << "  --warmup N          warmup rounds (default 0)\n"
                 << "  --concurrency N     workers (default 1)\n"

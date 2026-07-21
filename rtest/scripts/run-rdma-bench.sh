@@ -14,9 +14,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="${PROJECT_DIR}/build"
-EXAMPLE_BIN="${BUILD_DIR}/rtest/examples/us3_turbo_rdma_put_example"
+EXAMPLE_BIN="${BUILD_DIR}/rtest/examples/rdma/us3_turbo_rdma_put_example"
 
 # ---- 默认参数 ----
 MODE="single"        # single | multipart | both
