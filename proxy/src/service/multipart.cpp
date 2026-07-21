@@ -191,7 +191,7 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
   LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}", upload_id, part_number,
             block_key, result.crc32c);
 
-  /* 写索引 + 填输出；索引失败回滚已写块。 */
+  /* 3. 写索引并填充输出。索引失败回滚已写块。 */
   const std::vector<std::uint32_t> crcs{result.crc32c};
   if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id, part_number);
@@ -226,7 +226,7 @@ int Multipart::UploadPartRdma(const std::string& request_id, const std::string& 
     return PROXY_ERR_INVALID_PARAM;
   }
 
-  /* 写单块（整 part）。失败时无已写 block，直接返回，无需回滚。 */
+  /* 2. 写整 part 到 backend。 */
   const auto result = client_->PutBlockRdma(block_key, rdma_token, /*source_offset=*/0, part_size);
   if (result.ret_code != 0) {
     LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id, part_number,
@@ -236,7 +236,7 @@ int Multipart::UploadPartRdma(const std::string& request_id, const std::string& 
   LOG_DEBUG(request_id, "upload={} part={} block ok key={} crc={:#x}", upload_id, part_number,
             block_key, result.crc32c);
 
-  /* 写索引 + 填输出；索引失败回滚已写块。 */
+  /* 3. 写索引并填充输出。索引失败回滚已写块。 */
   const std::vector<std::uint32_t> crcs{result.crc32c};
   if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out)) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id, part_number);
@@ -343,7 +343,7 @@ int Multipart::CompleteUpload(
   out.etag = final_etag;
   out.object_size = total_size;
 
-  /* 10) 清理 upload 索引 */
+  /* 10. 清理 upload 索引。 */
   index_->Remove(upload_id);
 
   LOG_INFO(request_id, "completed object_id={} size={} etag={} parts={}", out.object_id,
@@ -357,7 +357,9 @@ bool Multipart::AbortUpload(const std::string& request_id, const std::string& up
   return true;
 }
 
-/* s3 语义：part_number 升序无重复（允许间隙），此处校验严格升序 */
+/*
+ * 校验 parts 严格升序无重复（s3 语义允许间隙，但此处不做，简化实现）。
+ */
 int Multipart::ValidateParts(const std::string& request_id, const std::vector<PartRecord>& parts) {
   if (parts.empty()) {
     LOG_WARN(request_id, "no parts uploaded");
@@ -391,7 +393,9 @@ int Multipart::ValidatePartSizes(const std::string& request_id,
   return 0;
 }
 
-/* 单 part → 该 part 的 etag；多 part → LE count + SHA1(etags) + base64 */
+/*
+ * 计算最终 etag：单 part = 该 part etag；多 part = LE(count) + SHA1(所有 etag) + base64。
+ */
 std::string Multipart::ComputeFinalETag(const std::vector<PartRecord>& parts) {
   std::vector<std::string> etags;
   etags.reserve(parts.size());
