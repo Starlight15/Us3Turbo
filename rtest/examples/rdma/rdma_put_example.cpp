@@ -19,48 +19,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "client/src/common/request.h"
+#include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
-namespace {
-
-bool ParseSize(const std::string& s, std::uint64_t& out) {
-  if (s.empty()) return false;
-  std::uint64_t num = 0;
-  std::size_t i = 0;
-  for (; i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])); ++i) {
-    num = num * 10 + static_cast<std::uint64_t>(s[i] - '0');
-  }
-  if (i == 0) return false;
-  std::uint64_t mul = 1;
-  if (i < s.size()) {
-    if (i + 1 != s.size()) return false;
-    switch (std::tolower(static_cast<unsigned char>(s[i]))) {
-      case 'b':
-        mul = 1ULL;
-        break;
-      case 'k':
-        mul = 1024ULL;
-        break;
-      case 'm':
-        mul = 1024ULL * 1024;
-        break;
-      case 'g':
-        mul = 1024ULL * 1024 * 1024;
-        break;
-      default:
-        return false;
-    }
-  }
-  out = num * mul;
-  return true;
-}
-
-}  // namespace
+// (no anonymous namespace — common.h helpers used directly)
 
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
@@ -88,7 +56,7 @@ int main(int argc, char** argv) {
       if (!need(proxy_addr)) return 2;
     } else if (arg == "--size") {
       std::string v;
-      if (!need(v) || !ParseSize(v, bytes)) {
+      if (!need(v) || !rtest::ParseSize(v, bytes)) {
         std::cerr << "bad --size\n";
         return 2;
       }
@@ -110,7 +78,7 @@ int main(int argc, char** argv) {
       multipart = true;
     } else if (arg == "--part-size") {
       std::string v;
-      if (!need(v) || !ParseSize(v, part_size)) {
+      if (!need(v) || !rtest::ParseSize(v, part_size)) {
         std::cerr << "bad --part-size\n";
         return 2;
       }
@@ -134,7 +102,7 @@ int main(int argc, char** argv) {
   // concurrency==1 且 reps==1 且非分段时走原单次路径
   if (!multipart && concurrency == 1 && reps == 1) {
     std::vector<std::byte> host(bytes);
-    for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
+    rtest::FillHostPattern(host);
 
     ClientProxyPutRequest req;
     req.bucket = "test-bucket";
@@ -170,7 +138,7 @@ int main(int argc, char** argv) {
 
     // 准备数据：单块 host buffer 对应整对象（每 part 从中切片引用）
     std::vector<std::byte> host(bytes);
-    for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
+    rtest::FillHostPattern(host);
 
     // 创建分段上传会话
     std::string upload_id;
@@ -184,10 +152,13 @@ int main(int argc, char** argv) {
     std::cout << "upload_id=" << upload_id << " parts=" << num_parts
               << " part_size=" << part_size << " total=" << bytes << "\n";
 
-    // 并发上传各 part
+    // 并发上传各 part，收集 etag 用于 CompleteMultipartUpload
     std::atomic<std::uint64_t> ok_parts{0};
     std::atomic<std::uint64_t> fail_parts{0};
     std::atomic<std::uint64_t> total_bytes{0};
+    std::mutex parts_mutex;
+    std::vector<Client::PartInfo> parts;
+    parts.reserve(num_parts);
     std::barrier part_gate(static_cast<std::ptrdiff_t>(concurrency));
 
     auto part_worker = [&](std::uint32_t start_part) {
@@ -204,6 +175,8 @@ int main(int argc, char** argv) {
         if (client.UploadPartRdma(upload_id, p + 1, buf, etag, perr)) {
           ok_parts.fetch_add(1, std::memory_order_relaxed);
           total_bytes.fetch_add(sz, std::memory_order_relaxed);
+          std::lock_guard<std::mutex> lock(parts_mutex);
+          parts.push_back({p + 1, etag});
         } else {
           fail_parts.fetch_add(1, std::memory_order_relaxed);
           std::cerr << "[part=" << (p + 1) << "] UploadPartRdma FAILED: " << perr << "\n";
@@ -220,14 +193,14 @@ int main(int argc, char** argv) {
     if (fail_parts.load() > 0) {
       std::cerr << "some parts failed, aborting upload\n";
       std::string aerr;
-      client.AbortMultipartUpload(upload_id, aerr);
+      (void)client.AbortMultipartUpload(upload_id, aerr);
       client.Shutdown();
       return 1;
     }
 
     // 完成分段上传
     Client::CompletedMultipart cmpl;
-    if (!client.CompleteMultipartUpload(upload_id, {}, cmpl)) {
+    if (!client.CompleteMultipartUpload(upload_id, parts, cmpl)) {
       std::cerr << "CompleteMultipartUpload FAILED: " << cmpl.error << "\n";
       client.Shutdown();
       return 1;

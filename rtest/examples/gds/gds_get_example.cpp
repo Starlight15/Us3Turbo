@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "client/src/common/request.h"
+#include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
@@ -32,60 +33,7 @@ namespace {
 using clk = std::chrono::steady_clock;
 using ms_double = std::chrono::duration<double, std::milli>;
 
-bool ParseSize(std::string_view s, std::uint64_t& out) {
-  if (s.empty()) return false;
-  std::uint64_t num = 0;
-  std::size_t i = 0;
-  for (; i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])); ++i) {
-    num = num * 10 + static_cast<std::uint64_t>(s[i] - '0');
-  }
-  if (i == 0) return false;
-  std::uint64_t mul = 1;
-  if (i < s.size()) {
-    if (i + 1 != s.size()) return false;
-    switch (std::tolower(static_cast<unsigned char>(s[i]))) {
-      case 'b':
-        mul = 1ULL;
-        break;
-      case 'k':
-        mul = 1024ULL;
-        break;
-      case 'm':
-        mul = 1024ULL * 1024;
-        break;
-      case 'g':
-        mul = 1024ULL * 1024 * 1024;
-        break;
-      default:
-        return false;
-    }
-  }
-  out = num * mul;
-  return true;
-}
-
-std::string HumanBytes(std::uint64_t b) {
-  constexpr double K = 1024.0;
-  char buf[64];
-  if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
-  else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
-  else if (b >= static_cast<std::uint64_t>(K))
-    std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
-  else
-    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
-  return buf;
-}
-
-// 生成确定性 pattern 到 host buffer。
-void FillPattern(std::vector<std::byte>& buf, std::uint64_t offset_base = 0) {
-  for (std::size_t i = 0; i < buf.size(); ++i) {
-    buf[i] = static_cast<std::byte>((i + offset_base) % 251U);
-  }
-}
-
-// D2H 拷贝 + 逐字节比对。
+// D2H 拷贝 + rtest::VerifyHostBuffer 逐字节比对。
 bool VerifyGet(const void* dev_buf, std::size_t size, const std::vector<std::byte>& expected,
                const std::string& tag) {
   std::vector<std::byte> host_read(size);
@@ -94,28 +42,7 @@ bool VerifyGet(const void* dev_buf, std::size_t size, const std::vector<std::byt
     std::cerr << "[" << tag << "] D2H failed: " << cudaGetErrorString(e) << "\n";
     return false;
   }
-  if (host_read.size() != expected.size()) {
-    std::cerr << "[" << tag << "] size mismatch: got " << host_read.size() << " want "
-              << expected.size() << "\n";
-    return false;
-  }
-  std::size_t mismatches = 0;
-  std::size_t first_mismatch = 0;
-  for (std::size_t i = 0; i < host_read.size(); ++i) {
-    if (host_read[i] != expected[i]) {
-      if (mismatches == 0) first_mismatch = i;
-      ++mismatches;
-    }
-  }
-  if (mismatches > 0) {
-    std::cerr << "[" << tag << "] DATA MISMATCH: " << mismatches
-              << " bytes differ, first at offset " << first_mismatch << " (got 0x" << std::hex
-              << static_cast<unsigned>(host_read[first_mismatch]) << " want 0x"
-              << static_cast<unsigned>(expected[first_mismatch]) << std::dec << ")\n";
-    return false;
-  }
-  std::cout << "[" << tag << "] data VERIFIED OK (" << HumanBytes(size) << ")\n";
-  return true;
+  return rtest::VerifyHostBuffer(host_read.data(), size, expected, tag);
 }
 
 // ========== 单步 PUT + GET 验证 ==========
@@ -128,7 +55,7 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
 
   std::cout << "\n========== Single PUT + GET ==========\n"
             << "  key       : " << key << "\n"
-            << "  size      : " << HumanBytes(single_size) << "\n";
+            << "  size      : " << rtest::HumanBytes(single_size) << "\n";
 
   // 分配一个 GPU buffer，PUT 和 GET 共用，中间不释放
   void* dev_buf = nullptr;
@@ -140,7 +67,7 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
 
   // ---- PUT ----
   std::vector<std::byte> host_data(single_size);
-  FillPattern(host_data);
+  rtest::FillHostPattern(host_data);
   e = cudaMemcpy(dev_buf, host_data.data(), single_size, cudaMemcpyHostToDevice);
   if (e != cudaSuccess) {
     std::cerr << "cudaMemcpy H2D: " << cudaGetErrorString(e) << "\n";
@@ -182,7 +109,7 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
     cudaFree(dev_buf);
     return false;
   }
-  std::cout << "  StatObject OK: object_size=" << HumanBytes(object_size) << "\n";
+  std::cout << "  StatObject OK: object_size=" << rtest::HumanBytes(object_size) << "\n";
   if (object_size != single_size) {
     std::cerr << "  StatObject size mismatch: got " << object_size << " want " << single_size
               << "\n";
@@ -248,15 +175,15 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
   const std::uint64_t total = part_size * num_parts;
   std::cout << "\n========== Multipart PUT + GET ==========\n"
             << "  key       : " << key << "\n"
-            << "  part_size : " << HumanBytes(part_size) << "\n"
+            << "  part_size : " << rtest::HumanBytes(part_size) << "\n"
             << "  num_parts : " << num_parts << "\n"
-            << "  total     : " << HumanBytes(total) << "\n";
+            << "  total     : " << rtest::HumanBytes(total) << "\n";
 
   // ---- 构造完整 host 数据（各 part 用不同 pattern）----
   std::vector<std::byte> host_full(total);
   for (std::uint32_t p = 0; p < num_parts; ++p) {
     std::vector<std::byte> part_buf(part_size);
-    FillPattern(part_buf, static_cast<std::uint64_t>(p) * part_size);
+    rtest::FillHostPattern(part_buf, static_cast<std::uint64_t>(p) * part_size);
     std::memcpy(host_full.data() + p * part_size, part_buf.data(), part_size);
   }
 
@@ -292,7 +219,7 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
   for (std::uint32_t i = 1; i <= num_parts; ++i) {
     // 准备该 part 数据到 GPU
     std::vector<std::byte> part_buf(part_size);
-    FillPattern(part_buf, static_cast<std::uint64_t>(i - 1) * part_size);
+    rtest::FillHostPattern(part_buf, static_cast<std::uint64_t>(i - 1) * part_size);
     e = cudaMemcpy(dev_put, part_buf.data(), part_size, cudaMemcpyHostToDevice);
     if (e != cudaSuccess) {
       std::cerr << "cudaMemcpy H2D part " << i << ": " << cudaGetErrorString(e) << "\n";
@@ -343,7 +270,7 @@ bool TestMultipartPutGet(us3_turbo::client::Client& client, const std::string& b
     cudaFree(dev_get);
     return false;
   }
-  std::cout << "  StatObject OK: object_size=" << HumanBytes(object_size) << "\n";
+  std::cout << "  StatObject OK: object_size=" << rtest::HumanBytes(object_size) << "\n";
   if (object_size != total) {
     std::cerr << "  StatObject size mismatch: got " << object_size << " want " << total << "\n";
     cudaFree(dev_put);
@@ -444,13 +371,13 @@ int main(int argc, char** argv) {
       if (!need(proxy_addr)) return 2;
     } else if (arg == "--single-size") {
       std::string v;
-      if (!need(v) || !ParseSize(v, single_size)) {
+      if (!need(v) || !rtest::ParseSize(v, single_size)) {
         std::cerr << "bad --single-size\n";
         return 2;
       }
     } else if (arg == "--part-size") {
       std::string v;
-      if (!need(v) || !ParseSize(v, part_size)) {
+      if (!need(v) || !rtest::ParseSize(v, part_size)) {
         std::cerr << "bad --part-size\n";
         return 2;
       }
@@ -474,9 +401,9 @@ int main(int argc, char** argv) {
 
   std::cout << "=== GDS PUT+GET E2E Verification ===\n"
             << "  proxy       : " << proxy_addr << "\n"
-            << "  single size : " << HumanBytes(single_size) << "\n"
-            << "  multipart   : " << HumanBytes(part_size) << " x " << num_parts << " = "
-            << HumanBytes(part_size * num_parts) << "\n"
+            << "  single size : " << rtest::HumanBytes(single_size) << "\n"
+            << "  multipart   : " << rtest::HumanBytes(part_size) << " x " << num_parts << " = "
+            << rtest::HumanBytes(part_size * num_parts) << "\n"
             << "  verify-crc  : " << (verify ? "on" : "off") << "\n"
             << std::endl;
 
@@ -493,9 +420,7 @@ int main(int argc, char** argv) {
   int failures = 0;
 
   // 使用时间戳后缀避免与上次运行残留数据冲突
-  const auto ts = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
-                                     std::chrono::system_clock::now().time_since_epoch())
-                                     .count());
+  const auto ts = rtest::MakeTimestampSuffix();
 
   // 1. 不存在的 key → 正确报错
   if (!TestStatNonExistent(client, bucket)) ++failures;

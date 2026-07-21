@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "client/src/common/request.h"
+#include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
@@ -34,52 +35,6 @@ namespace {
 
 using clk = std::chrono::steady_clock;
 using ms_double = std::chrono::duration<double, std::milli>;
-
-bool ParseSize(std::string_view s, std::uint64_t& out) {
-  if (s.empty()) return false;
-  std::uint64_t num = 0;
-  std::size_t i = 0;
-  for (; i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])); ++i) {
-    num = num * 10 + static_cast<std::uint64_t>(s[i] - '0');
-  }
-  if (i == 0) return false;
-  std::uint64_t mul = 1;
-  if (i < s.size()) {
-    if (i + 1 != s.size()) return false;
-    switch (std::tolower(static_cast<unsigned char>(s[i]))) {
-      case 'b':
-        mul = 1ULL;
-        break;
-      case 'k':
-        mul = 1024ULL;
-        break;
-      case 'm':
-        mul = 1024ULL * 1024;
-        break;
-      case 'g':
-        mul = 1024ULL * 1024 * 1024;
-        break;
-      default:
-        return false;
-    }
-  }
-  out = num * mul;
-  return true;
-}
-
-std::string HumanBytes(std::uint64_t b) {
-  constexpr double K = 1024.0;
-  char buf[64];
-  if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
-  else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
-  else if (b >= static_cast<std::uint64_t>(K))
-    std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
-  else
-    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
-  return buf;
-}
 
 }  // namespace
 
@@ -105,7 +60,7 @@ int main(int argc, char** argv) {
       if (!need(proxy_addr)) return 2;
     } else if (arg == "--part-size") {
       std::string v;
-      if (!need(v) || !ParseSize(v, part_size)) {
+      if (!need(v) || !rtest::ParseSize(v, part_size)) {
         std::cerr << "bad --part-size\n";
         return 2;
       }
@@ -128,9 +83,9 @@ int main(int argc, char** argv) {
   const std::uint64_t total = part_size * num_parts;
   std::cout << "=== GDS multipart ===\n"
             << "  proxy     : " << proxy_addr << "\n"
-            << "  part size : " << HumanBytes(part_size) << "\n"
+            << "  part size : " << rtest::HumanBytes(part_size) << "\n"
             << "  num parts : " << num_parts << "\n"
-            << "  total     : " << HumanBytes(total) << "\n"
+            << "  total     : " << rtest::HumanBytes(total) << "\n"
             << "  verify-crc: " << (verify ? "on" : "off") << "\n"
             << std::endl;
 
@@ -142,7 +97,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::vector<std::byte> host(part_size);
-  for (std::size_t i = 0; i < part_size; ++i) host[i] = static_cast<std::byte>(i % 251U);
+  rtest::FillHostPattern(host);
   e = cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice);
   if (e != cudaSuccess) {
     std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";

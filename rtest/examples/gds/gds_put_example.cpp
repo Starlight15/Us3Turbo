@@ -1,3 +1,11 @@
+// gds_put_example.cpp — GDS 单步 PUT 端到端示例（rtest/examples/gds）。
+//
+// client 内部分配 cuObj token，proxy 通过 RDMA-READ 从 GPU 显存拉取数据
+// 写入后端存储。演示最简单的 GDS PUT API 调用流程。
+//
+// 用法:
+//   us3_turbo_gds_put_example --proxy 192.168.1.198:9100 [--size 4M]
+
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -5,63 +13,40 @@
 #include <vector>
 
 #include "client/src/common/request.h"
+#include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
 
-namespace {
-
-// 解析 "16M"/"17M"/"100M" 等，支持 B/K/M/G（1024 进制）。
-bool ParseSize(std::string_view s, std::size_t& out) {
-  if (s.empty()) return false;
-  std::size_t num = 0;
-  std::size_t i = 0;
-  for (; i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])); ++i) {
-    num = num * 10 + static_cast<std::size_t>(s[i] - '0');
-  }
-  if (i == 0) return false;
-  std::size_t mul = 1;
-  if (i < s.size()) {
-    if (i + 1 != s.size()) return false;
-    switch (std::tolower(static_cast<unsigned char>(s[i]))) {
-      case 'b':
-        mul = 1ULL;
-        break;
-      case 'k':
-        mul = 1024ULL;
-        break;
-      case 'm':
-        mul = 1024ULL * 1024;
-        break;
-      case 'g':
-        mul = 1024ULL * 1024 * 1024;
-        break;
-      default:
-        return false;
-    }
-  }
-  out = num * mul;
-  return true;
-}
-
-}  // namespace
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = "192.168.1.198:9100";
-  std::size_t bytes = 100UL * 1024UL * 1024UL;  // 默认 100M（超 16M 单步上限，用于演示拒绝）
+  std::string proxy_addr = "192.168.1.198:9100";
+  std::uint64_t bytes = 4ULL * 1024 * 1024;  // 默认 4M（单步上限 16M 内）
+
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
-    if (arg == "--size") {
+    auto need = [&](std::string& v) -> bool {
       if (i + 1 >= argc) {
-        std::cerr << "missing value for --size\n";
-        return 2;
+        std::cerr << "missing value for " << arg << "\n";
+        return false;
       }
-      if (!ParseSize(argv[++i], bytes)) {
+      v = argv[++i];
+      return true;
+    };
+    if (arg == "--proxy") {
+      if (!need(proxy_addr)) return 2;
+    } else if (arg == "--size") {
+      std::string v;
+      if (!need(v) || !rtest::ParseSize(v, bytes)) {
         std::cerr << "bad --size\n";
         return 2;
       }
+    } else if (arg == "--help" || arg == "-h") {
+      std::cout << "usage: us3_turbo_gds_put_example [options]\n"
+                << "  --proxy HOST:PORT   proxy endpoint (default 192.168.1.198:9100)\n"
+                << "  --size N[K|M|G]     object size (default 4M, <=16M)\n";
+      return 0;
     } else {
       std::cerr << "unknown arg: " << arg << "\n";
       return 2;
@@ -75,7 +60,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::vector<std::byte> host(bytes);
-  for (std::size_t i = 0; i < bytes; ++i) host[i] = static_cast<std::byte>(i % 251U);
+  rtest::FillHostPattern(host);
   e = cudaMemcpy(dev, host.data(), bytes, cudaMemcpyHostToDevice);
   if (e != cudaSuccess) {
     std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";
