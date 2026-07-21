@@ -11,3 +11,7 @@ rtest_add_target(us3_turbo_rtest_rdma_multipart_part_number_violation
 # T1.3 — 单 part = 整对象
 rtest_add_target(us3_turbo_rtest_rdma_multipart_single_part
   test_multipart_single_part.cpp)
+
+# T3.1 — 单步 PUT（1K / 4M / 16M 尺寸验证）
+rtest_add_target(us3_turbo_rtest_rdma_put_single
+  test_put_single.cpp)

@@ -19,3 +19,7 @@ rtest_add_target(us3_turbo_rtest_gds_get_single_block_crc
 # T2.2 — GET 多块对象 hash
 rtest_add_target(us3_turbo_rtest_gds_get_multi_block_hash
   test_get_multi_block_hash.cpp NEEDS_CUDA)
+
+# T3.1 — 单步 PUT（1K / 4M / 16M 尺寸验证）
+rtest_add_target(us3_turbo_rtest_gds_put_single
+  test_put_single.cpp NEEDS_CUDA)
