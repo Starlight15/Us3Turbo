@@ -20,19 +20,16 @@
 // 说明：
 //   - part_size 默认 4M（rtest::kDefaultPartSize）。非 last part 必须
 //     恰好等于该值；当 total 不能被 part_size 整除时，最后一段 part <
-//     part_size， 由 proxy 在 Complete 时校验，符合 S3 语义。
+//     part_size，由 proxy 在 Complete 时校验，符合 S3 语义。
 //   - reps：每 worker 重复完整 multipart 上传的轮数，串行模式下即采样数。
 //   - warmup：正式计时前的预热轮数（不计入统计），用于 token/descriptor 懒注册
 //     与连接池预热，消除首轮冷启动偏差。
 
-#include <algorithm>
 #include <atomic>
 #include <barrier>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -40,70 +37,32 @@
 #include <vector>
 
 #include "client/src/common/request.h"
-#include "rtest/common.h"
+#include "rtest/bench/harness.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
 
 namespace {
 
-using clk = std::chrono::steady_clock;
-using ms_double = std::chrono::duration<double, std::milli>;
+using rtest::bench::clk;
+using rtest::bench::ms_double;
+using rtest::bench::RoundResult;
+using rtest::bench::StartSetter;
 
 constexpr char kPathName[] = "gds";
 
-// ---- 参数 ----
-struct Args {
-  std::string proxy{"192.168.1.198:9100"};
-  std::uint64_t total{64ULL * 1024 * 1024};
+// ---- 参数（通路特定字段通过派生添加） ----
+
+struct Args : rtest::bench::BaseArgs {
   std::uint64_t part_size{rtest::kDefaultPartSize};
-  std::uint32_t reps{5};
-  std::uint32_t warmup{0};
-  std::uint32_t concurrency{1};
-  std::string bucket{"bench"};
-  std::string key_prefix{"bench"};
-  bool verify_crc32c{false};
-  bool trace{false};
-  bool csv{false};
 };
 
-// ---- 单轮 multipart 各阶段耗时 ----
-struct RoundLatency {
-  double create_ms{0};
-  double upload_ms{0};  // Σ 所有 part 的 UploadPart
-  double complete_ms{0};
-  double total_ms{0};  // create + upload + complete
-  std::uint64_t bytes{0};
-  bool ok{false};
-};
+// ---- 单轮 multipart 执行 ----
 
-// 统计辅助：中位数与百分位。
-double Median(std::vector<double> v) {
-  if (v.empty()) return 0.0;
-  std::sort(v.begin(), v.end());
-  return v[v.size() / 2];
-}
-
-double Percentile(std::vector<double> v, double p) {
-  if (v.empty()) return 0.0;
-  std::sort(v.begin(), v.end());
-  const std::size_t idx =
-      std::min(v.size() - 1, static_cast<std::size_t>(p / 100.0 * (v.size() - 1)));
-  return v[idx];
-}
-
-double Mean(const std::vector<double>& v) {
-  if (v.empty()) return 0.0;
-  double s = 0.0;
-  for (double x : v) s += x;
-  return s / static_cast<double>(v.size());
-}
-
-// ---- 上传一轮 multipart，返回各阶段耗时 ----
-RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::uint32_t round_idx,
-                         std::uint32_t worker_idx, void* dev_buf) {
+RoundResult RunOneRound(us3_turbo::client::Client& client, const Args& a, std::uint32_t round_idx,
+                        std::uint32_t worker_idx, void* dev_buf) {
   using namespace us3_turbo::client;
-  RoundLatency lat;
+  RoundResult lat;
   lat.bytes = a.total;
 
   const std::string key = a.key_prefix + "-" + kPathName + "-w" + std::to_string(worker_idx) +
@@ -113,15 +72,14 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::
   const auto t_create0 = clk::now();
   const PutDataPath path = PutDataPath::kGds;
   if (!client.CreateMultipartUpload(a.bucket, key, path, upload_id, error)) {
-    std::cerr << "[w" << worker_idx << " r" << round_idx
-              << "] CreateMultipartUpload failed: " << error << "\n";
+    lat.error = "CreateMultipartUpload failed: " + error;
+    std::cerr << "[w" << worker_idx << " r" << round_idx << "] " << lat.error << "\n";
     return lat;
   }
   const auto t_create1 = clk::now();
-  lat.create_ms = ms_double(t_create1 - t_create0).count();
+  lat.setup_ms = ms_double(t_create1 - t_create0).count();
 
-  // 切 part：除最后一段外每段 == part_size；总大小 <= part_size 时退化为单
-  // part。
+  // 切 part：除最后一段外每段 == part_size。
   const std::uint32_t num_parts =
       static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
 
@@ -136,8 +94,8 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::
         upload_id, i, ConstBufferView{.data = static_cast<char*>(dev_buf) + off, .size = len},
         etag, error);
     if (!ok) {
-      std::cerr << "[w" << worker_idx << " r" << round_idx << "] UploadPart " << i
-                << " failed: " << error << "\n";
+      lat.error = "UploadPart " + std::to_string(i) + " failed: " + error;
+      std::cerr << "[w" << worker_idx << " r" << round_idx << "] " << lat.error << "\n";
       std::string abort_err;
       (void)client.AbortMultipartUpload(upload_id, abort_err);
       return lat;
@@ -145,40 +103,35 @@ RoundLatency RunOneRound(us3_turbo::client::Client& client, const Args& a, std::
     parts.push_back({i, etag});
   }
   const auto t_up1 = clk::now();
-  lat.upload_ms = ms_double(t_up1 - t_up0).count();
+  lat.data_plane_ms = ms_double(t_up1 - t_up0).count();
 
   Client::CompletedMultipart done;
   const auto t_cmp0 = clk::now();
   const bool ok = client.CompleteMultipartUpload(upload_id, parts, done);
   const auto t_cmp1 = clk::now();
-  lat.complete_ms = ms_double(t_cmp1 - t_cmp0).count();
+  lat.control_plane_ms = ms_double(t_cmp1 - t_cmp0).count();
 
   if (!ok || done.object_size != a.total) {
-    std::cerr << "[w" << worker_idx << " r" << round_idx << "] Complete failed: " << done.error
-              << " size=" << done.object_size << "\n";
+    lat.error = "Complete failed: " + done.error + " size=" + std::to_string(done.object_size);
+    std::cerr << "[w" << worker_idx << " r" << round_idx << "] " << lat.error << "\n";
     return lat;
   }
 
-  lat.total_ms = lat.create_ms + lat.upload_ms + lat.complete_ms;
+  lat.total_ms = lat.setup_ms + lat.data_plane_ms + lat.control_plane_ms;
   lat.ok = true;
   return lat;
 }
 
-// barrier 的 completion functor：最后一个到达的线程记录统一起跑时刻。
-struct StartSetter {
-  std::atomic<clk::time_point>* start;
-  void operator()() const noexcept { start->store(clk::now(), std::memory_order_relaxed); }
-};
+// ---- worker ----
 
 struct WorkerStats {
-  std::vector<RoundLatency> rounds;
+  std::vector<RoundResult> rounds;
   std::uint32_t ok{0};
   std::uint32_t fail{0};
   clk::time_point end{};
   bool ready{false};
 };
 
-// ---- worker：各自分配 buffer，barrier 对齐后跑 reps 轮 ----
 void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
             const std::vector<std::byte>& host_pattern, std::barrier<StartSetter>& sync,
             std::atomic<clk::time_point>& start, WorkerStats& stats) {
@@ -210,7 +163,7 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
 
   stats.rounds.reserve(a.reps);
   for (std::uint32_t r = 0; r < a.reps; ++r) {
-    RoundLatency lat = RunOneRound(client, a, r, wid, data_buf);
+    RoundResult lat = RunOneRound(client, a, r, wid, data_buf);
     if (lat.ok) {
       ++stats.ok;
     } else {
@@ -224,68 +177,8 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
   cudaFree(dev);
 }
 
-// ---- 打印与 CSV ----
-void PrintSummary(const Args& a, std::uint32_t ok, std::uint32_t fail, std::uint64_t total_bytes,
-                  double wall_ms, const std::vector<RoundLatency>& all) {
-  const double wall_s = wall_ms / 1000.0;
-  const double tput =
-      (wall_s > 0.0) ? static_cast<double>(total_bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
-
-  std::vector<double> create_ms, upload_ms, complete_ms, total_ms;
-  create_ms.reserve(all.size());
-  upload_ms.reserve(all.size());
-  complete_ms.reserve(all.size());
-  total_ms.reserve(all.size());
-  for (const auto& r : all) {
-    if (!r.ok) continue;
-    create_ms.push_back(r.create_ms);
-    upload_ms.push_back(r.upload_ms);
-    complete_ms.push_back(r.complete_ms);
-    total_ms.push_back(r.total_ms);
-  }
-
-  std::cout << "=== results (" << kPathName << " multipart, conc=" << a.concurrency
-            << ", reps=" << a.reps << ") ===\n"
-            << "  ok          : " << ok << "\n"
-            << "  fail        : " << fail << "\n"
-            << "  bytes       : " << rtest::HumanBytes(total_bytes) << "\n"
-            << "  wall time   : " << wall_ms << " ms\n"
-            << "  throughput  : " << tput << " MiB/s\n";
-  if (!total_ms.empty()) {
-    const double data_pct = (Mean(total_ms) > 0.0) ? Mean(upload_ms) / Mean(total_ms) * 100.0 : 0.0;
-    std::cout << "  per-round(ms): \n"
-              << "    create   : avg=" << Mean(create_ms) << "  p50=" << Median(create_ms)
-              << "  p95=" << Percentile(create_ms, 95)
-              << "  max=" << *std::max_element(create_ms.begin(), create_ms.end()) << "\n"
-              << "    upload   : avg=" << Mean(upload_ms) << "  p50=" << Median(upload_ms)
-              << "  p95=" << Percentile(upload_ms, 95)
-              << "  max=" << *std::max_element(upload_ms.begin(), upload_ms.end())
-              << "  (data-plane, " << data_pct << "% of round)\n"
-              << "    complete : avg=" << Mean(complete_ms) << "  p50=" << Median(complete_ms)
-              << "  p95=" << Percentile(complete_ms, 95)
-              << "  max=" << *std::max_element(complete_ms.begin(), complete_ms.end()) << "\n"
-              << "    total    : avg=" << Mean(total_ms) << "  p50=" << Median(total_ms)
-              << "  p95=" << Percentile(total_ms, 95)
-              << "  min=" << *std::min_element(total_ms.begin(), total_ms.end())
-              << "  max=" << *std::max_element(total_ms.begin(), total_ms.end()) << "\n";
-  }
-}
-
-void PrintCsv(const Args& a, const std::vector<RoundLatency>& all) {
-  // 表头
-  std::cout << "path,total_bytes,part_bytes,parts,concurrency,rep,"
-               "create_ms,upload_ms,complete_ms,total_ms,ok\n";
-  const std::uint32_t num_parts =
-      static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
-  std::uint32_t rep = 0;
-  for (const auto& r : all) {
-    std::cout << kPathName << "," << a.total << "," << a.part_size << "," << num_parts << ","
-              << a.concurrency << "," << rep++ << "," << r.create_ms << "," << r.upload_ms << ","
-              << r.complete_ms << "," << r.total_ms << "," << (r.ok ? 1 : 0) << "\n";
-  }
-}
-
 // ---- 参数解析 ----
+
 bool ParseArgs(int argc, char** argv, Args& a) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -341,8 +234,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       a.csv = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "usage: us3_turbo_bench_" << kPathName << "_multipart [options]\n"
-                << "  --proxy ADDR        proxy endpoint (default "
-                   "192.168.1.198:9100)\n"
+                << "  --proxy ADDR        proxy endpoint (default 192.168.1.198:9100)\n"
                 << "  --total SIZE        total object size (default 64M)\n"
                 << "  --part-size SIZE    part size (default 4M, <=16M)\n"
                 << "  --reps N            reps per worker (default 5)\n"
@@ -371,9 +263,6 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     std::cerr << "concurrency must be > 0\n";
     return false;
   }
-  // proxy 约束：part_size 上限 = backend MAX_VALUE_LENGTH(16M)。非 last part
-  // 必须恰好 == part_size，因此 part_size 应 ≤16M(除非刻意测更大 part 触发
-  // backend 拒绝，这里不做)。
   if (a.part_size > 16ULL * 1024 * 1024) {
     std::cerr << "part-size " << rtest::HumanBytes(a.part_size)
               << " > 16M (backend MAX_VALUE_LENGTH)\n";
@@ -388,6 +277,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   Args a;
+  a.warmup = 0;  // multipart 默认 0（与 BaseArgs::warmup=1 不同）
   if (!ParseArgs(argc, argv, a)) return 2;
 
   const std::uint32_t num_parts =
@@ -440,7 +330,7 @@ int main(int argc, char** argv) {
   // 聚合。
   std::uint32_t ok = 0, fail = 0;
   std::uint64_t total_bytes = 0;
-  std::vector<RoundLatency> all;
+  std::vector<RoundResult> all;
   clk::time_point end_max{};
   bool any_ready = false;
   for (std::size_t w = 0; w < nworkers; ++w) {
@@ -460,9 +350,11 @@ int main(int argc, char** argv) {
   const double wall_ms = ms_double(end_max - t_start).count();
 
   if (a.csv) {
-    PrintCsv(a, all);
+    rtest::bench::WriteCsv(kPathName, a, all, num_parts);
   } else {
-    PrintSummary(a, ok, fail, total_bytes, wall_ms, all);
+    rtest::bench::PrintReport("gds multipart, conc=" + std::to_string(a.concurrency) +
+                                  ", reps=" + std::to_string(a.reps),
+                              all, wall_ms);
   }
   std::cout.flush();
 

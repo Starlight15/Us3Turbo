@@ -113,7 +113,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
                 << "  --size N[K|M|G]          object size (default 100M)\n"
                 << "  --count N                number of objects (default 10)\n"
                 << "  --concurrency N          worker threads (default 1)\n"
-                << "  --warmup N               warmup ops, not counted (default 1)\n"
+                << "  --warmup N               warmup ops, not counted (default 0)\n"
                 << "  --bucket NAME            bucket (default bench)\n"
                 << "  --key-prefix STR         key prefix (default bench)\n"
                 << "  --verify-crc32c          enable client-side CRC32C verification\n"
@@ -214,6 +214,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   Args a;
+  a.warmup = 0;  // put bench 默认 0（与 BaseArgs::warmup=1 不同）
   if (!ParseArgs(argc, argv, a)) return 1;
 
   std::cout << "=== " << kPathName << " PUT bench ===\n"
