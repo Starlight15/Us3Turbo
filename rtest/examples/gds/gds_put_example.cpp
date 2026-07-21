@@ -1,15 +1,12 @@
-// gds_put_example.cpp — GDS 单步 PUT 端到端示例（rtest/examples/gds）。
+// gds_put_example.cpp — GDS 单步 PUT 最简示例。
 //
-// client 内部分配 cuObj token，proxy 通过 RDMA-READ 从 GPU 显存拉取数据
-// 写入后端存储。演示最简单的 GDS PUT API 调用流程。
-//
-// 用法:
-//   us3_turbo_gds_put_example --proxy 192.168.1.198:9100 [--size 4M]
+// 演示: cudaMalloc → H2D → PutObjectGds → 打印结果。
+// 运行: us3_turbo_gds_put_example [proxy_addr]
 
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "client/src/common/request.h"
@@ -21,79 +18,36 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  std::string proxy_addr = "192.168.1.198:9100";
-  std::uint64_t bytes = 4ULL * 1024 * 1024;  // 默认 4M（单步上限 16M 内）
+  const std::string proxy_addr = (argc > 1) ? argv[1] : "192.168.1.198:9100";
+  constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;  // 4 MiB
 
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    auto need = [&](std::string& v) -> bool {
-      if (i + 1 >= argc) {
-        std::cerr << "missing value for " << arg << "\n";
-        return false;
-      }
-      v = argv[++i];
-      return true;
-    };
-    if (arg == "--proxy") {
-      if (!need(proxy_addr)) return 2;
-    } else if (arg == "--size") {
-      std::string v;
-      if (!need(v) || !rtest::ParseSize(v, bytes)) {
-        std::cerr << "bad --size\n";
-        return 2;
-      }
-    } else if (arg == "--help" || arg == "-h") {
-      std::cout << "usage: us3_turbo_gds_put_example [options]\n"
-                << "  --proxy HOST:PORT   proxy endpoint (default 192.168.1.198:9100)\n"
-                << "  --size N[K|M|G]     object size (default 4M, <=16M)\n";
-      return 0;
-    } else {
-      std::cerr << "unknown arg: " << arg << "\n";
-      return 2;
-    }
-  }
-
+  // 1. 分配 GPU buffer + 填充测试数据
   void* dev = nullptr;
-  cudaError_t e = cudaMalloc(&dev, bytes);
-  if (e != cudaSuccess) {
-    std::cerr << "cudaMalloc: " << cudaGetErrorString(e) << "\n";
-    return 1;
-  }
-  std::vector<std::byte> host(bytes);
+  cudaMalloc(&dev, kSize);
+  std::vector<std::byte> host(kSize);
   rtest::FillHostPattern(host);
-  e = cudaMemcpy(dev, host.data(), bytes, cudaMemcpyHostToDevice);
-  if (e != cudaSuccess) {
-    std::cerr << "cudaMemcpy: " << cudaGetErrorString(e) << "\n";
-    cudaFree(dev);
-    return 1;
-  }
+  cudaMemcpy(dev, host.data(), kSize, cudaMemcpyHostToDevice);
 
-  ClientOptions opts;
-  opts.endpoint = proxy_addr;
+  // 2. 初始化 client
+  Client client(ClientOptions{.endpoint = proxy_addr});
+  client.Initialize();
 
-  Client client(std::move(opts));
-  if (!client.Initialize()) {
-    std::cerr << "Initialize failed\n";
-    cudaFree(dev);
-    return 1;
-  }
-
-  ClientProxyPutRequest req;
-  req.bucket = "test-bucket";
-  req.key = "obj1";
-  req.object_size = bytes;
-  req.path = PutDataPath::kGds;
-
+  // 3. PUT
   ClientProxyPutResponse resp;
-  bool put_ok = client.PutObjectGds(req, ConstBufferView{.data = dev, .size = bytes}, resp);
+  client.PutObjectGds(ClientProxyPutRequest{.bucket = "test-bucket",
+                                             .key = "gds-demo",
+                                             .object_size = kSize,
+                                             .path = PutDataPath::kGds},
+                       ConstBufferView{.data = dev, .size = kSize}, resp);
 
   cudaFree(dev);
+  client.Shutdown();
 
-  if (!put_ok) {
-    std::cerr << "PutObject FAILED\n";
-    return 1;
-  }
   const auto& r = resp.gds_result.value();
-  std::cout << "OK bytes=" << r.bytes_written << " etag=" << r.etag << "\n";
-  return 0;
+  if (r.bytes_written == kSize) {
+    std::cout << "OK etag=" << r.etag << " crc32c=0x" << std::hex << r.crc32c << std::dec << "\n";
+    return 0;
+  }
+  std::cerr << "FAILED\n";
+  return 1;
 }
