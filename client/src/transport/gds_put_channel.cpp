@@ -58,10 +58,27 @@ using detail::TraceLatency;
 
 }  // namespace
 
+bool GdsPutChannel::ValidateGdsRequest(const ClientProxyPutRequest& req,
+                                        ConstBufferView buffer) const {
+  if (req.path != PutDataPath::kGds) {
+    LOG_SYS_ERROR("GdsPutChannel: wrong path");
+    return false;
+  }
+  if (buffer.data == nullptr || buffer.size == 0) {
+    LOG_SYS_ERROR("GdsPutChannel: invalid buffer");
+    return false;
+  }
+  return true;
+}
+
 bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                             PutPathResult& res) const {
   assert(gds_mgr_ != nullptr);
   const std::string req_id = MakeReqId();  // 每次新生成,跨端日志关联
+
+  if (!ValidateGdsRequest(req, buffer)) {
+    return false;
+  }
 
   const bool trace = opts_.latency_trace;
   auto t0 = trace ? clk::now() : clk::time_point{};

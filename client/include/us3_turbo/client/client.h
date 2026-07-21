@@ -18,7 +18,6 @@ namespace us3_turbo::client {
 class GdsPutChannel;
 class GdsGetChannel;
 class RdmaPutChannel;
-class PutChannel;
 class GdsMemoryManager;
 class RdmaMemoryManager;
 
@@ -45,9 +44,13 @@ class Client {
   /** @brief 初始化 brpc 与 GDS/RDMA channel,幂等。 */
   [[nodiscard]] bool Initialize();
 
-  /**  @brief 统一 PUT 入口:按 req.path 选 GDS/RDMA 通路。*/
-  [[nodiscard]] bool PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
-                               ClientProxyPutResponse& resp) const;
+  /** @brief GDS 单步 PUT：device 显存，走 cuObj RDMA 链路。*/
+  [[nodiscard]] bool PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buffer,
+                                   ClientProxyPutResponse& resp) const;
+
+  /** @brief RDMA 单步 PUT：host 内存，走 libibverbs RDMA CM 链路。*/
+  [[nodiscard]] bool PutObjectRdma(const ClientProxyPutRequest& req, ConstBufferView buffer,
+                                    ClientProxyPutResponse& resp) const;
 
   // ===== 分段上传接口 =====
 
@@ -101,10 +104,6 @@ class Client {
   std::unique_ptr<GdsGetChannel> gds_get_channel_;
   std::unique_ptr<RdmaPutChannel> rdma_channel_;
   bool initialized_{false};
-
-  [[nodiscard]] bool ValidatePutPath(const ClientProxyPutRequest& req) const;
-
-  [[nodiscard]] PutChannel* SelectChannel(PutDataPath path) const noexcept;
 
   // 返回 client 进程内的 GDS/RDMA manager 单例（Initialize 时已确保可用）。
   [[nodiscard]] GdsMemoryManager* GdsManager() const;

@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
     req.path = PutDataPath::kRdma;
 
     ClientProxyPutResponse resp;
-    bool ok = client.PutObject(req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
+    bool ok = client.PutObjectRdma(req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
 
     client.Shutdown();
 
@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
       req.path = PutDataPath::kRdma;
 
       ClientProxyPutResponse resp;
-      bool ok = client.PutObject(req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
+      bool ok = client.PutObjectRdma(req, ConstBufferView{.data = host.data(), .size = bytes}, resp);
       if (ok) {
         ok_count.fetch_add(1, std::memory_order_relaxed);
       } else {

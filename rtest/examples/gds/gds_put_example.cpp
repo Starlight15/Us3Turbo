@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
   req.path = PutDataPath::kGds;
 
   ClientProxyPutResponse resp;
-  bool put_ok = client.PutObject(req, ConstBufferView{.data = dev, .size = bytes}, resp);
+  bool put_ok = client.PutObjectGds(req, ConstBufferView{.data = dev, .size = bytes}, resp);
 
   cudaFree(dev);
 

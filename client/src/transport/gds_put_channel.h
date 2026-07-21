@@ -22,6 +22,10 @@ class GdsPutChannel final : public PutChannel {
   [[nodiscard]] bool PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                              PutPathResult& res) const override;
 
+  /** @brief 请求校验：检查 buffer 为目标通路类型、大小合法。 */
+  [[nodiscard]] bool ValidateGdsRequest(const ClientProxyPutRequest& req,
+                                         ConstBufferView buffer) const;
+
  private:
   const ClientOptions& opts_;
   const ProxyRpc& proxy_;

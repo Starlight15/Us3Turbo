@@ -17,6 +17,16 @@
 
 namespace us3_turbo::client {
 
+/** @brief RDMA RC QP 配置参数。create_qp / rdma_accept 使用。 */
+struct RdmaQpConfig {
+  int max_send_wr{16};
+  int max_recv_wr{16};
+  int max_rd_atomic{16};
+  int cq_size{128};
+  int retry_cnt{7};
+  int rnr_retry{7};
+};
+
 class RdmaQp {
  public:
   /** @brief 创建绑定 ip:port 的 listener。port=0 由系统分配。
@@ -28,7 +38,8 @@ class RdmaQp {
    *
    *  @param external_pd 若非 nullptr，创建 QP 时复用此 PD（须从本 listener 的
    *  device() 获取），保证 MR 和 QP 共用同一 PD。 */
-  RdmaQp* Accept(int timeout_ms, ibv_pd* external_pd = nullptr);
+  RdmaQp* Accept(int timeout_ms, ibv_pd* external_pd = nullptr,
+                 const RdmaQpConfig& config = RdmaQpConfig{});
 
   /** @brief 返回底层 RDMA 设备的 verbs context。 */
   ibv_context* device() const {

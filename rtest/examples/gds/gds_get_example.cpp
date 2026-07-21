@@ -84,7 +84,7 @@ bool TestSinglePutGet(us3_turbo::client::Client& client, const std::string& buck
   ClientProxyPutResponse put_resp;
   const auto t0 = clk::now();
   bool put_ok =
-      client.PutObject(put_req, ConstBufferView{.data = dev_buf, .size = single_size}, put_resp);
+      client.PutObjectGds(put_req, ConstBufferView{.data = dev_buf, .size = single_size}, put_resp);
   const auto t1 = clk::now();
 
   if (!put_ok) {

@@ -11,15 +11,6 @@
 
 namespace us3_turbo::client {
 
-namespace {
-constexpr int kMaxSendWr = 16;
-constexpr int kMaxRecvWr = 16;
-constexpr int kMaxRdAtomic = 16;
-constexpr int kCqSize = 128;
-constexpr int kRetryCnt = 7;
-constexpr int kRnrRetry = 7;
-}  // namespace
-
 RdmaQp::RdmaQp()
     : listen_id_(nullptr),
       listen_ec_(nullptr),
@@ -155,7 +146,7 @@ bool RdmaQp::WaitEvent(rdma_cm_event_type expected,
   return false;
 }
 
-RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
+RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd, const RdmaQpConfig& config) {
   if (listen_id_ == nullptr) return nullptr;
 
   rdma_cm_event* event = nullptr;
@@ -198,7 +189,7 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
   }
   bool owns_pd = (external_pd == nullptr);
 
-  qp->cq_ = ibv_create_cq(ctx, kCqSize, nullptr, nullptr, 0);
+  qp->cq_ = ibv_create_cq(ctx, config.cq_size, nullptr, nullptr, 0);
   if (qp->cq_ == nullptr) {
     if (owns_pd) { ibv_dealloc_pd(qp->pd_); qp->pd_ = nullptr; }
     delete qp;
@@ -209,8 +200,8 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
   ibv_qp_init_attr qp_attr{};
   qp_attr.send_cq = qp->cq_;
   qp_attr.recv_cq = qp->cq_;
-  qp_attr.cap.max_send_wr = kMaxSendWr;
-  qp_attr.cap.max_recv_wr = kMaxRecvWr;
+  qp_attr.cap.max_send_wr = config.max_send_wr;
+  qp_attr.cap.max_recv_wr = config.max_recv_wr;
   qp_attr.cap.max_send_sge = 1;
   qp_attr.cap.max_recv_sge = 1;
   qp_attr.cap.max_inline_data = 0;
@@ -247,10 +238,10 @@ RdmaQp* RdmaQp::Accept(int timeout_ms, ibv_pd* external_pd) {
   }
 
   rdma_conn_param conn_param{};
-  conn_param.responder_resources = kMaxRdAtomic;
-  conn_param.initiator_depth = kMaxRdAtomic;
-  conn_param.retry_count = kRetryCnt;
-  conn_param.rnr_retry_count = kRnrRetry;
+  conn_param.responder_resources = config.max_rd_atomic;
+  conn_param.initiator_depth = config.max_rd_atomic;
+  conn_param.retry_count = config.retry_cnt;
+  conn_param.rnr_retry_count = config.rnr_retry;
 
   if (rdma_accept(new_id, &conn_param) != 0) {
     qp->cm_id_ = nullptr;  // Prevent Cleanup() from destroying; destroyed below

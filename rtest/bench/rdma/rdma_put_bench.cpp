@@ -161,7 +161,7 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
     req.path = PutDataPath::kRdma;
     ClientProxyPutResponse out;
     auto t0 = clk::now();
-    bool ok = client.PutObject(req, buf, out);
+    bool ok = client.PutObjectRdma(req, buf, out);
     auto t1 = clk::now();
     if (ok) {
       stats.rounds.push_back(RoundResult{.data_plane_ms = ms_double(t1 - t0).count(),

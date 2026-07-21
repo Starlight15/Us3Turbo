@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
     put_req.path = PutDataPath::kGds;
 
     ClientProxyPutResponse put_resp;
-    if (!client.PutObject(put_req, ConstBufferView{.data = dev_put, .size = size}, put_resp)) {
+    if (!client.PutObjectGds(put_req, ConstBufferView{.data = dev_put, .size = size}, put_resp)) {
       fail_reason = "PutObject FAILED";
       goto cleanup;
     }

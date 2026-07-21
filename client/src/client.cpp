@@ -18,7 +18,6 @@
 #include "client/src/rpc/proxy_rpc.h"
 #include "client/src/transport/gds_get_channel.h"
 #include "client/src/transport/gds_put_channel.h"
-#include "client/src/transport/put_channel.h"
 #include "client/src/transport/rdma_put_channel.h"
 #include "us3_turbo/common/logger.h"
 
@@ -126,38 +125,14 @@ void Client::Shutdown() {
 
 bool Client::initialized() const { return initialized_; }
 
-// path 校验:kNone / kAll 拒绝(单 buffer 无法双路)。
-bool Client::ValidatePutPath(const ClientProxyPutRequest& req) const {
-  if (req.path == PutDataPath::kNone) {
-    LOG_ERROR(req.req_id, "path not specified");
-    return false;
-  }
-  if (req.path == PutDataPath::kAll) {
-    LOG_ERROR(req.req_id, "kAll not supported yet");
-    return false;
-  }
-  return true;
-}
-
-// 路由落点。
-PutChannel* Client::SelectChannel(PutDataPath path) const noexcept {
-  switch (path) {
-    case PutDataPath::kGds:
-      return gds_channel_.get();
-    case PutDataPath::kRdma:
-      return rdma_channel_.get();
-    default:
-      return nullptr;  // kNone / kAll(已在校验阶段拒绝)
-  }
-}
-
-bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
-                       ClientProxyPutResponse& resp) const {
+bool Client::PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buffer,
+                           ClientProxyPutResponse& resp) const {
   if (!initialized_) {
     LOG_ERROR(req.req_id, "Client is not initialized");
     return false;
   }
-  if (!ValidatePutPath(req)) {
+  if (gds_channel_ == nullptr) {
+    LOG_ERROR(req.req_id, "GDS channel not initialized");
     return false;
   }
 
@@ -171,28 +146,42 @@ bool Client::PutObject(const ClientProxyPutRequest& req, ConstBufferView buffer,
     return false;
   }
 
-  PutChannel* ch = SelectChannel(req.path);
-  if (ch == nullptr) {
-    LOG_ERROR(req.req_id, "{} channel not initialized",
-              req.path == PutDataPath::kGds ? "GDS" : "RDMA");
+  PutPathResult res;
+  if (!gds_channel_->PutOnce(req, buffer, res)) {
+    std::this_thread::sleep_for(opts_.retry_backoff);
+    gds_channel_->PutOnce(req, buffer, res);
+  }
+  resp.gds_result = res;
+  return res.ok;
+}
+
+bool Client::PutObjectRdma(const ClientProxyPutRequest& req, ConstBufferView buffer,
+                            ClientProxyPutResponse& resp) const {
+  if (!initialized_) {
+    LOG_ERROR(req.req_id, "Client is not initialized");
+    return false;
+  }
+  if (rdma_channel_ == nullptr) {
+    LOG_ERROR(req.req_id, "RDMA channel not initialized");
+    return false;
+  }
+
+  // 大小上限校验。
+  const auto max_put = opts_.put_single_max_bytes;
+  if (max_put != 0 && buffer.size > max_put) {
+    LOG_WARN(req.req_id,
+             "bucket={}/{} body size {} exceeds put_single_max_bytes {}; "
+             "use multipart upload",
+             req.bucket, req.key, buffer.size, max_put);
     return false;
   }
 
   PutPathResult res;
-
-  // retry-once:首次失败等 opts_.retry_backoff（默认
-  // 100ms）再试一次,接受最终结果。
-  if (!ch->PutOnce(req, buffer, res)) {
+  if (!rdma_channel_->PutOnce(req, buffer, res)) {
     std::this_thread::sleep_for(opts_.retry_backoff);
-    ch->PutOnce(req, buffer, res);
+    rdma_channel_->PutOnce(req, buffer, res);
   }
-
-  // 按 path 回填结果到对应字段。
-  if (req.path == PutDataPath::kGds)
-    resp.gds_result = res;
-  else if (req.path == PutDataPath::kRdma)
-    resp.rdma_result = res;
-
+  resp.rdma_result = res;
   return res.ok;
 }
 

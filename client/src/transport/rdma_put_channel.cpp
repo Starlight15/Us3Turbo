@@ -47,11 +47,28 @@ using detail::TraceLatency;
 
 }  // namespace
 
+bool RdmaPutChannel::ValidateRdmaRequest(const ClientProxyPutRequest& req,
+                                          ConstBufferView buffer) const {
+  if (req.path != PutDataPath::kRdma) {
+    LOG_SYS_ERROR("RdmaPutChannel: wrong path");
+    return false;
+  }
+  if (buffer.data == nullptr || buffer.size == 0) {
+    LOG_SYS_ERROR("RdmaPutChannel: invalid buffer");
+    return false;
+  }
+  return true;
+}
+
 // RDMA 链路单次尝试：AcquireDescriptor → RdmaPut。与 GdsPutChannel 独立。
 bool RdmaPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView buffer,
                               PutPathResult& res) const {
   assert(rdma_mgr_ != nullptr);
   const std::string req_id = MakeReqId();  // 每次新生成,跨端日志关联
+
+  if (!ValidateRdmaRequest(req, buffer)) {
+    return false;
+  }
 
   const bool trace = opts_.latency_trace;
   auto t0 = trace ? clk::now() : clk::time_point{};
