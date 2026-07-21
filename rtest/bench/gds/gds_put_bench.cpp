@@ -1,88 +1,51 @@
-// gds_put_bench.cpp — GDS 单步 PUT 性能基准。
+// gds_put_bench.cpp — GDS 单步 PUT 性能基准（rtest/bench/gds）。
 //
-// 可指定对象大小、数量、并发数，测量 GDS 上传的吞吐与时延。
+// 测量维度：
+//   1. 吞吐 —— 多 worker 并发 PUT 聚合吞吐（MiB/s, ops/s）
+//   2. 时延分布 —— min/p50/p95/p99/max per-PUT latency
 //
-// 用法:
+// 用法：
 //   us3_turbo_bench_gds_put \
 //     --proxy 192.168.1.198:9100 \
 //     --size 100M --count 100 --concurrency 8
 //
-// 模型:进程内共享一个 Client(PutObject 为 const,brpc channel 与
-// GdsMemoryManager 单例均线程安全);每个 worker 线程拥有独立的 device
-// buffer,从共享原子计数器领取对象序号并发上传。
-// 首次 PutObject 时在 GdsPutChannel 内部懒注册,无需显式 Register。
+// 模型：
+//   进程内共享一个 Client（PutObject 为 const，brpc channel 与
+//   GdsMemoryManager 单例均线程安全）；每个 worker 线程拥有独立的 device
+//   buffer，从共享原子计数器领取对象序号并发上传。
+//   首次 PutObject 时在 GdsPutChannel 内部懒注册，无需显式 Register。
 
-#include <algorithm>
 #include <atomic>
 #include <barrier>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
-#include <memory>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <vector>
 
 #include "client/src/common/request.h"
+#include "rtest/bench/harness.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
 
 namespace {
 
-using clk = std::chrono::steady_clock;
-using ms_double = std::chrono::duration<double, std::milli>;
+using rtest::bench::clk;
+using rtest::bench::ms_double;
+using rtest::bench::RoundResult;
+using rtest::bench::StartSetter;
 
-// ---- 参数 ----
+constexpr char kPathName[] = "gds";
 
-struct Args {
-  std::string proxy{"192.168.1.198:9100"};
-  std::uint64_t size{100ULL * 1024 * 1024};
-  std::uint64_t count{10};
-  std::uint64_t concurrency{1};
-  std::uint64_t warmup{0};
-  std::string bucket{"test-bucket"};
-  std::string key_prefix{"obj"};
-  bool verify_crc32c{false};
-  bool trace{false};
+// ---- 参数（通路特定字段通过派生添加） ----
+
+struct Args : rtest::bench::BaseArgs {
+  std::uint64_t size{100ULL * 1024 * 1024};  // 单个对象大小
+  std::uint64_t count{10};                    // 总对象数
 };
-
-// 支持 "100" / "100K" / "100M" / "1G"(大小写无关)。
-bool ParseSize(std::string_view s, std::uint64_t& out) {
-  if (s.empty()) return false;
-  std::uint64_t num = 0;
-  std::size_t i = 0;
-  for (; i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])); ++i) {
-    num = num * 10 + static_cast<std::uint64_t>(s[i] - '0');
-  }
-  if (i == 0) return false;  // 没有前导数字
-  std::uint64_t mul = 1;
-  if (i < s.size()) {
-    if (i + 1 != s.size()) return false;  // 后缀必须是单个字符
-    switch (std::tolower(static_cast<unsigned char>(s[i]))) {
-      case 'b':
-        mul = 1ULL;
-        break;
-      case 'k':
-        mul = 1024ULL;
-        break;
-      case 'm':
-        mul = 1024ULL * 1024;
-        break;
-      case 'g':
-        mul = 1024ULL * 1024 * 1024;
-        break;
-      default:
-        return false;
-    }
-  }
-  out = num * mul;
-  return true;
-}
 
 bool ParseUint(std::string_view s, std::uint64_t& out) {
   if (s.empty()) return false;
@@ -93,21 +56,6 @@ bool ParseUint(std::string_view s, std::uint64_t& out) {
   }
   out = v;
   return true;
-}
-
-void PrintUsage() {
-  std::cout << "usage: us3_turbo_gds_bench_example [options]\n"
-               "  --proxy HOST:PORT        control plane (proxy; GdsPut goes through "
-               "it) (default 192.168.1.198:9100)\n"
-               "  --size N[K|M|G]          object size     (default 100M)\n"
-               "  --count N                number of objects (default 10)\n"
-               "  --concurrency N          worker threads  (default 1)\n"
-               "  --warmup N               warmup ops, not counted (default 0)\n"
-               "  --bucket NAME            (default test-bucket)\n"
-               "  --key-prefix STR         (default obj)\n"
-               "  --verify-crc32c          enable client-side CRC32C verification\n"
-               "  --trace                  log per-PUT stage latency "
-               "(open/token/put)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Args& a) {
@@ -126,7 +74,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       if (!need(i, val)) return false;
       a.proxy = std::string(val);
     } else if (arg == "--size") {
-      if (!need(i, val) || !ParseSize(val, a.size)) {
+      if (!need(i, val) || !rtest::ParseSize(val, a.size)) {
         std::cerr << "bad --size\n";
         return false;
       }
@@ -136,15 +84,19 @@ bool ParseArgs(int argc, char** argv, Args& a) {
         return false;
       }
     } else if (arg == "--concurrency") {
-      if (!need(i, val) || !ParseUint(val, a.concurrency)) {
+      std::uint64_t v;
+      if (!need(i, val) || !ParseUint(val, v)) {
         std::cerr << "bad --concurrency\n";
         return false;
       }
+      a.concurrency = static_cast<std::uint32_t>(v);
     } else if (arg == "--warmup") {
-      if (!need(i, val) || !ParseUint(val, a.warmup)) {
+      std::uint64_t v;
+      if (!need(i, val) || !ParseUint(val, v)) {
         std::cerr << "bad --warmup\n";
         return false;
       }
+      a.warmup = static_cast<std::uint32_t>(v);
     } else if (arg == "--bucket") {
       if (!need(i, val)) return false;
       a.bucket = std::string(val);
@@ -156,8 +108,17 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     } else if (arg == "--trace") {
       a.trace = true;
     } else if (arg == "--help" || arg == "-h") {
-      PrintUsage();
-      std::exit(0);
+      std::cout << "usage: us3_turbo_bench_" << kPathName << "_put [options]\n"
+                << "  --proxy HOST:PORT        proxy endpoint (default 192.168.1.198:9100)\n"
+                << "  --size N[K|M|G]          object size (default 100M)\n"
+                << "  --count N                number of objects (default 10)\n"
+                << "  --concurrency N          worker threads (default 1)\n"
+                << "  --warmup N               warmup ops, not counted (default 1)\n"
+                << "  --bucket NAME            bucket (default bench)\n"
+                << "  --key-prefix STR         key prefix (default bench)\n"
+                << "  --verify-crc32c          enable client-side CRC32C verification\n"
+                << "  --trace                  log per-PUT stage latency\n";
+      return false;
     } else {
       std::cerr << "unknown arg: " << arg << "\n";
       return false;
@@ -170,44 +131,15 @@ bool ParseArgs(int argc, char** argv, Args& a) {
   return true;
 }
 
-// ---- 工具 ----
-
-std::string HumanBytes(std::uint64_t b) {
-  constexpr double K = 1024.0;
-  char buf[64];
-  if (b >= static_cast<std::uint64_t>(K * K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f GiB", static_cast<double>(b) / (K * K * K));
-  else if (b >= static_cast<std::uint64_t>(K * K))
-    std::snprintf(buf, sizeof(buf), "%.2f MiB", static_cast<double>(b) / (K * K));
-  else if (b >= static_cast<std::uint64_t>(K))
-    std::snprintf(buf, sizeof(buf), "%.2f KiB", static_cast<double>(b) / K);
-  else
-    std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(b));
-  return buf;
-}
-
-double Percentile(std::vector<double>& sorted, double p) {
-  if (sorted.empty()) return 0.0;
-  std::size_t idx = static_cast<std::size_t>(p / 100.0 * static_cast<double>(sorted.size() - 1));
-  if (idx >= sorted.size()) idx = sorted.size() - 1;
-  return sorted[idx];
-}
-
 // ---- worker ----
 
-// barrier 的 completion functor:最后一个到达的线程记录统一起跑时刻。
-struct StartSetter {
-  std::atomic<clk::time_point>* start;
-  void operator()() const noexcept { start->store(clk::now(), std::memory_order_relaxed); }
-};
-
 struct WorkerStats {
-  std::vector<double> latencies_ms;  // 仅成功 op
+  std::vector<RoundResult> rounds;
   std::uint64_t ok{0};
   std::uint64_t fail{0};
   std::uint64_t bytes{0};
   clk::time_point end{};
-  bool ready{false};  // buffer 分配/注册成功
+  bool ready{false};
 };
 
 void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
@@ -216,11 +148,11 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
             WorkerStats& stats) {
   using namespace us3_turbo::client;
 
-  // 1) 分配并填充 device buffer(每个 worker 独立)。
+  // 1) 分配并填充 device buffer（每个 worker 独立）。
   void* dev = nullptr;
   cudaError_t e = cudaMalloc(&dev, a.size);
   if (e != cudaSuccess) {
-    std::cerr << "[worker " << wid << "] cudaMalloc(" << HumanBytes(a.size)
+    std::cerr << "[worker " << wid << "] cudaMalloc(" << rtest::HumanBytes(a.size)
               << ") failed: " << cudaGetErrorString(e) << "\n";
     return;
   }
@@ -245,25 +177,28 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
     bool ok = client.PutObject(req, buf, out);
     auto t1 = clk::now();
     if (ok) {
-      stats.latencies_ms.push_back(ms_double(t1 - t0).count());
+      stats.rounds.push_back(RoundResult{.data_plane_ms = ms_double(t1 - t0).count(),
+                                          .total_ms = ms_double(t1 - t0).count(),
+                                          .bytes = a.size,
+                                          .ok = true});
       ++stats.ok;
       stats.bytes += a.size;
     } else {
+      stats.rounds.push_back(RoundResult{.ok = false});
       ++stats.fail;
     }
     return ok;
   };
 
-  // 2) warmup(不计入统计,key 与正式对象隔离)。
+  // 2) warmup（不计入统计，key 与正式对象隔离）。
   for (std::uint64_t i = 0; i < a.warmup; ++i) {
     do_put(a.key_prefix + "-warmup-" + std::to_string(wid) + "-" + std::to_string(i));
   }
 
-  // 3) 屏障对齐后开始计时,所有 worker 共享同一个 start。
+  // 3) 屏障对齐后开始计时。
   sync.arrive_and_wait();
-  // start 由 barrier 的 completion 函数写入(到达最后一个线程时)。
 
-  // 4) 正式测量:从原子计数器领取序号直至 total。
+  // 4) 正式测量：从原子计数器领取序号直至 total。
   std::uint64_t idx;
   while ((idx = next.fetch_add(1, std::memory_order_relaxed)) < total) {
     do_put(a.key_prefix + "-" + std::to_string(idx));
@@ -281,20 +216,20 @@ int main(int argc, char** argv) {
   Args a;
   if (!ParseArgs(argc, argv, a)) return 1;
 
-  std::cout << "=== GDS PUT bench ===\n"
+  std::cout << "=== " << kPathName << " PUT bench ===\n"
             << "  proxy       : " << a.proxy << "\n"
-            << "  object size : " << HumanBytes(a.size) << "\n"
+            << "  object size : " << rtest::HumanBytes(a.size) << "\n"
             << "  count       : " << a.count << "\n"
             << "  concurrency : " << a.concurrency << "\n"
             << "  warmup      : " << a.warmup << "\n"
             << "  bucket      : " << a.bucket << "\n"
             << "  key-prefix  : " << a.key_prefix << "\n"
-            << "  verify-crc32c: " << (a.verify_crc32c ? "on" : "off") << "\n"
+            << "  verify-crc  : " << (a.verify_crc32c ? "on" : "off") << "\n"
             << std::endl;
 
-  // 共享 host pattern(只读,各 worker 并发拷贝)。
+  // 共享 host pattern（只读，各 worker 并发拷贝）。
   std::vector<std::byte> host(a.size);
-  for (std::size_t i = 0; i < a.size; ++i) host[i] = static_cast<std::byte>(i % 251U);
+  rtest::FillHostPattern(host);
 
   ClientOptions opts;
   opts.endpoint = a.proxy;
@@ -322,8 +257,8 @@ int main(int argc, char** argv) {
 
   // ---- 汇总 ----
   std::uint64_t ok = 0, fail = 0, bytes = 0;
-  std::vector<double> lat;
-  clk::time_point end_min{}, end_max{};
+  std::vector<RoundResult> all;
+  clk::time_point end_max{};
   bool any_ready = false;
   for (std::size_t w = 0; w < nworkers; ++w) {
     if (!stats[w].ready) {
@@ -334,12 +269,10 @@ int main(int argc, char** argv) {
     ok += stats[w].ok;
     fail += stats[w].fail;
     bytes += stats[w].bytes;
-    lat.insert(lat.end(), stats[w].latencies_ms.begin(), stats[w].latencies_ms.end());
-    if (w == 0) {
-      end_min = stats[w].end;
+    all.insert(all.end(), stats[w].rounds.begin(), stats[w].rounds.end());
+    if (end_max.time_since_epoch().count() == 0) {
       end_max = stats[w].end;
     } else {
-      end_min = std::min(end_min, stats[w].end);
       end_max = std::max(end_max, stats[w].end);
     }
   }
@@ -353,26 +286,31 @@ int main(int argc, char** argv) {
   const clk::time_point t_start = start.load(std::memory_order_relaxed);
   const double wall_ms = ms_double(end_max - t_start).count();
   const double wall_s = wall_ms / 1000.0;
-
-  std::sort(lat.begin(), lat.end());
-  double sum_lat = 0.0;
-  for (double v : lat) sum_lat += v;
-  const double avg_lat = lat.empty() ? 0.0 : sum_lat / static_cast<double>(lat.size());
-
   const double throughput_mbs =
       (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
   const double ops_per_sec = (wall_s > 0.0) ? static_cast<double>(ok) / wall_s : 0.0;
 
+  // 提取时延样本。
+  std::vector<double> lat;
+  lat.reserve(all.size());
+  for (const auto& r : all) {
+    if (r.ok) lat.push_back(r.data_plane_ms);
+  }
+  std::sort(lat.begin(), lat.end());
+
   std::cout << "\n=== results ===\n"
             << "  ok           : " << ok << "\n"
             << "  fail         : " << fail << "\n"
-            << "  bytes        : " << HumanBytes(bytes) << " (" << bytes << ")\n"
+            << "  bytes        : " << rtest::HumanBytes(bytes) << " (" << bytes << ")\n"
             << "  wall time    : " << wall_ms << " ms\n"
             << "  throughput   : " << throughput_mbs << " MiB/s  (" << ops_per_sec << " ops/s)\n";
   if (!lat.empty()) {
-    std::cout << "  latency (ms) : avg=" << avg_lat << "  min=" << lat.front()
-              << "  p50=" << Percentile(lat, 50.0) << "  p95=" << Percentile(lat, 95.0)
-              << "  p99=" << Percentile(lat, 99.0) << "  max=" << lat.back() << "\n";
+    std::cout << "  latency (ms) : avg=" << rtest::bench::Mean(lat)
+              << "  min=" << lat.front()
+              << "  p50=" << rtest::bench::Percentile(lat, 50.0)
+              << "  p95=" << rtest::bench::Percentile(lat, 95.0)
+              << "  p99=" << rtest::bench::Percentile(lat, 99.0)
+              << "  max=" << lat.back() << "\n";
   }
   std::cout.flush();
 
