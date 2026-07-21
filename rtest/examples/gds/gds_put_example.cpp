@@ -18,8 +18,8 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : "192.168.1.198:9100";
-  constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;  // 4 MiB
+  const std::string proxy_addr = (argc > 1) ? argv[1] : rtest::kDefaultProxy;
+  constexpr std::uint64_t kSize = rtest::kDefaultObjectSize;
 
   // 1. 分配 GPU buffer + 填充测试数据
   void* dev = nullptr;
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
 
   // 3. PUT
   ClientProxyPutResponse resp;
-  client.PutObjectGds(ClientProxyPutRequest{.bucket = "test-bucket",
+  client.PutObjectGds(ClientProxyPutRequest{.bucket = rtest::kDefaultBucket,
                                              .key = "gds-demo",
                                              .object_size = kSize,
                                              .path = PutDataPath::kGds},

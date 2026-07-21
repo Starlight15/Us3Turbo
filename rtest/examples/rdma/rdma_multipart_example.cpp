@@ -15,9 +15,9 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : "192.168.1.198:9100";
-  constexpr std::uint64_t kPartSize = 4ULL * 1024 * 1024;  // 4 MiB
-  constexpr std::uint32_t kNumParts = 2;
+  const std::string proxy_addr = (argc > 1) ? argv[1] : rtest::kDefaultProxy;
+  constexpr std::uint64_t kPartSize = rtest::kDefaultPartSize;
+  constexpr std::uint32_t kNumParts = rtest::kDefaultNumParts;
   constexpr std::uint64_t kTotal = kPartSize * kNumParts;
 
   // 1. 准备整对象 host buffer（每 part 从中切片）
@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
 
   // 3. 创建分段上传会话
   std::string upload_id, err;
-  client.CreateMultipartUpload("test-bucket", "rdma-mp-demo", PutDataPath::kRdma, upload_id, err);
+  client.CreateMultipartUpload(rtest::kDefaultBucket, "rdma-mp-demo", PutDataPath::kRdma, upload_id, err);
 
   // 4. 上传每个 part（buffer 切片引用）
   std::vector<Client::PartInfo> parts;

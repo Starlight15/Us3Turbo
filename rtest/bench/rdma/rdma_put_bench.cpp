@@ -107,8 +107,8 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       a.trace = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "usage: us3_turbo_bench_" << kPathName << "_put [options]\n"
-                << "  --proxy HOST:PORT        proxy endpoint (default 192.168.1.198:9100)\n"
-                << "  --size N[K|M|G]          object size (default 100M)\n"
+                << "  --proxy HOST:PORT        proxy endpoint (default " << rtest::kDefaultProxy << ")\n"
+                << "  --size N[K|M|G]          object size (default 4M)\n"
                 << "  --count N                number of objects (default 10)\n"
                 << "  --concurrency N          worker threads (default 1)\n"
                 << "  --warmup N               warmup ops, not counted (default 0)\n"
@@ -199,7 +199,6 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   Args a;
-  a.warmup = 0;  // put bench 默认 0（与 BaseArgs::warmup=1 不同）
   if (!ParseArgs(argc, argv, a)) return 1;
 
   std::cout << "=== " << kPathName << " PUT bench ===\n"

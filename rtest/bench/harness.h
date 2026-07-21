@@ -70,13 +70,13 @@ inline double Max(const std::vector<double>& v) {
 // 通过派生添加。
 
 struct BaseArgs {
-  std::string proxy{"192.168.1.198:9100"};
-  std::uint64_t total{64ULL * 1024 * 1024};  // 总数据量
-  std::uint32_t reps{5};                      // 每 worker 轮数
-  std::uint32_t warmup{1};                    // 预热轮数（不计入统计）
-  std::uint32_t concurrency{1};               // worker 线程数
-  std::string bucket{"bench"};
-  std::string key_prefix{"bench"};
+  std::string proxy{rtest::kDefaultProxy};
+  std::uint64_t total{rtest::kDefaultMultipartTotal};
+  std::uint32_t reps{rtest::kDefaultReplays};
+  std::uint32_t warmup{rtest::kDefaultWarmup};
+  std::uint32_t concurrency{rtest::kDefaultConcurrency};
+  std::string bucket{rtest::kDefaultBucket};
+  std::string key_prefix{rtest::kDefaultKeyPrefix};
   bool verify_crc32c{false};
   bool trace{false};
   bool csv{false};

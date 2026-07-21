@@ -234,7 +234,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       a.csv = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "usage: us3_turbo_bench_" << kPathName << "_multipart [options]\n"
-                << "  --proxy ADDR        proxy endpoint (default 192.168.1.198:9100)\n"
+                << "  --proxy ADDR        proxy endpoint (default " << rtest::kDefaultProxy << ")\n"
                 << "  --total SIZE        total object size (default 64M)\n"
                 << "  --part-size SIZE    part size (default 4M, <=16M)\n"
                 << "  --reps N            reps per worker (default 5)\n"
@@ -277,7 +277,6 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   Args a;
-  a.warmup = 0;  // multipart 默认 0（与 BaseArgs::warmup=1 不同）
   if (!ParseArgs(argc, argv, a)) return 2;
 
   const std::uint32_t num_parts =

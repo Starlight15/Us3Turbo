@@ -17,9 +17,32 @@
 
 namespace rtest {
 
+// ---- 默认常量 ----
+// 所有 example / bench / regression 统一引用，禁止各文件硬编码。
+
+// 网络
+constexpr const char* kDefaultProxy = "192.168.1.198:9100";
+
+// 存储命名
+constexpr const char* kDefaultBucket = "test-bucket";
+constexpr const char* kDefaultKeyPrefix = "bench";
+
+// 对象大小（字节）
+constexpr std::uint64_t kDefaultObjectSize = 4ULL * 1024 * 1024;       // 4 MiB
+constexpr std::uint64_t kDefaultMultipartTotal = 64ULL * 1024 * 1024;  // 64 MiB
+constexpr std::uint64_t kSinglePutMaxBytes = 16ULL * 1024 * 1024;      // 16 MiB
+
 // 分段上传默认 part 大小，须与 proxy FLAGS_multipart_part_size /
 // ClientOptions::multipart_part_size 一致。
-constexpr std::uint64_t kDefaultPartSize = 4ULL * 1024 * 1024;  // 4MiB
+constexpr std::uint64_t kDefaultPartSize = 4ULL * 1024 * 1024;  // 4 MiB
+
+// bench 默认参数
+constexpr std::uint32_t kDefaultReplays = 5;
+constexpr std::uint32_t kDefaultWarmup = 0;
+constexpr std::uint32_t kDefaultConcurrency = 1;
+constexpr std::uint32_t kDefaultNumParts = 2;
+
+// ---- 工具函数 ----
 
 // 解析 "16M"/"4M"/"2M" 等（1024 进制）。签名对齐 multipart/get examples。
 inline bool ParseSize(std::string_view s, std::uint64_t& out) {

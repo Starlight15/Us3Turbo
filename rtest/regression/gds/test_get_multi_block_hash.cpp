@@ -26,7 +26,7 @@ constexpr std::uint64_t kPartSizeLimit = rtest::kDefaultPartSize;
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  std::string proxy_addr = "192.168.1.198:9100";
+  std::string proxy_addr = rtest::kDefaultProxy;
   std::uint64_t total = 8ULL * 1024 * 1024;  // 默认 8M（>4M 触发多块）
 
   for (int i = 1; i < argc; ++i) {
@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
   const std::uint64_t part1 = kPartSizeLimit;          // 非 last，须 == 上限
   const std::uint64_t part2 = total - kPartSizeLimit;  // last（<= 上限）
 
-  const std::string bucket = "test-bucket";
+  const std::string bucket = rtest::kDefaultBucket;
   const std::string key = std::string("rtest-t22-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.2 GDS " << kTestName << " ===\n"

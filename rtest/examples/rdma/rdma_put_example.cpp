@@ -15,8 +15,8 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const std::string proxy_addr = (argc > 1) ? argv[1] : "192.168.1.198:9100";
-  constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;  // 4 MiB
+  const std::string proxy_addr = (argc > 1) ? argv[1] : rtest::kDefaultProxy;
+  constexpr std::uint64_t kSize = rtest::kDefaultObjectSize;
 
   // 1. 准备 host buffer
   std::vector<std::byte> host(kSize);
@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
 
   // 3. PUT
   ClientProxyPutResponse resp;
-  client.PutObjectRdma(ClientProxyPutRequest{.bucket = "test-bucket",
+  client.PutObjectRdma(ClientProxyPutRequest{.bucket = rtest::kDefaultBucket,
                                               .key = "rdma-demo",
                                               .object_size = kSize,
                                               .path = PutDataPath::kRdma},

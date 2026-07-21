@@ -17,12 +17,12 @@
 
 namespace {
 constexpr char kTestName[] = "rdma_put_single";
-constexpr std::uint64_t kSinglePutLimit = 16ULL * 1024 * 1024;
+constexpr std::uint64_t kSinglePutLimit = rtest::kSinglePutMaxBytes;
 
 // 测试尺寸列表：覆盖小对象 / 典型 / 边界
 constexpr std::uint64_t kTestSizes[] = {
     1ULL * 1024,                    // 1 KiB
-    4ULL * 1024 * 1024,             // 4 MiB（典型）
+    rtest::kDefaultPartSize,             // 4 MiB（典型）
     kSinglePutLimit,                // 16 MiB（单步上限）
 };
 }  // namespace
@@ -30,7 +30,7 @@ constexpr std::uint64_t kTestSizes[] = {
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  std::string proxy_addr = "192.168.1.198:9100";
+  std::string proxy_addr = rtest::kDefaultProxy;
   bool verify_crc = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::string bucket = "test-bucket";
+  const std::string bucket = rtest::kDefaultBucket;
 
   std::cout << "=== T3.1 RDMA " << kTestName << " ===\n"
             << "  proxy      : " << proxy_addr << "\n"
