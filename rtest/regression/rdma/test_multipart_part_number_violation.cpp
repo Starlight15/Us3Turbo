@@ -14,18 +14,18 @@
 #include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
-namespace {
-constexpr char kTestName[] = "rdma_multipart_part_number_violation";
-}
-
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+
   constexpr const char* kProxy = "192.168.1.198:9100";
   constexpr const char* kBucket = "test-bucket";
+  constexpr char kTestName[] = "rdma_multipart_part_number_violation";
 
   std::string proxy_addr = kProxy;
   std::uint64_t part_size = rtest::kDefaultPartSize;  // 默认 4M（== proxy part 上限）
+  const std::string bucket = kBucket;
+  const std::string key_a = std::string("rtest-t12a-rdma-") + rtest::MakeTimestampSuffix();
+  const std::string key_b = std::string("rtest-t12b-rdma-") + rtest::MakeTimestampSuffix();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -50,10 +50,6 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-
-  const std::string bucket = kBucket;
-  const std::string key_a = std::string("rtest-t12a-rdma-") + rtest::MakeTimestampSuffix();
-  const std::string key_b = std::string("rtest-t12b-rdma-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T1.2 RDMA " << kTestName << " ===\n"
             << "  proxy     : " << proxy_addr << "\n"

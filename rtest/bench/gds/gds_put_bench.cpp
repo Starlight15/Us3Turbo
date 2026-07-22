@@ -17,23 +17,19 @@
 
 #include <cuda_runtime.h>
 
-namespace {
-
 using rtest::bench::clk;
 using rtest::bench::ms_double;
 using rtest::bench::RoundResult;
 using rtest::bench::StartSetter;
 
-constexpr char kPathName[] = "gds";
-
 // ---- 参数（通路特定字段通过派生添加） ----
 
-struct Args : rtest::bench::BaseArgs {
+struct GdsPutArgs : rtest::bench::BaseArgs {
   std::uint64_t size{100ULL * 1024 * 1024};  // 单个对象大小
   std::uint64_t count{10};                    // 总对象数
 };
 
-bool ParseUint(std::string_view s, std::uint64_t& out) {
+bool GdsPutParseUint(std::string_view s, std::uint64_t& out) {
   if (s.empty()) return false;
   std::uint64_t v = 0;
   for (char c : s) {
@@ -44,7 +40,7 @@ bool ParseUint(std::string_view s, std::uint64_t& out) {
   return true;
 }
 
-bool ParseArgs(int argc, char** argv, Args& a) {
+bool GdsPutParseArgs(int argc, char** argv, GdsPutArgs& a) {
   auto need = [&](int& i, std::string_view& val) -> bool {
     if (i + 1 >= argc) {
       std::cerr << "missing value for " << argv[i] << "\n";
@@ -65,20 +61,20 @@ bool ParseArgs(int argc, char** argv, Args& a) {
         return false;
       }
     } else if (arg == "--count") {
-      if (!need(i, val) || !ParseUint(val, a.count)) {
+      if (!need(i, val) || !GdsPutParseUint(val, a.count)) {
         std::cerr << "bad --count\n";
         return false;
       }
     } else if (arg == "--concurrency") {
       std::uint64_t v;
-      if (!need(i, val) || !ParseUint(val, v)) {
+      if (!need(i, val) || !GdsPutParseUint(val, v)) {
         std::cerr << "bad --concurrency\n";
         return false;
       }
       a.concurrency = static_cast<std::uint32_t>(v);
     } else if (arg == "--warmup") {
       std::uint64_t v;
-      if (!need(i, val) || !ParseUint(val, v)) {
+      if (!need(i, val) || !GdsPutParseUint(val, v)) {
         std::cerr << "bad --warmup\n";
         return false;
       }
@@ -94,7 +90,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     } else if (arg == "--trace") {
       a.trace = true;
     } else if (arg == "--help" || arg == "-h") {
-      std::cout << "usage: us3_turbo_bench_" << kPathName << "_put [options]\n"
+      std::cout << "usage: us3_turbo_bench_gds_put [options]\n"
                 << "  --proxy HOST:PORT        proxy endpoint (default " << "192.168.1.198:9100" << ")\n"
                 << "  --size N[K|M|G]          object size (default 4M)\n"
                 << "  --count N                number of objects (default 10)\n"
@@ -119,7 +115,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
 
 // ---- worker ----
 
-struct WorkerStats {
+struct GdsPutWorkerStats {
   std::vector<RoundResult> rounds;
   std::uint64_t ok{0};
   std::uint64_t fail{0};
@@ -128,10 +124,10 @@ struct WorkerStats {
   bool ready{false};
 };
 
-void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
+void GdsPutWorker(std::size_t wid, const GdsPutArgs& a, us3_turbo::client::Client& client,
             const std::byte* host_pattern, std::atomic<std::uint64_t>& next, std::uint64_t total,
             std::barrier<StartSetter>& sync, std::atomic<clk::time_point>& start,
-            WorkerStats& stats) {
+            GdsPutWorkerStats& stats) {
   using namespace us3_turbo::client;
 
   // 1) 分配并填充 device buffer（每个 worker 独立）。
@@ -194,13 +190,13 @@ void Worker(std::size_t wid, const Args& a, us3_turbo::client::Client& client,
   cudaFree(dev);
 }
 
-}  // namespace
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  Args a;
-  if (!ParseArgs(argc, argv, a)) return 1;
+  constexpr char kPathName[] = "gds";
+
+  GdsPutArgs a;
+  if (!GdsPutParseArgs(argc, argv, a)) return 1;
 
   std::cout << "=== " << kPathName << " PUT bench ===\n"
             << "  proxy       : " << a.proxy << "\n"
@@ -232,11 +228,11 @@ int main(int argc, char** argv) {
   std::atomic<clk::time_point> start{clk::time_point{}};
   std::barrier<StartSetter> sync(static_cast<std::ptrdiff_t>(nworkers), StartSetter{&start});
 
-  std::vector<WorkerStats> stats(nworkers);
+  std::vector<GdsPutWorkerStats> stats(nworkers);
   std::vector<std::thread> threads;
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
-    threads.emplace_back(Worker, w, std::ref(a), std::ref(client), host.data(), std::ref(next),
+    threads.emplace_back(GdsPutWorker, w, std::ref(a), std::ref(client), host.data(), std::ref(next),
                          a.count, std::ref(sync), std::ref(start), std::ref(stats[w]));
   }
   for (auto& t : threads) t.join();
@@ -294,7 +290,6 @@ int main(int argc, char** argv) {
     std::cout << "  latency (ms) : avg=" << rtest::bench::Mean(lat)
               << "  min=" << lat.front()
               << "  p50=" << rtest::bench::Percentile(lat, 50.0)
-              << "  p95=" << rtest::bench::Percentile(lat, 95.0)
               << "  p99=" << rtest::bench::Percentile(lat, 99.0)
               << "  max=" << lat.back() << "\n";
   }

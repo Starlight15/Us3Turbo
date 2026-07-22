@@ -13,19 +13,19 @@
 #include "rtest/common.h"
 #include "us3_turbo/client/client.h"
 
-namespace {
-constexpr char kTestName[] = "rdma_get_single_block_crc";
-constexpr std::uint64_t kSinglePutMax = 4ULL * 1024 * 1024;
-}  // namespace
-
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+
   constexpr const char* kProxy = "192.168.1.198:9100";
   constexpr const char* kBucket = "test-bucket";
+  constexpr char kTestName[] = "rdma_get_single_block_crc";
+  constexpr std::uint64_t kSinglePutMax = 4ULL * 1024 * 1024;
 
   std::string proxy_addr = kProxy;
   std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M (< 4M 单块上限)
+  const std::string bucket = kBucket;
+  const std::string key =
+      std::string("rtest-t21-rdma-") + rtest::MakeTimestampSuffix();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -57,10 +57,6 @@ int main(int argc, char** argv) {
               << rtest::HumanBytes(size) << "\n";
     return 2;
   }
-
-  const std::string bucket = kBucket;
-  const std::string key =
-      std::string("rtest-t21-rdma-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.1 RDMA " << kTestName << " ===\n"
             << "  proxy : " << proxy_addr << "\n"

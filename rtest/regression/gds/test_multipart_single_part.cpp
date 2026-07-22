@@ -12,18 +12,17 @@
 
 #include <cuda_runtime.h>
 
-namespace {
-constexpr char kTestName[] = "gds_multipart_single_part";
-}
-
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+
   constexpr const char* kProxy = "192.168.1.198:9100";
   constexpr const char* kBucket = "test-bucket";
+  constexpr char kTestName[] = "gds_multipart_single_part";
 
   std::string proxy_addr = kProxy;
   std::uint64_t part_size = rtest::kDefaultPartSize;  // 默认 4M（== proxy part 上限）
+  const std::string bucket = kBucket;
+  const std::string key = std::string("rtest-t13-gds-") + rtest::MakeTimestampSuffix();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -48,9 +47,6 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-
-  const std::string bucket = kBucket;
-  const std::string key = std::string("rtest-t13-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T1.3 GDS " << kTestName << " ===\n"
             << "  proxy     : " << proxy_addr << "\n"

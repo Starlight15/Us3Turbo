@@ -12,20 +12,19 @@
 
 #include <cuda_runtime.h>
 
-namespace {
-constexpr char kTestName[] = "gds_get_single_block_crc";
-constexpr std::uint64_t kBlockSize = rtest::kDefaultPartSize;
-}  // namespace
-
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+
   constexpr const char* kProxy = "192.168.1.198:9100";
   constexpr const char* kBucket = "test-bucket";
+  constexpr char kTestName[] = "gds_get_single_block_crc";
+  constexpr std::uint64_t kBlockSize = rtest::kDefaultPartSize;
   constexpr std::uint64_t kSinglePutMax = 4ULL * 1024 * 1024;
 
   std::string proxy_addr = kProxy;
   std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M（< 4M 单块，≤4M 单步上限）
+  const std::string bucket = kBucket;
+  const std::string key = std::string("rtest-t21-gds-") + rtest::MakeTimestampSuffix();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -56,9 +55,6 @@ int main(int argc, char** argv) {
               << rtest::HumanBytes(size) << "\n";
     return 2;
   }
-
-  const std::string bucket = kBucket;
-  const std::string key = std::string("rtest-t21-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.1 GDS " << kTestName << " ===\n"
             << "  proxy : " << proxy_addr << "\n"

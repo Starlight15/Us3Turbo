@@ -18,30 +18,26 @@
 #include "rtest/bench/harness.h"
 #include "us3_turbo/client/client.h"
 
-namespace {
-
 using rtest::bench::clk;
 using rtest::bench::ms_double;
 using rtest::bench::RoundResult;
 using rtest::bench::StartSetter;
 
-constexpr char kPathName[] = "rdma";
-
 // ---- 参数 ----
 
-struct Args : rtest::bench::BaseArgs {
+struct RdmaMpArgs : rtest::bench::BaseArgs {
   std::uint64_t part_size{rtest::kDefaultPartSize};
 };
 
 // ---- 单轮 multipart 执行 ----
 
-RoundResult RunOneRound(us3_turbo::client::Client& client, const Args& a, std::uint32_t round_idx,
+RoundResult RdmaMpRunOneRound(us3_turbo::client::Client& client, const RdmaMpArgs& a, std::uint32_t round_idx,
                         std::uint32_t worker_idx, const std::vector<std::byte>& host_buf) {
   using namespace us3_turbo::client;
   RoundResult lat;
   lat.bytes = a.total;
 
-  const std::string key = a.key_prefix + "-" + kPathName + "-w" + std::to_string(worker_idx) +
+  const std::string key = a.key_prefix + "-rdma-w" + std::to_string(worker_idx) +
                           "-r" + std::to_string(round_idx) + "-" + rtest::MakeTimestampSuffix();
 
   std::string upload_id, error;
@@ -99,7 +95,7 @@ RoundResult RunOneRound(us3_turbo::client::Client& client, const Args& a, std::u
 
 // ---- worker ----
 
-struct WorkerStats {
+struct RdmaMpWorkerStats {
   std::vector<RoundResult> rounds;
   std::uint32_t ok{0};
   std::uint32_t fail{0};
@@ -107,9 +103,9 @@ struct WorkerStats {
   bool ready{false};
 };
 
-void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
+void RdmaMpWorker(std::uint32_t wid, const RdmaMpArgs& a, us3_turbo::client::Client& client,
             const std::vector<std::byte>& host_pattern, std::barrier<StartSetter>& sync,
-            std::atomic<clk::time_point>& start, WorkerStats& stats) {
+            std::atomic<clk::time_point>& start, RdmaMpWorkerStats& stats) {
   // buffer：host 内存（拷贝 pattern）。
   std::vector<std::byte> host(a.total);
   std::memcpy(host.data(), host_pattern.data(), a.total);
@@ -117,7 +113,7 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
 
   // warmup：不计入统计。
   for (std::uint32_t r = 0; r < a.warmup; ++r) {
-    (void)RunOneRound(client, a, r, wid, host);
+    (void)RdmaMpRunOneRound(client, a, r, wid, host);
   }
 
   // barrier 对齐起跑。
@@ -126,7 +122,7 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
 
   stats.rounds.reserve(a.reps);
   for (std::uint32_t r = 0; r < a.reps; ++r) {
-    RoundResult lat = RunOneRound(client, a, r, wid, host);
+    RoundResult lat = RdmaMpRunOneRound(client, a, r, wid, host);
     if (lat.ok) {
       ++stats.ok;
     } else {
@@ -140,7 +136,7 @@ void Worker(std::uint32_t wid, const Args& a, us3_turbo::client::Client& client,
 
 // ---- 参数解析 ----
 
-bool ParseArgs(int argc, char** argv, Args& a) {
+bool RdmaMpParseArgs(int argc, char** argv, RdmaMpArgs& a) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     auto need = [&](std::string& v) -> bool {
@@ -194,7 +190,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
     } else if (arg == "--csv") {
       a.csv = true;
     } else if (arg == "--help" || arg == "-h") {
-      std::cout << "usage: us3_turbo_bench_" << kPathName << "_multipart [options]\n"
+      std::cout << "usage: us3_turbo_bench_rdma_multipart [options]\n"
                 << "  --proxy ADDR        proxy endpoint (default " << "192.168.1.198:9100" << ")\n"
                 << "  --total SIZE        total object size (default 64M)\n"
                 << "  --part-size SIZE    part size (default 4M, <=4M)\n"
@@ -232,13 +228,13 @@ bool ParseArgs(int argc, char** argv, Args& a) {
   return true;
 }
 
-}  // namespace
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  Args a;
-  if (!ParseArgs(argc, argv, a)) return 2;
+  constexpr char kPathName[] = "rdma";
+
+  RdmaMpArgs a;
+  if (!RdmaMpParseArgs(argc, argv, a)) return 2;
 
   const std::uint32_t num_parts =
       static_cast<std::uint32_t>((a.total + a.part_size - 1) / a.part_size);
@@ -276,12 +272,12 @@ int main(int argc, char** argv) {
   const std::size_t nworkers = static_cast<std::size_t>(a.concurrency);
   std::atomic<clk::time_point> start{clk::time_point{}};
   std::barrier<StartSetter> sync(static_cast<std::ptrdiff_t>(nworkers), StartSetter{&start});
-  std::vector<WorkerStats> stats(nworkers);
+  std::vector<RdmaMpWorkerStats> stats(nworkers);
 
   std::vector<std::thread> threads;
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
-    threads.emplace_back(Worker, static_cast<std::uint32_t>(w), std::ref(a), std::ref(client),
+    threads.emplace_back(RdmaMpWorker, static_cast<std::uint32_t>(w), std::ref(a), std::ref(client),
                          std::cref(host_pattern), std::ref(sync), std::ref(start),
                          std::ref(stats[w]));
   }

@@ -12,25 +12,23 @@
 
 #include <cuda_runtime.h>
 
-namespace {
-constexpr char kTestName[] = "gds_put_single";
-
-// 测试尺寸列表：覆盖小对象 / 典型 / 边界
-constexpr std::uint64_t kTestSizes[] = {
-    1ULL * 1024,                    // 1 KiB
-    rtest::kDefaultPartSize,             // 4 MiB（典型）
-    4ULL * 1024 * 1024,                // 4 MiB
-};
-}  // namespace
-
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+
   constexpr const char* kProxy = "192.168.1.198:9100";
   constexpr const char* kBucket = "test-bucket";
+  constexpr char kTestName[] = "gds_put_single";
+
+  // 测试尺寸列表：覆盖小对象 / 典型 / 边界
+  constexpr std::uint64_t kTestSizes[] = {
+      1ULL * 1024,                    // 1 KiB
+      rtest::kDefaultPartSize,             // 4 MiB（典型）
+      4ULL * 1024 * 1024,                // 4 MiB
+  };
 
   std::string proxy_addr = kProxy;
   bool verify_crc = false;
+  const std::string bucket = kBucket;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -51,8 +49,6 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-
-  const std::string bucket = kBucket;
 
   std::cout << "=== T3.1 GDS " << kTestName << " ===\n"
             << "  proxy      : " << proxy_addr << "\n"

@@ -12,19 +12,18 @@
 
 #include <cuda_runtime.h>
 
-namespace {
-constexpr char kTestName[] = "gds_get_multi_block_hash";
-constexpr std::uint64_t kPartSizeLimit = rtest::kDefaultPartSize;
-}  // namespace
-
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
+
   constexpr const char* kProxy = "192.168.1.198:9100";
   constexpr const char* kBucket = "test-bucket";
+  constexpr char kTestName[] = "gds_get_multi_block_hash";
+  constexpr std::uint64_t kPartSizeLimit = rtest::kDefaultPartSize;
 
   std::string proxy_addr = kProxy;
   std::uint64_t total = 8ULL * 1024 * 1024;  // 默认 8M（>4M 触发多块）
+  const std::string bucket = kBucket;
+  const std::string key = std::string("rtest-t22-gds-") + rtest::MakeTimestampSuffix();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -57,9 +56,6 @@ int main(int argc, char** argv) {
   }
   const std::uint64_t part1 = kPartSizeLimit;          // 非 last，须 == 上限
   const std::uint64_t part2 = total - kPartSizeLimit;  // last（<= 上限）
-
-  const std::string bucket = kBucket;
-  const std::string key = std::string("rtest-t22-gds-") + rtest::MakeTimestampSuffix();
 
   std::cout << "=== T2.2 GDS " << kTestName << " ===\n"
             << "  proxy : " << proxy_addr << "\n"

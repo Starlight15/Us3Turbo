@@ -18,23 +18,19 @@
 #include "rtest/bench/harness.h"
 #include "us3_turbo/client/client.h"
 
-namespace {
-
 using rtest::bench::clk;
 using rtest::bench::ms_double;
 using rtest::bench::RoundResult;
 using rtest::bench::StartSetter;
 
-constexpr char kPathName[] = "rdma";
-
 // ---- 参数 ----
 
-struct Args : rtest::bench::BaseArgs {
+struct RdmaGetArgs : rtest::bench::BaseArgs {
   std::uint64_t size{4ULL * 1024 * 1024};  // 单个对象大小
   std::uint64_t count{10};                  // 总对象数
 };
 
-bool ParseUint(std::string_view s, std::uint64_t& out) {
+bool RdmaGetParseUint(std::string_view s, std::uint64_t& out) {
   if (s.empty()) return false;
   std::uint64_t v = 0;
   for (char c : s) {
@@ -45,7 +41,7 @@ bool ParseUint(std::string_view s, std::uint64_t& out) {
   return true;
 }
 
-bool ParseArgs(int argc, char** argv, Args& a) {
+bool RdmaGetParseArgs(int argc, char** argv, RdmaGetArgs& a) {
   auto need = [&](int& i, std::string_view& val) -> bool {
     if (i + 1 >= argc) {
       std::cerr << "missing value for " << argv[i] << "\n";
@@ -66,20 +62,20 @@ bool ParseArgs(int argc, char** argv, Args& a) {
         return false;
       }
     } else if (arg == "--count") {
-      if (!need(i, val) || !ParseUint(val, a.count)) {
+      if (!need(i, val) || !RdmaGetParseUint(val, a.count)) {
         std::cerr << "bad --count\n";
         return false;
       }
     } else if (arg == "--concurrency") {
       std::uint64_t v;
-      if (!need(i, val) || !ParseUint(val, v)) {
+      if (!need(i, val) || !RdmaGetParseUint(val, v)) {
         std::cerr << "bad --concurrency\n";
         return false;
       }
       a.concurrency = static_cast<std::uint32_t>(v);
     } else if (arg == "--warmup") {
       std::uint64_t v;
-      if (!need(i, val) || !ParseUint(val, v)) {
+      if (!need(i, val) || !RdmaGetParseUint(val, v)) {
         std::cerr << "bad --warmup\n";
         return false;
       }
@@ -92,7 +88,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
       a.key_prefix = std::string(val);
     } else if (arg == "--help" || arg == "-h") {
       std::cout
-          << "usage: us3_turbo_bench_" << kPathName << "_get [options]\n"
+          << "usage: us3_turbo_bench_rdma_get [options]\n"
           << "  --proxy HOST:PORT        proxy endpoint (default 192.168.1.198:9100)\n"
           << "  --size N[K|M|G]          object size (default 4M)\n"
           << "  --count N                number of objects (default 10)\n"
@@ -115,7 +111,7 @@ bool ParseArgs(int argc, char** argv, Args& a) {
 
 // ---- worker ----
 
-struct WorkerStats {
+struct RdmaGetWorkerStats {
   std::vector<RoundResult> rounds;
   std::uint64_t ok{0};
   std::uint64_t fail{0};
@@ -124,13 +120,13 @@ struct WorkerStats {
   bool ready{false};
 };
 
-void Worker(std::size_t wid, const Args& a,
+void RdmaGetWorker(std::size_t wid, const RdmaGetArgs& a,
             us3_turbo::client::Client& client,
             const std::byte* host_pattern,
             std::atomic<std::uint64_t>& next, std::uint64_t total,
             std::barrier<StartSetter>& sync,
             std::atomic<clk::time_point>& start,
-            WorkerStats& stats) {
+            RdmaGetWorkerStats& stats) {
   using namespace us3_turbo::client;
 
   // 每个 worker 独立的 GET buffer。
@@ -176,14 +172,14 @@ void Worker(std::size_t wid, const Args& a,
   stats.end = clk::now();
 }
 
-}  // namespace
-
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  Args a;
+  constexpr char kPathName[] = "rdma";
+
+  RdmaGetArgs a;
   a.key_prefix = "bench-get";
-  if (!ParseArgs(argc, argv, a)) return 1;
+  if (!RdmaGetParseArgs(argc, argv, a)) return 1;
 
   std::cout << "=== " << kPathName << " GET bench ===\n"
             << "  proxy       : " << a.proxy << "\n"
@@ -235,11 +231,11 @@ int main(int argc, char** argv) {
   std::barrier<StartSetter> sync(static_cast<std::ptrdiff_t>(nworkers),
                                   StartSetter{&start});
 
-  std::vector<WorkerStats> stats(nworkers);
+  std::vector<RdmaGetWorkerStats> stats(nworkers);
   std::vector<std::thread> threads;
   threads.reserve(nworkers);
   for (std::size_t w = 0; w < nworkers; ++w) {
-    threads.emplace_back(Worker, w, std::ref(a), std::ref(client), host.data(),
+    threads.emplace_back(RdmaGetWorker, w, std::ref(a), std::ref(client), host.data(),
                          std::ref(next), a.count, std::ref(sync),
                          std::ref(start), std::ref(stats[w]));
   }
