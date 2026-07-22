@@ -336,5 +336,40 @@ void ProxyService::GdsGet(google::protobuf::RpcController* cntl_base,
                                       out.bytes_read, latency);
 }
 
+void ProxyService::RdmaGet(google::protobuf::RpcController* cntl_base,
+                           const ClientProxyGetRequest* request, GetPathResult* response,
+                           google::protobuf::Closure* done) {
+  brpc::ClosureGuard done_guard(done);
+  auto* cntl = static_cast<brpc::Controller*>(cntl_base);
+
+  const std::string& rid = request->request_id();
+  const auto start = std::chrono::steady_clock::now();
+  LOG_INFO(rid, "start bucket={}/{} size={}", request->bucket(), request->key(),
+           request->object_size());
+
+  GetOutput out;
+  int ret = get_object_->GetRdma(*request, out);
+  const auto latency = utils::ElapsedMs(start);
+
+  if (ret != 0) {
+    const char* msg = ProxyErrorMessage(ret);
+    LOG_WARN(rid, "failed code={}", ret);
+    response->set_ok(false);
+    response->set_error_code(ret);
+    response->set_error_message(msg);
+    cntl->SetFailed(ret, "%s", msg);
+    AccessLogger::Instance().LogRequest("RdmaGet", rid, request->bucket(), request->key(), ret, 0,
+                                        latency);
+    return;
+  }
+  response->set_ok(true);
+  response->set_crc32c(out.crc32c);
+  response->set_bytes_read(out.bytes_read);
+  response->set_hash(out.hash);
+  LOG_INFO(rid, "success bytes={} hash={}", out.bytes_read, out.hash);
+  AccessLogger::Instance().LogRequest("RdmaGet", rid, request->bucket(), request->key(), 0,
+                                      out.bytes_read, latency);
+}
+
 
 }  // namespace us3_turbo::proxy

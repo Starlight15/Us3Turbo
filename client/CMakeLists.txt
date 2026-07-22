@@ -23,7 +23,8 @@ add_library(us3_turbo_client
   src/memory_manager/rdma_qp.cpp
   src/transport/gds_put_channel.cpp
   src/transport/gds_get_channel.cpp
-  src/transport/rdma_put_channel.cpp)
+  src/transport/rdma_put_channel.cpp
+  src/transport/rdma_get_channel.cpp)
 
 add_dependencies(us3_turbo_client
   us3_turbo_control_plane_proto)

@@ -79,6 +79,12 @@ class UfileAcClient {
   [[nodiscard]] BlockResult PutBlockRdma(const std::string& key, const std::string& token,
                                          std::uint64_t source_offset, std::uint64_t data_len);
 
+  /* RDMA (libibverbs) 读一个 block 到 client buffer。token 是 hex 编码的
+   * listener 地址 + MR 描述符。backend 从 NVMe 读数据后 RDMA WRITE 到 client。 */
+  [[nodiscard]] BlockResult GetBlockRdma(const std::string& key, const std::string& token,
+                                         std::uint64_t dest_offset, std::uint64_t read_offset,
+                                         std::uint64_t data_len, std::uint64_t request_id);
+
   /* 尽力删除一个 block；失败通常忽略（TTL 兜底），KEY_NOT_FOUND 视为可接受。 */
   [[nodiscard]] BlockResult DeleteBlock(const std::string& key);
 
@@ -125,6 +131,9 @@ class UfileAcClient {
                                      const std::string& key);
 
   static BlockResult DecodeRdmaPutRsp(const char* body, std::uint32_t body_len,
+                                       const std::string& key);
+
+  static BlockResult DecodeRdmaGetRsp(const char* body, std::uint32_t body_len,
                                        const std::string& key);
 
   int timeout_ms_;

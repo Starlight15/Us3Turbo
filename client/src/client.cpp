@@ -18,6 +18,7 @@
 #include "client/src/rpc/proxy_rpc.h"
 #include "client/src/transport/gds_get_channel.h"
 #include "client/src/transport/gds_put_channel.h"
+#include "client/src/transport/rdma_get_channel.h"
 #include "client/src/transport/rdma_put_channel.h"
 #include "us3_turbo/common/logger.h"
 
@@ -101,9 +102,11 @@ bool Client::Initialize() {
   RdmaMemoryManager* rdma_mgr = nullptr;
   if (RdmaMemoryManager::Instance(rdma_mgr)) {
     rdma_channel_ = std::make_unique<RdmaPutChannel>(opts_, *proxy_, rdma_mgr);
+    rdma_get_channel_ = std::make_unique<RdmaGetChannel>(opts_, *proxy_, rdma_mgr);
   } else {
     LOG_SYS_WARN("RDMA manager unavailable, path=kRdma will fail");
     rdma_channel_.reset();
+    rdma_get_channel_.reset();
   }
 
   initialized_ = true;
@@ -111,6 +114,7 @@ bool Client::Initialize() {
 }
 
 void Client::Shutdown() {
+  rdma_get_channel_.reset();
   rdma_channel_.reset();
   gds_get_channel_.reset();
   gds_channel_.reset();
@@ -387,6 +391,19 @@ bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
     return false;
   }
   return gds_get_channel_->GetOnce(bucket, key, buffer, res);
+}
+
+bool Client::GetObjectRdma(const std::string& bucket, const std::string& key,
+                           MutableBufferView buffer, GetPathResult& res) const {
+  if (!initialized_) {
+    LOG_SYS_ERROR("Client not initialized");
+    return false;
+  }
+  if (rdma_get_channel_ == nullptr) {
+    LOG_SYS_ERROR("RDMA get channel not initialized");
+    return false;
+  }
+  return rdma_get_channel_->GetOnce(bucket, key, buffer, res);
 }
 
 }  // namespace us3_turbo::client

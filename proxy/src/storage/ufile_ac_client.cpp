@@ -484,4 +484,57 @@ BlockResult UfileAcClient::DecodeRdmaPutRsp(const char* body, std::uint32_t body
   return r;
 }
 
+/* RDMA GET */
+
+BlockResult UfileAcClient::GetBlockRdma(const std::string& key, const std::string& token,
+                                        std::uint64_t dest_offset, std::uint64_t read_offset,
+                                        std::uint64_t data_len, std::uint64_t request_id) {
+  LOG_SYS_DEBUG("GetBlockRdma: key={} dest_offset={} read_offset={} len={} request_id={}", key,
+                dest_offset, read_offset, data_len, request_id);
+
+  // 编码
+  std::vector<char> req;
+  EncodeRdmaGetRequest(key, token, read_offset, dest_offset, data_len, setid_,
+                       session_seq_.fetch_add(1, std::memory_order_relaxed), request_id, req);
+
+  // 收发
+  std::vector<char> rsp_body;
+  BlockResult result;
+  if (SendAndRecv("GetBlockRdma", OSD_RDMA_GET_RSP, RDMA_GET_RSP_SIZE, req, rsp_body, result) != 0) {
+    return result;  // 已填错误
+  }
+
+  // 解码
+  return DecodeRdmaGetRsp(rsp_body.data(), static_cast<std::uint32_t>(rsp_body.size()), key);
+}
+
+BlockResult UfileAcClient::DecodeRdmaGetRsp(const char* body, std::uint32_t body_len,
+                                             const std::string& key) {
+  RdmaGetRsp rsp{};
+  std::string errmsg;
+  if (DecodeRdmaGetResponse(body, body_len, rsp, errmsg) != 0) {
+    LOG_SYS_ERROR("GetBlockRdma: decode failed key={}", key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "decode response failed: " + errmsg;
+    return r;
+  }
+  if (rsp.retcode_ != 0) {
+    const std::int32_t ret = rsp.retcode_;
+    LOG_SYS_ERROR("GetBlockRdma: backend ret={} msg={} key={}", ret, errmsg, key);
+    BlockResult r;
+    r.ret_code = PROXY_ERR_BACKEND_RPC;
+    r.error = "backend retcode=" + std::to_string(ret) + " msg=" + errmsg;
+    return r;
+  }
+  const std::uint32_t crc = rsp.crc32c_;
+  const std::uint64_t read = rsp.bytesRead_;
+  LOG_SYS_DEBUG("GetBlockRdma: ok key={} crc32c={:#x} bytes={}", key, crc, read);
+  BlockResult r;
+  r.ret_code = 0;
+  r.crc32c = crc;
+  r.bytes_written = read;  // GET 语义下复用字段 = bytes_read
+  return r;
+}
+
 }  // namespace us3_turbo::proxy

@@ -88,6 +88,10 @@ class ProxyService final : public Control {
   void GdsGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request,
               GetPathResult* response, google::protobuf::Closure* done) override;
 
+  /* RDMA (libibverbs) 下载，委托 GetObject。 */
+  void RdmaGet(google::protobuf::RpcController* cntl, const ClientProxyGetRequest* request,
+               GetPathResult* response, google::protobuf::Closure* done) override;
+
  private:
   /* TTL 清理线程主函数，周期扫描删除过期 multipart 会话。 */
   void CleanupThreadMain();

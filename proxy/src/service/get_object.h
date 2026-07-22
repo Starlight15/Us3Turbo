@@ -36,10 +36,17 @@ struct GetOutput {
   /* GDS 路径 GET：按块 RDMA 读取 + crc32c 重组校验。 */
   [[nodiscard]] int GetGds(const ClientProxyGetRequest& request, GetOutput& out);
 
+  /* RDMA (libibverbs) 路径 GET：按块从 backend 读 + backend RDMA WRITE 到 client buffer +
+   * crc32c 重组校验。 */
+  [[nodiscard]] int GetRdma(const ClientProxyGetRequest& request, GetOutput& out);
+
 
  private:
   /* 校验 GDS GET 请求合法性。 */
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyGetRequest& req);
+
+  /* 校验 RDMA GET 请求合法性。 */
+  [[nodiscard]] int ValidateRdmaRequest(const ClientProxyGetRequest& req);
 
 
   IUploadIndex* index_;

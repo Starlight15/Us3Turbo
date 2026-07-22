@@ -25,3 +25,5 @@ echo "===== RDMA ====="
 run "$RDMA/us3_turbo_rtest_rdma_multipart_invalid_part_size"      --part-size 3M
 run "$RDMA/us3_turbo_rtest_rdma_multipart_part_number_violation"  --part-size 4M
 run "$RDMA/us3_turbo_rtest_rdma_multipart_single_part"            --part-size 4M
+run "$RDMA/us3_turbo_rtest_rdma_get_single_block_crc"             --size 2M
+run "$RDMA/us3_turbo_rtest_rdma_get_multi_block_hash"             --size 4M

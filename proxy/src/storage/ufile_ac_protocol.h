@@ -42,6 +42,8 @@ enum MessageType : std::uint32_t {
   OSD_UCX_GET_RSP = 28,
   OSD_RDMA_PUT_REQ = 29,
   OSD_RDMA_PUT_RSP = 30,
+  OSD_RDMA_GET_REQ = 31,
+  OSD_RDMA_GET_RSP = 32,
 };
 
 /*
@@ -236,6 +238,34 @@ struct RdmaPutRsp {
   char data_[0];
 } __attribute__((packed));
 
+/*
+ * RDMA GET 请求（sizeof=68）+ 变长 data_。对齐 ufile-ac message.h RdmaGetReq。
+ * backend 从 NVMe 读数据后 RDMA WRITE 到 client buffer。
+ */
+struct RdmaGetReq {
+  std::uint32_t keyLen_;
+  std::uint32_t tokenLen_;
+  std::uint64_t readOffset_;     // 对象内读偏移，本阶段恒 0（整对象读）
+  std::uint64_t dataLen_;        // 本次读取长度
+  std::uint64_t destOffset_;     // 写入 client buffer 的偏移
+  std::uint64_t requestId_;      // proxy 生成，用于日志/排障
+  std::uint64_t sessionIdLow_;   // 用于关联 proxy session
+  std::uint64_t sessionIdHigh_;
+  std::uint32_t flags_;          // 预留
+  char data_[0];                 // key bytes + token bytes
+} __attribute__((packed));
+
+/*
+ * RDMA GET 响应（sizeof=20）+ 变长 data_（errmsg bytes）。
+ */
+struct RdmaGetRsp {
+  std::int32_t retcode_;
+  std::uint32_t crc32c_;
+  std::uint64_t bytesRead_;
+  std::uint32_t errMsgLen_;
+  char data_[0];  // errmsg bytes
+} __attribute__((packed));
+
 /* 尺寸常量（用 sizeof，避免硬编码笔误） */
 constexpr std::size_t MESSAGE_HEAD_SIZE = sizeof(Message);
 constexpr std::size_t GDS_PUT_REQ_SIZE = sizeof(GdsPutReq);
@@ -250,6 +280,8 @@ constexpr std::size_t DEL_REQ_SIZE = sizeof(DelReq);
 constexpr std::size_t DEL_RSP_SIZE = sizeof(DelRsp);
 constexpr std::size_t RDMA_PUT_REQ_SIZE = sizeof(RdmaPutReq);
 constexpr std::size_t RDMA_PUT_RSP_SIZE = sizeof(RdmaPutRsp);
+constexpr std::size_t RDMA_GET_REQ_SIZE = sizeof(RdmaGetReq);
+constexpr std::size_t RDMA_GET_RSP_SIZE = sizeof(RdmaGetRsp);
 
 /* 编解码函数 */
 
@@ -302,6 +334,20 @@ std::size_t EncodeRdmaPutRequest(const std::string& key, const std::string& toke
 
 /* 解码 RDMA PUT 响应体（不含 Message 头）。返回 0=成功，-1=格式错误。 */
 int DecodeRdmaPutResponse(const char* buffer, std::size_t len, RdmaPutRsp& out_rsp,
+                           std::string& out_err);
+
+/* RDMA GET */
+
+/* 编码 RDMA GET 请求，返回总字节数。
+ * 布局: Message(52) + RdmaGetReq(68) + key + token */
+std::size_t EncodeRdmaGetRequest(const std::string& key, const std::string& token,
+                                 std::uint64_t read_offset, std::uint64_t dest_offset,
+                                 std::uint64_t data_len, std::uint32_t setid,
+                                 std::uint64_t session_id, std::uint64_t request_id,
+                                 std::vector<char>& out_buffer);
+
+/* 解码 RDMA GET 响应体（不含 Message 头）。返回 0=成功，-1=格式错误。 */
+int DecodeRdmaGetResponse(const char* buffer, std::size_t len, RdmaGetRsp& out_rsp,
                            std::string& out_err);
 
 /* 编码 DEL 请求，返回总字节数。

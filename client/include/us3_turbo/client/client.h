@@ -18,6 +18,7 @@ namespace us3_turbo::client {
 class GdsPutChannel;
 class GdsGetChannel;
 class RdmaPutChannel;
+class RdmaGetChannel;
 class GdsMemoryManager;
 class RdmaMemoryManager;
 
@@ -98,12 +99,18 @@ class Client {
   [[nodiscard]] bool GetObjectGds(const std::string& bucket, const std::string& key,
                                   MutableBufferView buffer, GetPathResult& res) const;
 
+  /** @brief RDMA (libibverbs) 通路 GET：buffer 须已按 StatObject 返回的 size 分配。
+   * backend 从 NVMe 读数据后 RDMA WRITE 推到 client host buffer。 */
+  [[nodiscard]] bool GetObjectRdma(const std::string& bucket, const std::string& key,
+                                   MutableBufferView buffer, GetPathResult& res) const;
+
  private:
   ClientOptions opts_;
   std::unique_ptr<ProxyRpc> proxy_;
   std::unique_ptr<GdsPutChannel> gds_channel_;
   std::unique_ptr<GdsGetChannel> gds_get_channel_;
   std::unique_ptr<RdmaPutChannel> rdma_channel_;
+  std::unique_ptr<RdmaGetChannel> rdma_get_channel_;
   bool initialized_{false};
 
   // 返回 client 进程内的 GDS/RDMA manager 单例（Initialize 时已确保可用）。

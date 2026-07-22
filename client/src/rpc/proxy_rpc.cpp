@@ -339,4 +339,46 @@ bool ProxyRpc::GdsGet(std::string_view req_id, const std::string& bucket, const 
   return resp.ok();
 }
 
+bool ProxyRpc::RdmaGet(std::string_view req_id, const std::string& bucket, const std::string& key,
+                       std::uint64_t object_size, const RdmaDataSource& rdma_source,
+                       GetPathResult& res) const {
+  if (!ok()) {
+    LOG_ERROR(req_id, "proxy channel not ready: {}", init_error());
+    res.ok = false;
+    res.error_message = std::string{"proxy channel not ready: "} + init_error();
+    return false;
+  }
+
+  brpc::Controller controller;
+  ApplyTimeout(controller);
+
+  us3_turbo::proxy::ClientProxyGetRequest rpc_request;
+  rpc_request.set_request_id(std::string(req_id));
+  rpc_request.set_bucket(bucket);
+  rpc_request.set_key(key);
+  rpc_request.set_object_size(object_size);
+  rpc_request.mutable_rdma_source()->set_rdma_token(rdma_source.rdma_token);
+
+  us3_turbo::proxy::GetPathResult resp;
+  stub()->RdmaGet(&controller, &rpc_request, &resp, nullptr);
+
+  if (controller.Failed()) {
+    const bool is_timeout =
+        (controller.ErrorCode() == brpc::ERPCTIMEDOUT) || (controller.ErrorCode() == ETIMEDOUT);
+    res.ok = false;
+    res.error_message = controller.ErrorText();
+    LOG_ERROR(req_id, "RdmaGet RPC failed: {} (error={})", controller.ErrorText(),
+              is_timeout ? "timeout" : "data-plane");
+    return false;
+  }
+
+  res.ok = resp.ok();
+  res.error_code = resp.error_code();
+  res.error_message = resp.error_message();
+  res.crc32c = resp.crc32c();
+  res.bytes_read = resp.bytes_read();
+  res.hash = resp.hash();
+  return resp.ok();
+}
+
 }  // namespace us3_turbo::client

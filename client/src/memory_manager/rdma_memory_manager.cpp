@@ -159,10 +159,11 @@ void RdmaMemoryManager::DoUnregister(void* /*ptr*/, ibv_mr*& handle) {
   }
 }
 
-bool RdmaMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
-                                           Descriptor& out) {
+bool RdmaMemoryManager::AcquireDescriptorImpl(const void* ptr, std::size_t size,
+                                               int access_flags, const char* tag,
+                                               Descriptor& out) {
   if (ptr == nullptr || size == 0U) {
-    LOG_SYS_WARN("requires non-null ptr and positive size");
+    LOG_SYS_WARN("{} requires non-null ptr and positive size", tag);
     return false;
   }
   void* mut_ptr = const_cast<void*>(ptr);
@@ -181,11 +182,16 @@ bool RdmaMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
     auto it = registered_.find(mut_ptr);
     cache_hit = (it != registered_.end());
     if (it == registered_.end()) {
-      ibv_mr* h = nullptr;
-      if (!DoRegister(mut_ptr, size, h)) return false;
-      it = registered_.emplace(mut_ptr, h).first;
+      mr = ibv_reg_mr(pd_, mut_ptr, size, access_flags);
+      if (mr == nullptr) {
+        LOG_SYS_ERROR("{} ibv_reg_mr failed ptr={} size={} access={:#x}",
+                      tag, mut_ptr, size, access_flags);
+        return false;
+      }
+      registered_.emplace(mut_ptr, mr);
+    } else {
+      mr = it->second;
     }
-    mr = it->second;
     t2 = diag_clk::now();
   }
 
@@ -200,11 +206,25 @@ bool RdmaMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
     return std::chrono::duration<double, std::micro>(b - a).count();
   };
   LOG_SYS_INFO(
-      "ptr={} size={} token_bytes={} listen={}:{} "
+      "{} ptr={} size={} token_bytes={} listen={}:{} "
       "PHASE hit={} lock_wait_us={:.1f} inlock_us={:.1f} encode_us={:.1f}",
-      ptr, size, out.token.size(), listen_ip_, listen_port_,
+      tag, ptr, size, out.token.size(), listen_ip_, listen_port_,
       cache_hit, diag_us(t0, t1), diag_us(t1, t2), diag_us(t2, t3));
   return true;
+}
+
+bool RdmaMemoryManager::AcquireDescriptor(const void* ptr, std::size_t size,
+                                           Descriptor& out) {
+  return AcquireDescriptorImpl(ptr, size, IBV_ACCESS_REMOTE_READ,
+                               "AcquireDescriptor", out);
+}
+
+bool RdmaMemoryManager::AcquireDescriptorForWrite(const void* ptr, std::size_t size,
+                                                   Descriptor& out) {
+  return AcquireDescriptorImpl(
+      ptr, size,
+      IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE,
+      "AcquireDescriptorForWrite", out);
 }
 
 }  // namespace us3_turbo::client

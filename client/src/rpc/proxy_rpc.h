@@ -121,6 +121,12 @@ class ProxyRpc {
                             const std::string& key, std::uint64_t object_size,
                             const GdsDataSource& gds_source, GetPathResult& res) const;
 
+  /** @brief RDMA (libibverbs) 通路 GET：token 随 RPC 透传，
+   * backend 从 NVMe 读数据后 RDMA WRITE 推数据到 client host buffer。 */
+  [[nodiscard]] bool RdmaGet(std::string_view req_id, const std::string& bucket,
+                             const std::string& key, std::uint64_t object_size,
+                             const RdmaDataSource& rdma_source, GetPathResult& res) const;
+
  private:
   void ApplyTimeout(brpc::Controller& controller) const {
     controller.set_timeout_ms(static_cast<int>(rpc_timeout_.count()));

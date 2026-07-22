@@ -172,11 +172,12 @@ message StatObjectResponse {
 // client → proxy GET 请求。object_size 须与 StatObject 返回一致
 // （proxy 据此校验，防止 client 拿旧布局注册了错误大小的 buffer）。
 message ClientProxyGetRequest {
-  string        request_id  = 1;
-  string        bucket      = 2;
-  string        key         = 3;
-  uint64        object_size = 4;
-  GdsDataSource gds_source  = 10;
+  string        request_id     = 1;
+  string        bucket         = 2;
+  string        key            = 3;
+  uint64        object_size    = 4;
+  optional GdsDataSource  gds_source  = 10;
+  optional RdmaDataSource rdma_source = 12;
 }
 
 // GET 执行结果。crc32c/hash 为 proxy 按块重组后的校验值，与 fileidx.hash
@@ -237,6 +238,7 @@ service Control {
   // ===== GET 接口（client → proxy） =====
   rpc StatObject(StatObjectRequest) returns (StatObjectResponse);
   rpc GdsGet(ClientProxyGetRequest) returns (GetPathResult);
+  rpc RdmaGet(ClientProxyGetRequest) returns (GetPathResult);
 }
 
 // Backend 数据面 block 级服务（proxy → backend）。与 Control 同进程注册：

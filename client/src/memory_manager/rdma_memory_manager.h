@@ -41,8 +41,13 @@ class RdmaMemoryManager : public BufferRegistry<ibv_mr*> {
   /** @brief 获取进程唯一实例，失败返回 false。 */
   [[nodiscard]] static bool Instance(RdmaMemoryManager*& out);
 
-  /** @brief 注册 host buffer（ibv_reg_mr）并编码 token，填充 Descriptor。幂等。 */
+  /** @brief 注册 host buffer（ibv_reg_mr）并编码 token，填充 Descriptor。幂等。
+   * 注册 MR 含 IBV_ACCESS_REMOTE_READ（PUT：backend 拉数据）。 */
   [[nodiscard]] bool AcquireDescriptor(const void* ptr, std::size_t size, Descriptor& out);
+
+  /** @brief 注册 host buffer 用于 GET（backend RDMA WRITE 推数据到 client buffer）。
+   * 注册 MR 含 IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE。 */
+  [[nodiscard]] bool AcquireDescriptorForWrite(const void* ptr, std::size_t size, Descriptor& out);
 
   RdmaMemoryManager(const RdmaMemoryManager&) = delete;
   RdmaMemoryManager& operator=(const RdmaMemoryManager&) = delete;
@@ -56,6 +61,15 @@ class RdmaMemoryManager : public BufferRegistry<ibv_mr*> {
   [[nodiscard]] bool DoRegister(void* ptr, std::size_t size, ibv_mr*& out) override;
 
   void DoUnregister(void* ptr, ibv_mr*& handle) override;
+
+  /** @brief 公共的 descriptor 获取骨架：幂等注册 buffer → 编码 token。
+   * access_flags 控制 ibv_reg_mr 的 access 参数：
+   *   - PUT 用 IBV_ACCESS_REMOTE_READ
+   *   - GET 用 IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE
+   */
+  [[nodiscard]] bool AcquireDescriptorImpl(const void* ptr, std::size_t size,
+                                           int access_flags, const char* tag,
+                                           Descriptor& out);
 
   /** @brief 创建 listener 并建立 PD。 */
   [[nodiscard]] bool InitListener();
