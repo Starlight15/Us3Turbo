@@ -38,8 +38,12 @@ class RdmaMemoryManager : public BufferRegistry<ibv_mr*> {
     bool valid() const noexcept { return !token.empty(); }
   };
 
-  /** @brief 获取进程唯一实例，失败返回 false。 */
-  [[nodiscard]] static bool Instance(RdmaMemoryManager*& out);
+  /** @brief 获取进程唯一实例，失败返回 false。
+   * @param bind_ip 首次调用时设置 RDMA CM listener 绑定地址；
+   *                空字符串默认 "0.0.0.0"（所有接口）。
+   *                后续调用忽略该参数。 */
+  [[nodiscard]] static bool Instance(RdmaMemoryManager*& out,
+                                     const std::string& bind_ip = "");
 
   /** @brief 注册 host buffer（ibv_reg_mr）并编码 token，填充 Descriptor。幂等。
    * 注册 MR 含 IBV_ACCESS_REMOTE_READ（PUT：backend 拉数据）。 */

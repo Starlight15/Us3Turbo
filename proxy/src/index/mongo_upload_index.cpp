@@ -39,13 +39,16 @@ bool MongoUploadIndex::Get(const std::string& upload_id, UploadRecord& out) {
     out.bucket = "";  // bucket_id only; name lookup deferred to Phase 5
     out.key = doc[mgo::f::kKey].get<std::string>();
     out.obj_id = doc[mgo::f::kFirstObject].get<std::string>();
-    out.block_size = doc.value(mgo::f::kMinitBlockSize, 4ULL * 1024 * 1024);
+    out.block_size = doc.value(mgo::f::kMinitBlockSize,
+                               static_cast<std::uint64_t>(FLAGS_multipart_part_size));
     out.merged_size = doc.value(mgo::f::kMergedSize, 0ULL);
     out.last_merged_part = doc.value(mgo::f::kLastMergedPart, 0);
     out.status = doc.value(mgo::f::kStatus, 0);
 
-    /* path field: DBGate stores as number, may be string or int */
-    int path_int = 1;
+    /* path field: DBGate stores as number, may be string or int.
+       Default to PATH_GDS (1) for backward compatibility with records
+       written before the path field was introduced. */
+    int path_int = static_cast<int>(PATH_GDS);
     if (doc.contains(mgo::f::kPath)) {
       if (doc[mgo::f::kPath].is_string()) {
         path_int = std::stoi(doc[mgo::f::kPath].get<std::string>());

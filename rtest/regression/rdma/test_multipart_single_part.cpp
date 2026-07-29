@@ -13,7 +13,7 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  constexpr const char* kProxy = "192.168.1.198:9100";
+  constexpr const char* kProxy = rtest::kDefaultProxyEndpoint;
   constexpr const char* kBucket = "test-bucket";
   constexpr char kTestName[] = "rdma_multipart_single_part";
 

@@ -100,7 +100,7 @@ bool Client::Initialize() {
   }
 
   RdmaMemoryManager* rdma_mgr = nullptr;
-  if (RdmaMemoryManager::Instance(rdma_mgr)) {
+  if (RdmaMemoryManager::Instance(rdma_mgr, opts_.rdma_bind_ip)) {
     rdma_channel_ = std::make_unique<RdmaPutChannel>(opts_, *proxy_, rdma_mgr);
     rdma_get_channel_ = std::make_unique<RdmaGetChannel>(opts_, *proxy_, rdma_mgr);
   } else {
@@ -197,7 +197,7 @@ GdsMemoryManager* Client::GdsManager() const {
 
 RdmaMemoryManager* Client::RdmaManager() const {
   RdmaMemoryManager* mgr = nullptr;
-  return RdmaMemoryManager::Instance(mgr) ? mgr : nullptr;
+  return RdmaMemoryManager::Instance(mgr, opts_.rdma_bind_ip) ? mgr : nullptr;
 }
 
 bool Client::CreateMultipartUpload(const std::string& bucket, const std::string& key,

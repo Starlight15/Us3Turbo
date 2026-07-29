@@ -19,6 +19,9 @@
 
 namespace us3_turbo::client {
 
+// brpc channel 最大重试次数（含首次，共 max_retry 次）。
+constexpr int kBrpcMaxRetry = 2;
+
 /**
  * @brief proxy 控制面 RPC client:GdsPut / RdmaPut 共用一条 brpc channel。
  */
@@ -35,7 +38,7 @@ class ProxyRpc {
     co.protocol = "baidu_std";
     co.connect_timeout_ms = static_cast<int>(rpc_timeout.count());
     co.timeout_ms = static_cast<int>(rpc_timeout.count());
-    co.max_retry = 2;
+    co.max_retry = kBrpcMaxRetry;
     std::string trimmed = endpoint;
     while (!trimmed.empty() && trimmed.back() == '/') {
       trimmed.pop_back();

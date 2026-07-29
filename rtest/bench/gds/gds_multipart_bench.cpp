@@ -206,7 +206,7 @@ bool GdsMpParseArgs(int argc, char** argv, GdsMpArgs& a) {
       a.csv = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "usage: us3_turbo_bench_gds_multipart [options]\n"
-                << "  --proxy ADDR        proxy endpoint (default " << "192.168.1.198:9100" << ")\n"
+                << "  --proxy ADDR        proxy endpoint (default " << rtest::kDefaultProxyEndpoint << ")\n"
                 << "  --total SIZE        total object size (default 64M)\n"
                 << "  --part-size SIZE    part size (default 4M, <=4M)\n"
                 << "  --reps N            reps per worker (default 5)\n"

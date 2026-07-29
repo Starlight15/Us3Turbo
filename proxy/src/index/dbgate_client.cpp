@@ -17,6 +17,22 @@ namespace us3_turbo::proxy {
 
 namespace mgo = ::us3_turbo::proxy::mongo;
 
+namespace {
+
+// UMessage 协议常量（DBGate 二进制协议）。
+constexpr std::uint32_t kUMessageMagic = 0x12340987;
+constexpr std::uint32_t kUMessageVersion = 1;
+constexpr std::uint32_t kExecuteMgoReqType = 150000;
+constexpr std::uint32_t kExecuteMgoRspType = 150001;
+
+// 响应体上限，防止内存暴涨（协议安全阀值）。
+constexpr std::uint32_t kMaxDbgateRspBytes = 16U * 1024 * 1024;
+
+// 长度前缀宽度（4 字节大端）。
+constexpr int kLenPrefixSize = static_cast<int>(sizeof(std::uint32_t));
+
+}  // namespace
+
 bool DBGateClient::ParseEndpoint(const std::string& endpoint, std::string& host, int& port) {
   const auto pos = endpoint.rfind(':');
   if (pos == std::string::npos) return false;
@@ -67,7 +83,7 @@ int DBGateClient::SendAndRecv(const std::vector<char>& req_buf, std::vector<char
     std::uint32_t req_len_be = htonl(req_len);
 
     bool ok = true;
-    if (conn->SendAll(&req_len_be, 4) != 0) {
+    if (conn->SendAll(&req_len_be, kLenPrefixSize) != 0) {
       LOG_SYS_ERROR("SendAll length failed");
       ok = false;
     } else if (conn->SendAll(req_buf.data(), req_buf.size()) != 0) {
@@ -77,13 +93,13 @@ int DBGateClient::SendAndRecv(const std::vector<char>& req_buf, std::vector<char
 
     /* 接收: [4B大端长度][rsp_buf] */
     std::uint32_t rsp_len_be = 0;
-    if (ok && conn->RecvAll(&rsp_len_be, 4) != 0) {
+    if (ok && conn->RecvAll(&rsp_len_be, kLenPrefixSize) != 0) {
       LOG_SYS_ERROR("RecvAll length failed");
       ok = false;
     }
     std::uint32_t rsp_len = ok ? ntohl(rsp_len_be) : 0;
 
-    if (ok && rsp_len > 16 * 1024 * 1024) {
+    if (ok && rsp_len > kMaxDbgateRspBytes) {
       LOG_SYS_ERROR("Response length too large: {}", rsp_len);
       conn->set_dead();
       conn->Close();
@@ -129,13 +145,13 @@ int DBGateClient::ExecuteMgo(const ucloud::umgogate::ExecuteMgoRequest& mgo_req,
   static std::uniform_int_distribution<std::uint32_t> dist;
 
   auto* head = msg.mutable_head();
-  head->set_version(1);
-  head->set_magic_flag(0x12340987);
+  head->set_version(kUMessageVersion);
+  head->set_magic_flag(kUMessageMagic);
   head->set_random_num(dist(gen));
   head->set_flow_no(
       static_cast<::google::protobuf::uint32>(flow_no_.fetch_add(1, std::memory_order_relaxed)));
   head->set_session_no("0");
-  head->set_message_type(150000);  // EXECUTE_MGO_REQUEST
+  head->set_message_type(kExecuteMgoReqType);  // EXECUTE_MGO_REQUEST
   head->set_worker_index(0);
   head->set_source_entity(dist(gen));
 
@@ -162,7 +178,7 @@ int DBGateClient::ExecuteMgo(const ucloud::umgogate::ExecuteMgoRequest& mgo_req,
     return PROXY_ERR_BACKEND_PROTOCOL;
   }
 
-  if (!rsp_msg.has_head() || rsp_msg.head().message_type() != 150001) {
+  if (!rsp_msg.has_head() || rsp_msg.head().message_type() != kExecuteMgoRspType) {
     LOG_SYS_ERROR("Unexpected message_type in response: {}",
                   rsp_msg.has_head() ? rsp_msg.head().message_type() : 0);
     return PROXY_ERR_BACKEND_PROTOCOL;

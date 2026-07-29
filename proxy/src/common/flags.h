@@ -21,4 +21,3 @@ DECLARE_int32(dbgate_timeout_ms);
 DECLARE_int32(dbgate_conn_pool_size);
 DECLARE_int32(dbgate_send_recv_max_retry);
 DECLARE_int32(bucket_id);
-DECLARE_string(mongo_db_name);

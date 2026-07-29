@@ -54,7 +54,8 @@ struct UploadRecord {
   // 对齐 s3proxy 新增字段
   std::string obj_id;  // = s3proxy ObjId
   // block_size：multipart 恒 = part_size（1 block/part）；Complete 写入
-  // fileidx_col 供 GET 按 part 粒度读回。此处默认仅用于历史/缺字段兜底。
+  // fileidx_col 供 GET 按 part 粒度读回。此处默认仅用于历史/缺字段兜底，
+  // 须与 FLAGS_multipart_part_size 一致。
   std::uint64_t block_size{4ULL * 1024 * 1024};
   std::uint64_t merged_size{0};      // UploadPart 累加，Complete 用作总大小
   std::int32_t last_merged_part{0};  // 供未来续传/持久化

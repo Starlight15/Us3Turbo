@@ -42,4 +42,3 @@ DEFINE_int32(dbgate_send_recv_max_retry, 2,
 DEFINE_int32(bucket_id, 1,
              "Bucket ID for index operations (temporary hardcoded, Phase 5 "
              "will query bucketidx_col)");
-DEFINE_string(mongo_db_name, "s3proxy", "MongoDB database name for fileidx/minit/part collections");

@@ -22,7 +22,8 @@ namespace us3_turbo::client {
 namespace {
 
 // client RDMA CM listener 绑定地址，端口 0 由系统分配。
-constexpr char kDefaultBindIp[] = "192.168.1.198";
+// 首次调用 Instance 时通过 bind_ip 参数设置；默认 "0.0.0.0"（所有接口）。
+std::string g_bind_ip = "0.0.0.0";
 
 // 单 Accept 超时（ms）：后台线程用短超时走 select 轮询，stop_ 时可快速退出。
 constexpr int kAcceptTimeoutMs = 500;
@@ -35,9 +36,9 @@ constexpr std::size_t kMaxCachedQps = 128;
 // ---- 分阶段 init：失败按反向顺序 cleanup。 ----
 
 bool RdmaMemoryManager::InitListener() {
-  listener_ = RdmaQp::CreateListener(kDefaultBindIp, 0);
+  listener_ = RdmaQp::CreateListener(g_bind_ip.c_str(), 0);
   if (listener_ == nullptr) {
-    LOG_SYS_ERROR("RdmaQp CreateListener({}:0) failed", kDefaultBindIp);
+    LOG_SYS_ERROR("RdmaQp CreateListener({}:0) failed", g_bind_ip);
     return false;
   }
 
@@ -53,7 +54,7 @@ bool RdmaMemoryManager::InitListener() {
     return false;
   }
 
-  listen_ip_ = kDefaultBindIp;
+  listen_ip_ = g_bind_ip;
   listen_port_ = listener_->listen_port();
   LOG_SYS_INFO("RDMA listener at {}:{}", listen_ip_, listen_port_);
   return true;
@@ -130,7 +131,9 @@ RdmaMemoryManager::~RdmaMemoryManager() {
   CleanupListener();
 }
 
-bool RdmaMemoryManager::Instance(RdmaMemoryManager*& out) {
+bool RdmaMemoryManager::Instance(RdmaMemoryManager*& out, const std::string& bind_ip) {
+  // 首次调用用参数设定 bind IP；后续调用忽略该参数。
+  if (!bind_ip.empty()) g_bind_ip = bind_ip;
   static RdmaMemoryManager mgr;
   static bool init_ok = [&]() -> bool {
     if (mgr.started_) return true;

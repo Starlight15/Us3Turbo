@@ -15,7 +15,7 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const char* kProxy = (argc > 1) ? argv[1] : "192.168.1.198:9100";
+  const char* kProxy = (argc > 1) ? argv[1] : rtest::kDefaultProxyEndpoint;
   constexpr const char* kBucket = "test-bucket";
   constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;
 

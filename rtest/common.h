@@ -21,6 +21,9 @@ namespace rtest {
 // ClientOptions::multipart_part_size 一致。
 constexpr std::uint64_t kDefaultPartSize = 4ULL * 1024 * 1024;  // 4 MiB
 
+// 默认 proxy 控制面 endpoint。
+constexpr const char* kDefaultProxyEndpoint = "192.168.1.198:9100";
+
 
 
 // 解析 "4M"/"1M" 等（1024 进制）。签名对齐 multipart/get examples。

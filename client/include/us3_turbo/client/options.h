@@ -35,6 +35,9 @@ struct ClientOptions {
 
   // 日志级别: "debug"/"info"/"warn"/"error"，默认 info
   std::string log_level{"info"};
+
+  // RDMA CM listener 绑定 IP；必须匹配本地 RDMA 网卡 IP，否则 device() 返回 null
+  std::string rdma_bind_ip{"192.168.1.198"};
 };
 
 }  // namespace us3_turbo::client

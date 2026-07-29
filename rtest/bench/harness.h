@@ -59,7 +59,7 @@ inline double Max(const std::vector<double>& v) {
 // 通过派生添加。
 
 struct BaseArgs {
-  std::string proxy{"192.168.1.198:9100"};
+  std::string proxy{rtest::kDefaultProxyEndpoint};
   std::uint64_t total{64ULL * 1024 * 1024};
   std::uint32_t reps{5};
   std::uint32_t warmup{0};
