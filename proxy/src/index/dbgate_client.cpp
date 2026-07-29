@@ -46,18 +46,17 @@ std::pair<std::size_t, TcpConnection*> DBGateClient::AcquireConn() {
 int DBGateClient::SendAndRecv(const std::vector<char>& req_buf, std::vector<char>& out_rsp_buf) {
   /* 连接级失败重试: 对端(dbgate)空闲关闭后, 池中连接第一笔请求必失败。
    * 失败后立即 Close 当前连接, 下次 AcquireConn 跳过 !alive 连接取下一条
-   * (或触发 Connect 重连)。固定重试 1 次(共 2 次尝试), 吸收单次连接级故障。
-   * 见 review/fix_proxy_connection_retry.md (P1)。 */
-  for (int attempt = 0; attempt < 2; ++attempt) {
+   * (或触发 Connect 重连)。 */
+  const int max_retry = FLAGS_dbgate_send_recv_max_retry;
+  for (int attempt = 0; attempt < max_retry; ++attempt) {
     auto [idx, conn] = AcquireConn();
     if (!conn) {
-      if (attempt == 0) {
-        LOG_SYS_WARN("SendAndRecv to dbgate: AcquireConn failed, retry once");
-        continue;  // 池中可能有其它连接或可重连
+      if (attempt + 1 < max_retry) {
+        LOG_SYS_WARN("SendAndRecv to dbgate: AcquireConn failed, retry");
+        continue;
       }
-      LOG_SYS_ERROR(
-          "SendAndRecv to dbgate: all connections unavailable "
-          "after 2 attempts");
+      LOG_SYS_ERROR("SendAndRecv to dbgate: all connections unavailable "
+                    "after {} attempts", max_retry);
       return PROXY_ERR_BACKEND_UNAVAILABLE;
     }
 
@@ -110,18 +109,12 @@ int DBGateClient::SendAndRecv(const std::vector<char>& req_buf, std::vector<char
     /* 对端空闲关闭时, 池中所有连接可能同时失效(同批创建 → 同时空闲 → 同时
      * 被对端关)。仅 set_dead 当前连接不够: AcquireConn 仍会返回其它
      * alive_=true 但实际已死的僵尸连接。主动标记所有连接为 dead, 让下次
-     * AcquireConn 走 Connect() 建新连接。set_dead() 原子操作线程安全;
-     * Close() 由后续 Connect() 在检测到 fd_>=0 时完成。 */
-    if (attempt == 0) {
-      for (auto& c : conns_) {
-        c->set_dead();
-      }
-      LOG_SYS_WARN(
-          "SendAndRecv to dbgate failed (SendAll/RecvAll error), "
-          "invalidated all pool conns, retry with fresh conn");
-      continue;
+     * AcquireConn 走 Connect() 建新连接。 */
+    for (auto& c : conns_) {
+      c->set_dead();
     }
-    LOG_SYS_ERROR("SendAndRecv to dbgate failed after 2 attempts");
+    LOG_SYS_WARN("SendAndRecv to dbgate failed (send/recv error), "
+                 "invalidated all pool conns, retry");
   }
   return PROXY_ERR_BACKEND_IO;
 }

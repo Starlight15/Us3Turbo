@@ -28,11 +28,17 @@ DEFINE_int32(log_max_files, 10, "max number of rotated app log files to keep");
 DEFINE_int32(backend_conn_pool_size, 8,
              "backend connection pool size (recommend: ≈ num_threads for best "
              "throughput)");
+DEFINE_int32(backend_send_recv_max_retry, 2,
+             "max retry attempts (inclusive) for SendAndRecv on connection-level "
+             "failure; protocol errors are not retried");
 DEFINE_string(dbgate_endpoint, "192.168.1.100:20165",
               "DBGate proxy endpoint for MongoDB operations");
 DEFINE_int32(dbgate_timeout_ms, 5000, "DBGate request timeout in milliseconds");
 DEFINE_int32(dbgate_conn_pool_size, 4,
              "DBGate connection pool size (recommend: match num_threads)");
+DEFINE_int32(dbgate_send_recv_max_retry, 2,
+             "max retry attempts (inclusive) for DBGate SendAndRecv on "
+             "connection-level failure; protocol errors are not retried");
 DEFINE_int32(bucket_id, 1,
              "Bucket ID for index operations (temporary hardcoded, Phase 5 "
              "will query bucketidx_col)");

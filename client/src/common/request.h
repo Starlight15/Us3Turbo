@@ -23,27 +23,17 @@ inline bool HasPath(PutDataPath flags, PutDataPath check) {
   return (static_cast<std::uint8_t>(flags) & static_cast<std::uint8_t>(check)) != 0;
 }
 
-/** @brief GDS 通路数据源:cuObj RDMA token(显存地址 + remote key 自描述串)。 */
-struct GdsDataSource {
-  std::string rdma_token;
-};
-
-/** @brief RDMA (libibverbs) 通路数据源:hex-encoded token 含 listener ip:port +
- * rkey + addr + size。 */
-struct RdmaDataSource {
-  std::string rdma_token;
-};
-
-/** @brief client → proxy 统一 PUT 请求;对应通路 source 由 PutObject 内部按 path
- * 填充。 */
+/** @brief client → proxy 统一 PUT 请求;对应通路的 rdma_token 由 PutObject
+ * 内部按 path 填充。 */
 struct ClientProxyPutRequest {
   std::string req_id;
   std::string bucket;
   std::string key;
   std::uint64_t object_size{0};
   PutDataPath path{PutDataPath::kNone};
-  std::optional<GdsDataSource> gds_source;
-  std::optional<RdmaDataSource> rdma_source;
+  // GDS: cuObj RDMA token(显存地址 + remote key 自描述串);
+  // RDMA: hex-encoded token 含 listener ip:port + rkey + addr + size。
+  std::optional<std::string> rdma_token;
 };
 
 /** @brief 单条通路的执行结果。ok=false 时 error_code/error_message 描述失败。

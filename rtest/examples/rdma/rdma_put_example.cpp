@@ -15,6 +15,8 @@ int main(int argc, char** argv) {
   const char* kProxy = (argc > 1) ? argv[1] : "192.168.1.198:9100";
   constexpr const char* kBucket = "test-bucket";
   constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;
+  // 时间戳随机后缀，避免多次运行 key 冲突。
+  const std::string key = "rdma-demo-" + rtest::MakeTimestampSuffix();
 
   std::vector<std::byte> host(kSize);
   rtest::FillHostPattern(host);
@@ -22,10 +24,14 @@ int main(int argc, char** argv) {
   Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
+  ClientProxyPutRequest put_req;
+  put_req.bucket = kBucket;
+  put_req.key = key;
+  put_req.object_size = kSize;
+  put_req.path = PutDataPath::kRdma;
+
   ClientProxyPutResponse resp;
-  client.PutObjectRdma(ClientProxyPutRequest{.bucket = kBucket, .key = "rdma-demo",
-                                              .object_size = kSize, .path = PutDataPath::kRdma},
-                        ConstBufferView{.data = host.data(), .size = kSize}, resp);
+  client.PutObjectRdma(put_req, ConstBufferView{.data = host.data(), .size = kSize}, resp);
 
   client.Shutdown();
 

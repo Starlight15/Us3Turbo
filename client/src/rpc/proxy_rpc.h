@@ -64,13 +64,13 @@ class ProxyRpc {
   /** @brief GDS 通路:cuObj RDMA token 随 RPC 透传,backend 反向 RDMA-READ。 */
   [[nodiscard]] bool GdsPut(std::string_view req_id, const std::string& bucket,
                             const std::string& key, std::uint64_t object_size,
-                            const GdsDataSource& gds_source, PutPathResult& res) const;
+                            const std::string& rdma_token, PutPathResult& res) const;
 
   /** @brief RDMA (libibverbs) 通路:token 随 RPC 透传,backend RDMA CM 反向连接后
    * ibv_post_send(RDMA_READ)。 */
   [[nodiscard]] bool RdmaPut(std::string_view req_id, const std::string& bucket,
                              const std::string& key, std::uint64_t object_size,
-                             const RdmaDataSource& rdma_source, PutPathResult& res) const;
+                             const std::string& rdma_token, PutPathResult& res) const;
 
   // ===== 分段上传接口（client → proxy）=====
 
@@ -119,13 +119,13 @@ class ProxyRpc {
    * backend RDMA_WRITE 推数据到 client。 */
   [[nodiscard]] bool GdsGet(std::string_view req_id, const std::string& bucket,
                             const std::string& key, std::uint64_t object_size,
-                            const GdsDataSource& gds_source, GetPathResult& res) const;
+                            const std::string& rdma_token, GetPathResult& res) const;
 
   /** @brief RDMA (libibverbs) 通路 GET：token 随 RPC 透传，
    * backend 从 NVMe 读数据后 RDMA WRITE 推数据到 client host buffer。 */
   [[nodiscard]] bool RdmaGet(std::string_view req_id, const std::string& bucket,
                              const std::string& key, std::uint64_t object_size,
-                             const RdmaDataSource& rdma_source, GetPathResult& res) const;
+                             const std::string& rdma_token, GetPathResult& res) const;
 
  private:
   void ApplyTimeout(brpc::Controller& controller) const {

@@ -29,9 +29,7 @@ bool RdmaGetChannel::GetOnce(const std::string& bucket, const std::string& key,
     LOG_ERROR(req_id, "AcquireDescriptorForWrite failed");
     return false;
   }
-  RdmaDataSource rdma_source{std::string(desc.token)};
-
-  return proxy_.RdmaGet(req_id, bucket, key, buffer.size, rdma_source, res);
+  return proxy_.RdmaGet(req_id, bucket, key, buffer.size, desc.token, res);
 }
 
 }  // namespace us3_turbo::client

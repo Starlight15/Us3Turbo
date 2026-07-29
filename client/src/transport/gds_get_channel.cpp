@@ -30,9 +30,7 @@ bool GdsGetChannel::GetOnce(const std::string& bucket, const std::string& key,
     LOG_ERROR(req_id, "AcquireToken(CUOBJ_GET) failed");
     return false;
   }
-  GdsDataSource gds_source{std::string(token.str())};
-
-  return proxy_.GdsGet(req_id, bucket, key, buffer.size, gds_source, res);
+  return proxy_.GdsGet(req_id, bucket, key, buffer.size, std::string(token.str()), res);
 }
 
 }  // namespace us3_turbo::client

@@ -1,6 +1,5 @@
 #include "proxy/src/storage/ufile_ac_client.h"
 
-#include <chrono>  // [诊断插桩]
 #include <string>
 #include <utility>
 #include <vector>
@@ -129,35 +128,25 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
                                std::vector<char>& out_body, BlockResult& out_result) {
   /* 连接级失败重试: 对端(ufile-ac)空闲关闭后, 池中连接第一笔请求必失败。
    * 失败后立即 Close 当前连接, 下次 AcquireConn 跳过 !alive 连接取下一条
-   * (或触发 Connect 重连)。固定重试 1 次(共 2 次尝试), 吸收单次连接级故障。
-   * 见 review/fix_proxy_connection_retry.md (P4)。
+   * (或触发 Connect 重连)。协议错误(bad magic/body too short)不重试。
    * PutBlock 失败调用方已 CleanupWrittenBlocks 回滚, 重试用新连接发新请求
-   * (keyed by block_id), 幂等安全。协议错误(bad magic/body too short)不重试。
-   */
-  for (int attempt = 0; attempt < 2; ++attempt) {
-    // [诊断插桩] t0: attempt 起点，含 AcquireConn 本身耗时
-    const auto t0 = std::chrono::steady_clock::now();
-
+   * (keyed by block_id), 幂等安全。 */
+  const int max_retry = FLAGS_backend_send_recv_max_retry;
+  for (int attempt = 0; attempt < max_retry; ++attempt) {
     // 取连接
     auto [idx, conn] = AcquireConn();
     if (conn == nullptr) {
-      if (attempt == 0) {
-        LOG_SYS_WARN("{}: AcquireConn failed, retry once", op_name);
-        continue;  // 池中可能有其它连接或可重连
+      if (attempt + 1 < max_retry) {
+        LOG_SYS_WARN("{}: AcquireConn failed, retry", op_name);
+        continue;
       }
       out_result.ret_code = PROXY_ERR_BACKEND_UNAVAILABLE;
       out_result.error = "backend pool all dead";
-      LOG_SYS_ERROR("{}: no available connection after 2 attempts", op_name);
+      LOG_SYS_ERROR("{}: no available connection after {} attempts", op_name, max_retry);
       return -1;
     }
 
-    // [诊断插桩] t1: AcquireConn 返回后 → acquire_conn_us = t1-t0
-    const auto t1 = std::chrono::steady_clock::now();
-
     std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
-
-    // [诊断插桩] t2: 拿到该连接 mutex 后 → lock_wait_us = t2-t1（核心指标：连接池排队）
-    const auto t2 = std::chrono::steady_clock::now();
 
     // 发送
     bool ok = true;
@@ -165,9 +154,6 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
       LOG_SYS_ERROR("{}: send failed", op_name);
       ok = false;
     }
-
-    // [诊断插桩] t3: SendAll 后 → send_us = t3-t2
-    const auto t3 = std::chrono::steady_clock::now();
 
     // 收响应头并校验
     Message rmsg{};
@@ -198,9 +184,6 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
       }
     }
 
-    // [诊断插桩] t4: 收响应头+校验后 → recv_hdr_us = t4-t3
-    const auto t4 = std::chrono::steady_clock::now();
-
     // 收响应体
     if (ok) {
       out_body.resize(rmsg.bodyLen_);
@@ -211,16 +194,6 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
     }
 
     if (ok) {
-      // [诊断插桩] t5: 收响应体后 → recv_body_us = t5-t4；打印全阶段耗时
-      const auto t5 = std::chrono::steady_clock::now();
-      const auto us = [](auto a, auto b) {
-        return std::chrono::duration<double, std::micro>(b - a).count();
-      };
-      LOG_SYS_INFO(
-          "{}: PHASE idx={} attempt={} acquire_conn_us={:.1f} lock_wait_us={:.1f} "
-          "send_us={:.1f} recv_hdr_us={:.1f} recv_body_us={:.1f} total_us={:.1f}",
-          op_name, idx, attempt, us(t0, t1), us(t1, t2), us(t2, t3), us(t3, t4), us(t4, t5),
-          us(t0, t5));
       return 0;  // 成功
     }
 
@@ -237,20 +210,12 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
     /* 对端空闲关闭时, 池中连接可能同时失效。仅 set_dead 当前连接不够:
      * AcquireConn 仍会返回其它 alive_=true 但实际已死的僵尸连接。主动
      * 把池中所有连接标 dead, 让下次 AcquireConn 走 Connect() 建新连接。 */
-    if (attempt == 0) {
-      for (auto& c : conns_) {
-        c->set_dead();
-      }
-      LOG_SYS_WARN(
-          "{}: SendAndRecv to ufile-ac failed (send/recv error), "
-          "invalidated all pool conns, retry with fresh conn",
-          op_name);
-      continue;
+    for (auto& c : conns_) {
+      c->set_dead();
     }
-    LOG_SYS_ERROR("{}: SendAndRecv to ufile-ac failed after 2 attempts", op_name);
+    LOG_SYS_WARN("{}: send/recv failed, invalidated all pool conns, retry", op_name);
   }
-  // 走到这: 两次都是连接级失败(SendAll/RecvAll)。out_result 已在 AcquireConn
-  // 失败分支设过 UNAVAILABLE, 这里补 RPC 错误码。
+  // 走到这: 全部重试都是连接级失败
   if (out_result.ret_code == 0) {
     out_result.ret_code = PROXY_ERR_BACKEND_RPC;
     out_result.error = "send/recv failed after retries";

@@ -90,10 +90,9 @@ bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView bu
   if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token)) {
     return false;
   }
-  GdsDataSource gds_source{std::string(token.str())};
   auto t_token = trace ? clk::now() : clk::time_point{};
 
-  if (!proxy_.GdsPut(req_id, req.bucket, req.key, req.object_size, gds_source, res)) {
+  if (!proxy_.GdsPut(req_id, req.bucket, req.key, req.object_size, std::string(token.str()), res)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};

@@ -66,17 +66,16 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
 }
 
 
-int SinglePut::PutRdma(const ClientProxyPutRequest& req, PutOutput& out) {
+int SinglePut::ValidateRdmaRequest(const ClientProxyPutRequest& req) {
   const std::string& rid = req.request_id();
-
-  /* 校验 */
   if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
   if (req.object_size() == 0 ||
       req.object_size() > static_cast<std::uint64_t>(FLAGS_max_single_put_bytes)) {
-    LOG_WARN(rid, "object_size={} out of range", req.object_size());
+    LOG_WARN(rid, "object_size={} out of range [1, {}] bucket={}/{}", req.object_size(),
+             FLAGS_max_single_put_bytes, req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
   }
   if (req.path() != PATH_RDMA) {
@@ -91,6 +90,16 @@ int SinglePut::PutRdma(const ClientProxyPutRequest& req, PutOutput& out) {
     LOG_WARN(rid, "rdma token empty bucket={}/{}", req.bucket(), req.key());
     return PROXY_ERR_MISSING_SOURCE;
   }
+  return 0;
+}
+
+
+int SinglePut::PutRdma(const ClientProxyPutRequest& req, PutOutput& out) {
+  const std::string& rid = req.request_id();
+
+  /* 校验 */
+  int ret = ValidateRdmaRequest(req);
+  if (ret != 0) return ret;
 
   /* 生成对象标识 + 写单块 */
   const std::string obj_id = utils::GenUuid();

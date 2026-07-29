@@ -81,10 +81,9 @@ bool RdmaPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView b
   if (!rdma_mgr_->AcquireDescriptor(buffer.data, buffer.size, desc)) {
     return false;
   }
-  RdmaDataSource rdma_source{desc.token};
   auto t_desc = trace ? clk::now() : clk::time_point{};
 
-  if (!proxy_.RdmaPut(req_id, req.bucket, req.key, req.object_size, rdma_source, res)) {
+  if (!proxy_.RdmaPut(req_id, req.bucket, req.key, req.object_size, desc.token, res)) {
     return false;
   }
   auto t_put = trace ? clk::now() : clk::time_point{};

@@ -33,6 +33,9 @@ class SinglePut {
   /* 校验 GDS 上传请求合法性 */
   [[nodiscard]] int ValidateGdsRequest(const ClientProxyPutRequest& req);
 
+  /* 校验 RDMA 上传请求合法性 */
+  [[nodiscard]] int ValidateRdmaRequest(const ClientProxyPutRequest& req);
+
   /* 写对象索引并填充输出 */
   [[nodiscard]] bool WriteObjectIndex(const std::string& request_id, const std::string& bucket,
                                       const std::string& key, const std::string& obj_id,
