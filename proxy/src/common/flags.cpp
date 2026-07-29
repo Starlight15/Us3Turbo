@@ -31,7 +31,7 @@ DEFINE_int32(backend_conn_pool_size, 8,
 DEFINE_int32(backend_send_recv_max_retry, 2,
              "max retry attempts (inclusive) for SendAndRecv on connection-level "
              "failure; protocol errors are not retried");
-DEFINE_string(dbgate_endpoint, "192.168.1.100:20165",
+DEFINE_string(dbgate_endpoint, "192.168.1.198:20165",
               "DBGate proxy endpoint for MongoDB operations");
 DEFINE_int32(dbgate_timeout_ms, 5000, "DBGate request timeout in milliseconds");
 DEFINE_int32(dbgate_conn_pool_size, 4,

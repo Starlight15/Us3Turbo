@@ -55,7 +55,7 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
     LOG_ERROR(rid, "ufile-ac failed: {}", res.error);
     return res.ret_code;
   }
-  LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}", block_key, res.crc32c, res.bytes_written);
+  LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}", block_key, res.crc32c, res.bytes);
 
   /* 写对象索引 + 填充输出 */
   if (!WriteObjectIndex(rid, req.bucket(), req.key(), obj_id, req.object_size(), res.crc32c, out)) {
@@ -110,7 +110,7 @@ int SinglePut::PutRdma(const ClientProxyPutRequest& req, PutOutput& out) {
     LOG_ERROR(rid, "ufile-ac failed: {}", res.error);
     return res.ret_code;
   }
-  LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}", block_key, res.crc32c, res.bytes_written);
+  LOG_DEBUG(rid, "backend ok key={} crc={:#x} bytes={}", block_key, res.crc32c, res.bytes);
 
   /* 写对象索引 + 填充输出 */
   if (!WriteObjectIndex(rid, req.bucket(), req.key(), obj_id, req.object_size(), res.crc32c, out)) {
@@ -125,7 +125,7 @@ bool SinglePut::WriteObjectIndex(const std::string& request_id, const std::strin
                                  std::uint64_t object_size, std::uint32_t crc32c, PutOutput& out) {
   out.etag = utils::Crc32cToETag(crc32c);
   out.crc32c = crc32c;
-  out.bytes_written = object_size;
+  out.bytes = object_size;
 
   const std::string hash = utils::CombineBlockCRC32s({crc32c});  // single block
 

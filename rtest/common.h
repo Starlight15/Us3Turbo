@@ -1,5 +1,5 @@
 // rtest/common.h — 回归测试与示例的共享 helper（通路无关，header-only，无 CUDA
-// 依赖）。GDS/RDMA/UCX 各通路通用。
+// 依赖）。GDS/RDMA 各通路通用。
 //
 // 提供 ParseSize / HumanBytes / FillHostPattern / VerifyHostBuffer /
 // MakeTimestampSuffix 等工具，避免在 examples/bench/regression 中重复实现。

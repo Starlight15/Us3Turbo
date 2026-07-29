@@ -59,11 +59,11 @@ void ProxyService::GdsPut(google::protobuf::RpcController* cntl_base,
   }
   response->set_ok(true);
   response->set_etag(out.etag);
-  response->set_bytes_written(out.bytes_written);
+  response->set_bytes_written(out.bytes);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  LOG_INFO(rid, "success etag={} bytes={}", out.etag, out.bytes_written);
+  LOG_INFO(rid, "success etag={} bytes={}", out.etag, out.bytes);
   AccessLogger::Instance().LogRequest("GdsPut", rid, request->bucket(), request->key(), 0,
-                                      out.bytes_written, latency);
+                                      out.bytes, latency);
 }
 
 
@@ -91,11 +91,11 @@ void ProxyService::RdmaPut(google::protobuf::RpcController* cntl_base,
   }
   response->set_ok(true);
   response->set_etag(out.etag);
-  response->set_bytes_written(out.bytes_written);
+  response->set_bytes_written(out.bytes);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  LOG_INFO(rid, "success etag={} bytes={}", out.etag, out.bytes_written);
+  LOG_INFO(rid, "success etag={} bytes={}", out.etag, out.bytes);
   AccessLogger::Instance().LogRequest("RdmaPut", rid, request->bucket(), request->key(), 0,
-                                      out.bytes_written, latency);
+                                      out.bytes, latency);
 }
 
 /* 分段上传: 薄委托, ret!=0 → set_error_message+SetFailed; part/complete/abort
@@ -163,11 +163,11 @@ void ProxyService::UploadPartGds(google::protobuf::RpcController* cntl_base,
   }
   response->set_ok(true);
   response->set_etag(out.etag);
-  response->set_bytes_written(out.bytes_written);
+  response->set_bytes_written(out.bytes);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
   LOG_INFO(rid, "success part={} etag={} bytes={}", request->part_number(), out.etag,
-           out.bytes_written);
-  AccessLogger::Instance().LogRequest("UploadPartGds", rid, kDash, kDash, 0, out.bytes_written,
+           out.bytes);
+  AccessLogger::Instance().LogRequest("UploadPartGds", rid, kDash, kDash, 0, out.bytes,
                                       latency);
 }
 
@@ -200,11 +200,11 @@ void ProxyService::UploadPartRdma(google::protobuf::RpcController* cntl_base,
   }
   response->set_ok(true);
   response->set_etag(out.etag);
-  response->set_bytes_written(out.bytes_written);
+  response->set_bytes_written(out.bytes);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
   LOG_INFO(rid, "success part={} etag={} bytes={}", request->part_number(), out.etag,
-           out.bytes_written);
-  AccessLogger::Instance().LogRequest("UploadPartRdma", rid, kDash, kDash, 0, out.bytes_written,
+           out.bytes);
+  AccessLogger::Instance().LogRequest("UploadPartRdma", rid, kDash, kDash, 0, out.bytes,
                                       latency);
 }
 

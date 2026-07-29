@@ -1,6 +1,6 @@
 // test_put_single.cpp — T3.1 GDS 单步 PUT,多尺寸验证。
 //
-// 验证: 1K/1M/4M 三个尺寸下 bytes_written==size,etag 非空,StatObject 确认落盘。
+// 验证: 1K/1M/4M 三个尺寸下 bytes==size,etag 非空,StatObject 确认落盘。
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -109,9 +109,9 @@ int main(int argc, char** argv) {
       continue;
     }
     const auto& pr = resp.gds_result.value();
-    if (pr.bytes_written != size) {
+    if (pr.bytes != size) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
-                << ": bytes_written=" << pr.bytes_written << " expected=" << size << "\n";
+                << ": bytes=" << pr.bytes << " expected=" << size << "\n";
       ++failed;
       continue;
     }

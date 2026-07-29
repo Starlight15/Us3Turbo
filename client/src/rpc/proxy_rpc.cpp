@@ -62,7 +62,7 @@ bool ProxyRpc::GdsPut(std::string_view req_id, const std::string& bucket, const 
   res.error_message = resp.error_message();
   res.etag = resp.etag();
   res.crc32c = resp.crc32c();
-  res.bytes_written = resp.bytes_written();
+  res.bytes = resp.bytes_written();
   return resp.ok();
 }
 
@@ -99,7 +99,7 @@ bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const
   res.error_message = resp.error_message();
   res.etag = resp.etag();
   res.crc32c = resp.crc32c();
-  res.bytes_written = resp.bytes_written();
+  res.bytes = resp.bytes_written();
   return resp.ok();
 }
 
@@ -165,7 +165,7 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, const std::string& upload_
   res.ok = resp.ok();
   res.error_message = resp.error_message();
   res.etag = resp.etag();
-  res.bytes_written = resp.bytes_written();
+  res.bytes = resp.bytes_written();
   if (resp.has_crc32c()) res.crc32c = resp.crc32c();
   return resp.ok();
 }
@@ -196,7 +196,7 @@ bool ProxyRpc::UploadPartRdma(std::string_view req_id, const std::string& upload
   res.ok = resp.ok();
   res.error_message = resp.error_message();
   res.etag = resp.etag();
-  res.bytes_written = resp.bytes_written();
+  res.bytes = resp.bytes_written();
   if (resp.has_crc32c()) res.crc32c = resp.crc32c();
   return resp.ok();
 }

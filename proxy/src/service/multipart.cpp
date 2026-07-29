@@ -135,7 +135,7 @@ bool Multipart::WritePartIndex(const std::string& request_id, const std::string&
   /* 4. 填充输出。 */
   out.etag = part_etag;
   out.crc32c = block_crcs.empty() ? 0 : block_crcs[0];
-  out.bytes_written = part_size;
+  out.bytes = part_size;
   LOG_INFO(request_id, "upload={} part={} ok etag={} blocks={}", upload_id, part_number, out.etag,
            block_crcs.size());
   return true;

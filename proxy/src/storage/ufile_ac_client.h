@@ -18,11 +18,11 @@
 namespace us3_turbo::proxy {
 
 /* block 级写入结果。ret_code 为 PROXY_ERR_* 错误码（0=成功）。
- * crc32c/bytes_written 仅 PUT 成功时有效；DeleteBlock 仅用 ret_code/error。 */
+ * crc32c/bytes 仅 PUT 成功时有效；DeleteBlock 仅用 ret_code/error。 */
 struct BlockResult {
   int ret_code{0};
   std::uint32_t crc32c{0};
-  std::uint64_t bytes_written{0};
+  std::uint64_t bytes{0};
   std::string error;
 };
 
@@ -68,11 +68,6 @@ class UfileAcClient {
   [[nodiscard]] BlockResult PutBlockGds(const std::string& key, const std::string& rdma_token,
                                         std::uint64_t gpu_offset, std::uint64_t data_len);
 
-  /* UCX 写一个 block 到 backend。 */
-  [[nodiscard]] BlockResult PutBlockUcx(const std::string& key, std::uint64_t remote_addr,
-                                        const std::string& packed_rkey,
-                                        const std::string& client_ucx_addr,
-                                        std::uint64_t source_offset, std::uint64_t data_len);
 
   /* RDMA (libibverbs) 写一个 block 到 backend。token 是 hex 编码的
    * listener 地址 + MR 描述符。 */
@@ -94,14 +89,6 @@ class UfileAcClient {
                                         std::uint64_t gpu_offset, std::uint64_t read_offset,
                                         std::uint64_t data_len, std::uint64_t request_id);
 
-  /* UCX 读一个 block 到 client buffer。request_id 透传进 backend 供日志关联。
-   */
-  [[nodiscard]] BlockResult GetBlockUcx(const std::string& key, std::uint64_t remote_addr,
-                                        const std::string& packed_rkey,
-                                        const std::string& client_ucx_addr,
-                                        std::uint64_t dest_offset, std::uint64_t read_offset,
-                                        std::uint64_t data_len, std::uint64_t request_id);
-
  private:
   /* 拆分 "host:port" 为 host + port；失败返回 false。 */
   static bool ParseEndpoint(const std::string& endpoint, std::string& host, int& port);
@@ -119,16 +106,12 @@ class UfileAcClient {
   static BlockResult DecodeGdsPutRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
 
-  static BlockResult DecodeUcxPutRsp(const char* body, std::uint32_t body_len,
-                                     const std::string& key);
 
   static BlockResult DecodeDelRsp(const char* body, std::uint32_t body_len, const std::string& key);
 
   static BlockResult DecodeGdsGetRsp(const char* body, std::uint32_t body_len,
                                      const std::string& key);
 
-  static BlockResult DecodeUcxGetRsp(const char* body, std::uint32_t body_len,
-                                     const std::string& key);
 
   static BlockResult DecodeRdmaPutRsp(const char* body, std::uint32_t body_len,
                                        const std::string& key);

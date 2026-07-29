@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
   client.Shutdown();
 
   const auto& r = resp.rdma_result.value();
-  if (r.bytes_written == kSize) {
+  if (r.bytes == kSize) {
     std::cout << "OK etag=" << r.etag << " crc32c=0x" << std::hex << r.crc32c << std::dec << "\n";
     return 0;
   }

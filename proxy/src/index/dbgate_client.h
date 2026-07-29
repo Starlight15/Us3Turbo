@@ -11,6 +11,11 @@
 #include "proxy/src/storage/tcp_connection.h"
 #include "us3_turbo/common/logger.h"
 
+namespace ucloud::umgogate {
+class ExecuteMgoRequest;
+class ExecuteMgoResponse;
+}  // namespace ucloud::umgogate
+
 namespace us3_turbo::proxy {
 
 /* DBGate 客户端：裸 TCP 调用 MongoDB；协议 [4B大端长度][protobuf UMessage]
@@ -90,10 +95,10 @@ class DBGateClient {
   [[nodiscard]] int DeleteParts(const std::string& upload_id);
 
   /* 通用 MongoDB 操作骨架：构造 UMessage + 发送 + 解析 ExecuteMgoResponse
-   * 入参/出参为序列化 protobuf 字符串，避免头文件依赖 proto 类型
+   * 直接接受/返回 protobuf 对象，避免序列化↔反序列化往返
    * Returns 0=成功，非0=错误码 */
-  [[nodiscard]] int ExecuteMgo(const std::string& mgo_req_serialized,
-                               std::string& out_mgo_rsp_serialized);
+  [[nodiscard]] int ExecuteMgo(const ucloud::umgogate::ExecuteMgoRequest& mgo_req,
+                               ucloud::umgogate::ExecuteMgoResponse& out_rsp);
 
  private:
   // 拆分 "host:port" → {host, port}

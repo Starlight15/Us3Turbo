@@ -44,7 +44,7 @@ struct PutPathResult {
   std::string error_message;
   std::string etag;
   std::uint32_t crc32c{0};
-  std::uint64_t bytes_written{0};
+  std::uint64_t bytes{0};
 };
 
 /** @brief proxy → client 统一 PUT 响应,各通路结果按 path 独立返回。 */

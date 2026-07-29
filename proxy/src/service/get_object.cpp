@@ -117,9 +117,9 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
       return result.ret_code;
     }
     crcs.push_back(result.crc32c);
-    total_read += result.bytes_written;  // GET 语义下复用字段 = bytes_read
+    total_read += result.bytes;
     LOG_DEBUG(rid, "block {} key={} ok crc={:#x} bytes={}", i, block_key, result.crc32c,
-              result.bytes_written);
+              result.bytes);
   }
 
   /* 3. 重组 hash 与 fileidx 比对。 */
@@ -177,9 +177,9 @@ int GetObject::GetRdma(const ClientProxyGetRequest& req, GetOutput& out) {
       return result.ret_code;
     }
     crcs.push_back(result.crc32c);
-    total_read += result.bytes_written;  // GET 语义下复用字段 = bytes_read
+    total_read += result.bytes;
     LOG_DEBUG(rid, "block {} key={} ok crc={:#x} bytes={}", i, block_key, result.crc32c,
-              result.bytes_written);
+              result.bytes);
   }
 
   /* 3. 重组 hash 与 fileidx 比对。 */

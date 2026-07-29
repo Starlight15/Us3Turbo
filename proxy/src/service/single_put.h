@@ -15,7 +15,7 @@ class UfileAcClient;
 struct PutOutput {
   std::string etag;
   std::uint32_t crc32c{0};
-  std::uint64_t bytes_written{0};
+  std::uint64_t bytes{0};
 };
 
 /* 单步上传逻辑层 */

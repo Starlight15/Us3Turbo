@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
     const auto& pr = put_resp.rdma_result.value();
     put_etag = pr.etag;
     put_crc = pr.crc32c;
-    std::cout << "  PUT OK: bytes=" << pr.bytes_written << " etag=" << put_etag
+    std::cout << "  PUT OK: bytes=" << pr.bytes << " etag=" << put_etag
               << " crc32c=0x" << std::hex << put_crc << std::dec << "\n";
   }
 
