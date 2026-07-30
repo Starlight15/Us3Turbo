@@ -137,10 +137,12 @@ run_bench() {
 }
 
 parse_ops() {
-  grep -oP 'throughput\s*:\s*\K[0-9.]+(?=\s*MiB/s\s*\(\s*[0-9.]+\s*ops/s\))' || true
+  # 从 "throughput   : N MiB/s  (M ops/s)" 提取 M (ops/s)
+  grep -oP '\(\s*\K[0-9.]+(?=\s*ops/s\))' || true
 }
 
 parse_mibs() {
+  # 从 "throughput   : N MiB/s  (M ops/s)" 提取 N (MiB/s)
   grep -oP 'throughput\s*:\s*\K[0-9.]+(?=\s*MiB/s)' || true
 }
 

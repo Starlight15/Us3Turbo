@@ -122,7 +122,7 @@ RdmaMemoryManager::~RdmaMemoryManager() {
     accepted_qps_.clear();
   }
   {
-    std::lock_guard<std::mutex> lk(mu_);
+    std::unique_lock<std::shared_mutex> lk(mu_);
     for (auto& [ptr, mr] : registered_) {
       if (mr != nullptr) ibv_dereg_mr(mr);
     }
@@ -175,16 +175,28 @@ bool RdmaMemoryManager::AcquireDescriptorImpl(const void* ptr, std::size_t size,
   using diag_clk = std::chrono::steady_clock;
   const auto t0 = diag_clk::now();
 
-  // 单次加锁完成幂等注册检查并取出 mr。
+  // Fast path: shared_lock 允许并发 cache-hit 无阻塞。
   ibv_mr* mr{};
   bool cache_hit = false;
   diag_clk::time_point t1, t2;
   {
-    std::lock_guard<std::mutex> lk(mu_);
+    std::shared_lock<std::shared_mutex> lk(mu_);
     t1 = diag_clk::now();
     auto it = registered_.find(mut_ptr);
     cache_hit = (it != registered_.end());
-    if (it == registered_.end()) {
+    if (cache_hit) mr = it->second;
+    t2 = diag_clk::now();
+  }
+
+  // Slow path: cache-miss 需要 exclusive lock 做 ibv_reg_mr (仅首次串行)。
+  if (!cache_hit) {
+    std::unique_lock<std::shared_mutex> lk(mu_);
+    auto it = registered_.find(mut_ptr);
+    if (it != registered_.end()) {
+      // Double-check: 可能被另一个线程在 shared→unique 间隙注册了。
+      cache_hit = true;
+      mr = it->second;
+    } else {
       mr = ibv_reg_mr(pd_, mut_ptr, size, access_flags);
       if (mr == nullptr) {
         LOG_SYS_ERROR("{} ibv_reg_mr failed ptr={} size={} access={:#x}",
@@ -192,10 +204,8 @@ bool RdmaMemoryManager::AcquireDescriptorImpl(const void* ptr, std::size_t size,
         return false;
       }
       registered_.emplace(mut_ptr, mr);
-    } else {
-      mr = it->second;
+      cache_hit = true;
     }
-    t2 = diag_clk::now();
   }
 
   // Token 编码（锁外）。

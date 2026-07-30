@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <utility>
 
@@ -20,7 +21,7 @@ class BufferRegistry {
   /** @brief 幂等注册:已在表内直接成功;否则调 DoRegister 后入表。不做 null/size
    * 校验。 */
   [[nodiscard]] bool RegisterBuffer(void* ptr, std::size_t size) {
-    std::lock_guard<std::mutex> lk(mu_);
+    std::unique_lock<std::shared_mutex> lk(mu_);
     if (registered_.count(ptr)) return true;
     Handle h{};
     if (!DoRegister(ptr, size, h)) return false;
@@ -30,7 +31,7 @@ class BufferRegistry {
 
   /** @brief 幂等注销:未注册直接成功;否则调 DoUnregister 释放后出表。 */
   [[nodiscard]] bool UnregisterBuffer(void* ptr) {
-    std::lock_guard<std::mutex> lk(mu_);
+    std::unique_lock<std::shared_mutex> lk(mu_);
     auto it = registered_.find(ptr);
     if (it == registered_.end()) return true;  // 幂等
     DoUnregister(ptr, it->second);
@@ -38,7 +39,7 @@ class BufferRegistry {
     return true;
   }
 
-  /** @brief 已持锁查询句柄(调用方须持 mu_),未注册返回 nullptr。 */
+  /** @brief 已持锁查询句柄(调用方须至少持 shared_lock),未注册返回 nullptr。 */
   [[nodiscard]] const Handle* FindLocked(void* ptr) const {
     auto it = registered_.find(ptr);
     return it == registered_.end() ? nullptr : &it->second;
@@ -61,7 +62,7 @@ class BufferRegistry {
   /** @brief 清空注册表(不释放句柄,调用方须先 ForEachLocked 释放)。 */
   void ClearRegistered() noexcept { registered_.clear(); }
 
-  std::mutex mu_;
+  std::shared_mutex mu_;
   std::unordered_map<void*, Handle> registered_;
 
   /** @brief 派生类实现:填充 out(句柄),失败返回 false 并自行记日志。 */

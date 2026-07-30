@@ -19,7 +19,7 @@
 namespace rtest {
 // 分段上传默认 part 大小，须与 proxy FLAGS_multipart_part_size /
 // ClientOptions::multipart_part_size 一致。
-constexpr std::uint64_t kDefaultPartSize = 4ULL * 1024 * 1024;  // 4 MiB
+constexpr std::uint64_t kDefaultPartSize = 16ULL * 1024 * 1024;  // 16 MiB
 
 // 默认 proxy 控制面 endpoint。
 constexpr const char* kDefaultProxyEndpoint = "192.168.1.198:9100";

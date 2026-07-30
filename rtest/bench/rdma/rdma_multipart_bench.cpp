@@ -220,9 +220,9 @@ bool RdmaMpParseArgs(int argc, char** argv, RdmaMpArgs& a) {
     std::cerr << "concurrency must be > 0\n";
     return false;
   }
-  if (a.part_size > 4ULL * 1024 * 1024) {
+  if (a.part_size > 16ULL * 1024 * 1024) {
     std::cerr << "part-size " << rtest::HumanBytes(a.part_size)
-              << " > 4M (backend MAX_VALUE_LENGTH)\n";
+              << " > 16M (backend MAX_VALUE_LENGTH)\n";
     return false;
   }
   return true;

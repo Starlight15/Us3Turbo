@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 
@@ -71,7 +72,7 @@ GdsMemoryManager::~GdsMemoryManager() {
   // 懒注册常驻:注册表作进程级缓存,残留项是预期行为。
   if (RegisteredCount() != 0U) {
     LOG_SYS_DEBUG("{} buffer(s) in cache at shutdown (懒注册常驻)", RegisteredCount());
-    std::lock_guard<std::mutex> lk(mu_);
+    std::unique_lock<std::shared_mutex> lk(mu_);
     for (auto& [ptr, _] : registered_)
       if (impl_->client) impl_->client->cuMemObjPutDescriptor(ptr);
     ClearRegistered();
@@ -135,16 +136,33 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size, std::size
 
   bool cache_hit = false;
   diag_clk::time_point t2, t3;
+
+  // Fast path: shared_lock 允许并发 cache-hit 无阻塞。
   {
-    std::lock_guard<std::mutex> lk(mu_);
-    t2 = diag_clk::now();  // 锁已到手:t2-t1 = 等锁耗时
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    t2 = diag_clk::now();
     const std::size_t needed = size + offset;
     auto it = registered_.find(mut_ptr);
     if (it != registered_.end()) {
       const bool reused = it->second.buffer_id != buf_id;
       const bool too_small = it->second.size < needed;
       cache_hit = !(reused || too_small);
-      if (reused || too_small) {
+    }
+    t3 = diag_clk::now();
+  }
+
+  // Slow path: cache-miss 或 re-register 需要 exclusive lock (仅首次/变更时串行)。
+  if (!cache_hit) {
+    std::unique_lock<std::shared_mutex> lk(mu_);
+    const std::size_t needed = size + offset;
+    auto it = registered_.find(mut_ptr);
+    if (it != registered_.end()) {
+      // Double-check: 可能被另一个线程在 shared→unique 间隙注册了。
+      const bool reused = it->second.buffer_id != buf_id;
+      const bool too_small = it->second.size < needed;
+      if (!(reused || too_small)) {
+        cache_hit = true;  // 竞态:另一线程已注册
+      } else {
         // clang-format off
         LOG_SYS_INFO("re-register ptr={} reason={} old_sz={} new_sz={} old_id={} new_id={}", mut_ptr, reused ? "reused" : "grew", it->second.size, needed, it->second.buffer_id, buf_id);
         // clang-format on
@@ -154,14 +172,15 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size, std::size
         entry.buffer_id = buf_id;
         if (!DoRegister(mut_ptr, needed, entry)) return false;
         registered_.emplace(mut_ptr, entry);
+        cache_hit = true;
       }
     } else {
       GdsRegEntry entry{};
       entry.buffer_id = buf_id;
       if (!DoRegister(mut_ptr, needed, entry)) return false;
       registered_.emplace(mut_ptr, entry);
+      cache_hit = true;
     }
-    t3 = diag_clk::now();  // t3-t2 = 持锁期间耗时(查表,miss/reused 时含 DoRegister)
   }
 
   // GetRDMAToken 在锁外执行以允许并发。

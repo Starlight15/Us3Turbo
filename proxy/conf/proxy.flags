@@ -1,0 +1,14 @@
+--proxy_port=9100
+--bind_host=192.168.1.198
+--num_threads=8
+--backend_endpoint=192.168.1.198:24000
+--backend_timeout_ms=30000
+--backend_setid=1
+--max_single_put_bytes=16777216
+--multipart_part_size=16777216
+--log_level=info
+--backend_conn_pool_size=8
+--dbgate_endpoint=192.168.1.198:20165
+--dbgate_timeout_ms=5000
+--dbgate_conn_pool_size=4
+--bucket_id=1
