@@ -1,20 +1,53 @@
 #!/bin/bash
-# run-bench.sh — 全量性能基准 (GDS + RDMA, PUT + GET + multipart)
+# run_bench.sh — 性能基准测试脚本 (GDS + RDMA, PUT + GET + multipart)
+#
+# 仅控制 client 端参数，不管理 ufile-ac / proxy 服务端。
+# 运行前需确保:
+#   - ufile-ac 已启动 (端口 24000)
+#   - proxy 已启动 (端口 9100)
+#   - 对应的 bench 二进制已编译 (脚本会自动检查并触发 cmake --build)
 #
 # 用法:
-#   bash rtest/scripts/run-bench.sh                              # 默认配置快速跑一轮
-#   bash rtest/scripts/run-bench.sh --size 100M --count 50       # 单步 PUT 定制
-#   bash rtest/scripts/run-bench.sh --conc 1,4,8,16              # 并发扫描
-#   bash rtest/scripts/run-bench.sh --mode put                   # 仅单步 PUT
-#   bash rtest/scripts/run-bench.sh --mode multipart             # 仅分段上传
-#   bash rtest/scripts/run-bench.sh --mode get                   # 仅 GET
-#   bash rtest/scripts/run-bench.sh --gds-only                   # 仅 GDS
-#   bash rtest/scripts/run-bench.sh --rdma-only                  # 仅 RDMA
-#   bash rtest/scripts/run-bench.sh --csv /tmp/bench.csv         # CSV 输出
+#   # 默认配置快速跑一轮 (全量: GDS+RDMA, PUT+multipart+GET)
+#   bash scripts/run_bench.sh
+#
+#   # 仅单步 PUT
+#   bash scripts/run_bench.sh --mode put
+#
+#   # 仅分段上传 (multipart)
+#   bash scripts/run_bench.sh --mode multipart
+#
+#   # 仅 GET
+#   bash scripts/run_bench.sh --mode get
+#
+#   # 指定数据通路
+#   bash scripts/run_bench.sh --path gds
+#   bash scripts/run_bench.sh --path rdma
+#
+#   # 定制对象大小和数量
+#   bash scripts/run_bench.sh --size 64M --count 100
+#
+#   # 定制分段上传大小和分片
+#   bash scripts/run_bench.sh --mode multipart --total 256M --part-size 4M --reps 10
+#
+#   # 并发扫描 (逗号分隔，无空格)
+#   bash scripts/run_bench.sh --conc 1,4,8,16,32
+#
+#   # 启用 CRC32C 校验
+#   bash scripts/run_bench.sh --verify
+#
+#   # 输出 CSV (multipart 模式)
+#   bash scripts/run_bench.sh --mode multipart --csv /tmp/bench.csv
+#
+#   # 指定 proxy
+#   bash scripts/run_bench.sh --proxy 10.0.0.1:9100
+#
+#   # 组合示例
+#   bash scripts/run_bench.sh --path rdma --mode put --size 4M --count 200 --conc 1,8,16
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="${PROJECT_DIR}/build"
 
 GDS_DIR="${BUILD_DIR}/rtest/bench/gds"
@@ -48,11 +81,19 @@ while [[ $# -gt 0 ]]; do
     --conc)          CONCURRENCIES="$2"; shift 2 ;;
     --verify)        VERIFY="--verify-crc32c"; shift ;;
     --csv)           CSV_FILE="$2"; shift 2 ;;
-    --gds-only)      PATH_MODE="gds"; shift ;;
-    --rdma-only)     PATH_MODE="rdma"; shift ;;
+    --path)          PATH_MODE="$2"; shift 2 ;;
+    -h|--help)
+      sed -n '2,46p' "${BASH_SOURCE[0]}"
+      exit 0 ;;
     *) echo "未知参数: $1"; exit 2 ;;
   esac
 done
+
+# 校验 --path
+if [[ "$PATH_MODE" != "all" && "$PATH_MODE" != "gds" && "$PATH_MODE" != "rdma" ]]; then
+  echo "ERROR: --path 必须是 gds, rdma 或 all, 当前: $PATH_MODE"
+  exit 2
+fi
 
 # ---- 编译检查 ----
 NEED_BUILD=false
@@ -118,7 +159,7 @@ run_get() {
 echo "══════════════════════════════════════════════════════════"
 echo "  Bench  proxy=$PROXY  mode=$MODE  path=$PATH_MODE"
 echo "  conc=$CONCURRENCIES  warmup=$WARMUP"
-if [[ -n "$CSV_FILE" ]]; then echo "  csv=$CSV_FILE"; fi
+[[ -n "$CSV_FILE" ]] && echo "  csv=$CSV_FILE"
 echo "══════════════════════════════════════════════════════════"
 echo ""
 

@@ -1,12 +1,30 @@
 #!/bin/bash
-# run-regression.sh — 全量回归测试 (GDS + RDMA, 共 12 项)
+# run_regression.sh — 回归测试脚本 (GDS + RDMA, 共 12 项)
+#
+# 仅控制 client 端参数，不管理 ufile-ac / proxy 服务端。
+# 运行前需确保:
+#   - ufile-ac 已启动 (端口 24000)
+#   - proxy 已启动 (端口 9100)
+#   - 对应的 bench 二进制已编译 (脚本会自动检查并触发 cmake --build)
 #
 # 用法:
-#   bash rtest/scripts/run-regression.sh                          # 默认 proxy
-#   bash rtest/scripts/run-regression.sh --proxy 10.0.0.1:9100   # 指定 proxy
-#   bash rtest/scripts/run-regression.sh --gds-only               # 仅 GDS
-#   bash rtest/scripts/run-regression.sh --rdma-only              # 仅 RDMA
-#   bash rtest/scripts/run-regression.sh --verbose                # 打印完整输出
+#   # 全量测试 (GDS + RDMA)
+#   bash rtest/scripts/run_regression.sh
+#
+#   # 指定 proxy 地址
+#   bash rtest/scripts/run_regression.sh --proxy 10.0.0.1:9100
+#
+#   # 指定数据通路
+#   bash rtest/scripts/run_regression.sh --path gds
+#   bash rtest/scripts/run_regression.sh --path rdma
+#
+#   # 详细输出 (失败时打印完整日志)
+#   bash rtest/scripts/run_regression.sh --verbose
+#
+#   # 组合使用
+#   bash rtest/scripts/run_regression.sh --path rdma --verbose --proxy 192.168.1.198:9100
+#
+# 退出码: 失败测试项数量 (0 = 全部通过)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,12 +43,20 @@ VERBOSE=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --proxy)       PROXY="$2"; shift 2 ;;
-    --gds-only)    MODE="gds"; shift ;;
-    --rdma-only)   MODE="rdma"; shift ;;
+    --path)        MODE="$2"; shift 2 ;;
     --verbose|-v)  VERBOSE=true; shift ;;
+    -h|--help)
+      sed -n '2,27p' "${BASH_SOURCE[0]}"
+      exit 0 ;;
     *) echo "未知参数: $1"; exit 2 ;;
   esac
 done
+
+# 校验 --path
+if [[ "$MODE" != "all" && "$MODE" != "gds" && "$MODE" != "rdma" ]]; then
+  echo "ERROR: --path 必须是 gds, rdma 或 all, 当前: $MODE"
+  exit 2
+fi
 
 # ---- 编译检查 ----
 RUN_GDS=false; RUN_RDMA=false
