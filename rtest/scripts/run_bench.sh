@@ -9,45 +9,45 @@
 #
 # 用法:
 #   # 默认配置快速跑一轮 (全量: GDS+RDMA, PUT+multipart+GET)
-#   bash scripts/run_bench.sh
+#   bash rtest/scripts/run_bench.sh
 #
 #   # 仅单步 PUT
-#   bash scripts/run_bench.sh --mode put
+#   bash rtest/scripts/run_bench.sh --mode put
 #
 #   # 仅分段上传 (multipart)
-#   bash scripts/run_bench.sh --mode multipart
+#   bash rtest/scripts/run_bench.sh --mode multipart
 #
 #   # 仅 GET
-#   bash scripts/run_bench.sh --mode get
+#   bash rtest/scripts/run_bench.sh --mode get
 #
 #   # 指定数据通路
-#   bash scripts/run_bench.sh --path gds
-#   bash scripts/run_bench.sh --path rdma
+#   bash rtest/scripts/run_bench.sh --path gds
+#   bash rtest/scripts/run_bench.sh --path rdma
 #
 #   # 定制对象大小和数量
-#   bash scripts/run_bench.sh --size 64M --count 100
+#   bash rtest/scripts/run_bench.sh --size 64M --count 100
 #
 #   # 定制分段上传大小和分片
-#   bash scripts/run_bench.sh --mode multipart --total 256M --part-size 4M --reps 10
+#   bash rtest/scripts/run_bench.sh --mode multipart --total 256M --part-size 4M --reps 10
 #
 #   # 并发扫描 (逗号分隔，无空格)
-#   bash scripts/run_bench.sh --conc 1,4,8,16,32
+#   bash rtest/scripts/run_bench.sh --conc 1,4,8,16,32
 #
 #   # 启用 CRC32C 校验
-#   bash scripts/run_bench.sh --verify
+#   bash rtest/scripts/run_bench.sh --verify
 #
 #   # 输出 CSV (multipart 模式)
-#   bash scripts/run_bench.sh --mode multipart --csv /tmp/bench.csv
+#   bash rtest/scripts/run_bench.sh --mode multipart --csv /tmp/bench.csv
 #
 #   # 指定 proxy
-#   bash scripts/run_bench.sh --proxy 10.0.0.1:9100
+#   bash rtest/scripts/run_bench.sh --proxy 10.0.0.1:9100
 #
 #   # 组合示例
-#   bash scripts/run_bench.sh --path rdma --mode put --size 4M --count 200 --conc 1,8,16
+#   bash rtest/scripts/run_bench.sh --path rdma --mode put --size 4M --count 200 --conc 1,8,16
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="${PROJECT_DIR}/build"
 
 GDS_DIR="${BUILD_DIR}/rtest/bench/gds"
