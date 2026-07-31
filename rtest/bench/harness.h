@@ -1,4 +1,7 @@
 // harness.h — bench 共享基础设施（通路无关，header-only）。
+//
+// 提供: 统计工具、公共类型 (BaseArgs/RoundResult/WorkerStats)、
+// 结果打印 (PrintReport/WriteCsv)、barrier 同步。
 
 #pragma once
 
@@ -54,10 +57,22 @@ inline double Max(const std::vector<double>& v) {
   return *std::max_element(v.begin(), v.end());
 }
 
-// ---- 参数基类 ----
-// 所有 bench 共用的参数字段。通路特定字段（size/count/part_size 等）
-// 通过派生添加。
+// 字符串 → uint64_t（各 bench 文件原先各有自己的 ParseUint 副本）。
+inline bool ParseUint(std::string_view s, std::uint64_t& out) {
+  if (s.empty()) return false;
+  std::uint64_t v = 0;
+  for (char c : s) {
+    if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+    v = v * 10 + static_cast<std::uint64_t>(c - '0');
+  }
+  out = v;
+  return true;
+}
 
+// ---- 公共类型 ----
+
+// 基准测试共用参数。通路特定字段（size/count/part_size 等）由各 bench 在局部
+// struct 中派生添加。
 struct BaseArgs {
   std::string proxy{rtest::kDefaultProxyEndpoint};
   std::uint64_t total{64ULL * 1024 * 1024};
@@ -71,9 +86,7 @@ struct BaseArgs {
   bool csv{false};
 };
 
-// ---- 单轮结果 ----
-// 每轮 bench 通用结果结构。通路特定 bench 可在 RunOneRound 中填充。
-
+// 单轮结果。各 bench 的 RunOneRound / do_put / do_get 填充此结构。
 struct RoundResult {
   double setup_ms{0};         // 准备阶段（如 CreateMultipartUpload）
   double data_plane_ms{0};    // 纯数据传输（PUT / UploadPart）
@@ -82,6 +95,16 @@ struct RoundResult {
   std::uint64_t bytes{0};     // 本轮传输字节数
   bool ok{false};
   std::string error;
+};
+
+// 单个 worker 的统计——各 PUT/GET bench worker 都在本地聚合。
+struct WorkerStats {
+  std::vector<RoundResult> rounds;
+  std::uint32_t ok{0};
+  std::uint32_t fail{0};
+  std::uint64_t bytes{0};
+  clk::time_point end{};
+  bool ready{false};
 };
 
 // ---- 统计聚合 ----
@@ -96,7 +119,6 @@ struct AggregateStats {
   double throughput_mibps{0};
 };
 
-// 从 RoundResult 向量计算总耗时维度的聚合统计。
 inline AggregateStats ComputeStats(const std::vector<RoundResult>& rounds, double wall_ms) {
   std::vector<double> total_ms;
   total_ms.reserve(rounds.size());
@@ -142,8 +164,9 @@ inline AggregateStats PhaseStats(const std::vector<RoundResult>& rounds,
   return s;
 }
 
-// ---- 打印 ----
+// ---- 结果打印 ----
 
+// multipart bench 结果报告。
 inline void PrintReport(std::string_view bench_name, const std::vector<RoundResult>& rounds,
                         double wall_ms) {
   std::uint32_t ok = 0, fail = 0;
@@ -170,12 +193,10 @@ inline void PrintReport(std::string_view bench_name, const std::vector<RoundResu
             << "  throughput  : " << stats.throughput_mibps << " MiB/s\n";
 
   if (stats.n > 0) {
-    // 总耗时分布
     std::cout << "  total(ms)   : avg=" << stats.mean_ms << "  p50=" << stats.p50_ms
               << "  p95=" << stats.p95_ms << "  min=" << stats.min_ms
               << "  max=" << stats.max_ms << "\n";
 
-    // 阶段统计（仅当有数据时打印）
     auto print_phase = [](const char* label, const AggregateStats& s) {
       if (s.n == 0) return;
       std::cout << "  " << label << "(ms) : avg=" << s.mean_ms << "  p50=" << s.p50_ms
@@ -188,8 +209,69 @@ inline void PrintReport(std::string_view bench_name, const std::vector<RoundResu
   std::cout.flush();
 }
 
-// ---- CSV 输出 ----
+// PUT/GET bench 结果报告 (单阶段计时，无 setup/ctrl 分阶段)。
+inline void PrintPutGetResults(std::string_view path, std::string_view op,
+                                const std::vector<WorkerStats>& stats_vec,
+                                std::uint32_t concurrency,
+                                clk::time_point t_start) {
+  // 聚合
+  std::uint32_t ok = 0, fail = 0;
+  std::uint64_t bytes = 0;
+  std::vector<RoundResult> all;
+  clk::time_point end_max{};
+  bool any_ready = false;
+  for (std::size_t w = 0; w < stats_vec.size(); ++w) {
+    if (!stats_vec[w].ready) {
+      std::cerr << "[worker " << w << "] not ready (buffer alloc/register failed)\n";
+      continue;
+    }
+    any_ready = true;
+    ok += stats_vec[w].ok;
+    fail += stats_vec[w].fail;
+    bytes += stats_vec[w].bytes;
+    all.insert(all.end(), stats_vec[w].rounds.begin(), stats_vec[w].rounds.end());
+    if (end_max.time_since_epoch().count() == 0)
+      end_max = stats_vec[w].end;
+    else
+      end_max = std::max(end_max, stats_vec[w].end);
+  }
 
+  if (!any_ready) {
+    std::cerr << "no worker was ready — aborting\n";
+    return;
+  }
+
+  const double wall_ms = ms_double(end_max - t_start).count();
+  const double wall_s = wall_ms / 1000.0;
+  const double mibs = (wall_s > 0.0) ? static_cast<double>(bytes) / wall_s / (1024.0 * 1024.0) : 0.0;
+  const double ops = (wall_s > 0.0) ? static_cast<double>(ok) / wall_s : 0.0;
+
+  // 时延分布
+  std::vector<double> lat;
+  lat.reserve(all.size());
+  for (const auto& r : all)
+    if (r.ok) lat.push_back(r.data_plane_ms);
+  std::sort(lat.begin(), lat.end());
+
+  std::cout << "\n=== results ===\n"
+            << "  ok           : " << ok << "\n"
+            << "  fail         : " << fail << "\n"
+            << "  bytes        : " << rtest::HumanBytes(bytes) << " (" << bytes << ")\n"
+            << "  wall time    : " << wall_ms << " ms\n"
+            << "  throughput   : " << mibs << " MiB/s  (" << ops << " ops/s)\n";
+
+  if (!lat.empty()) {
+    std::cout << "  latency (ms) : avg=" << rtest::bench::Mean(lat)
+              << "  min=" << lat.front()
+              << "  p50=" << rtest::bench::Percentile(lat, 50.0)
+              << "  p95=" << rtest::bench::Percentile(lat, 95.0)
+              << "  p99=" << rtest::bench::Percentile(lat, 99.0)
+              << "  max=" << lat.back() << "\n";
+  }
+  std::cout.flush();
+}
+
+// multipart bench CSV 输出。
 inline void WriteCsv(std::string_view path_name, const BaseArgs& a,
                      const std::vector<RoundResult>& rounds, std::uint32_t num_parts = 0) {
   std::cout << "path,total_bytes,parts,concurrency,rep,"
@@ -203,7 +285,7 @@ inline void WriteCsv(std::string_view path_name, const BaseArgs& a,
 }
 
 // ---- barrier 同步 ----
-// barrier 的 completion functor：最后一个到达的线程记录统一起跑时刻。
+// barrier completion functor：最后一个到达的线程记录统一起跑时刻。
 
 struct StartSetter {
   std::atomic<clk::time_point>* start;

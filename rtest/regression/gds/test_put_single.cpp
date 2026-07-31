@@ -1,6 +1,7 @@
 // test_put_single.cpp — GDS 单步 PUT，多尺寸验证。
 //
-// 验证: 1K / 1M / 4M 三个尺寸下 bytes==size、etag 非空、StatObject 确认落盘。
+// CASE: 1K/1M/4M 三种典型尺寸，验证 PUT 返回 bytes==size、etag 非空、
+// StatObject 确认落盘。三个尺寸覆盖小对象、典型值、边界。
 
 #include <cstdint>
 #include <iostream>
@@ -31,20 +32,15 @@ int main(int argc, char** argv) {
   bool verify_crc = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--proxy" && i + 1 < argc) {
-      proxy = argv[++i];
-    } else if (a == "--verify-crc32c") {
-      verify_crc = true;
-    } else {
-      std::cerr << "unknown arg: " << a << "\n";
-      return 2;
-    }
+    if (a == "--proxy" && i + 1 < argc) proxy = argv[++i];
+    else if (a == "--verify-crc32c") verify_crc = true;
+    else { std::cerr << "unknown arg: " << a << "\n"; return 2; }
   }
 
   std::cout << "=== " << kTestName << " ===\n"
             << "  proxy      : " << proxy << "\n"
             << "  verify-crc : " << (verify_crc ? "on" : "off") << "\n"
-            << "  test sizes : " << (sizeof(kTestSizes) / sizeof(kTestSizes[0])) << "\n";
+            << "  test sizes : 3\n";
 
   // ---- init ----
   Client client(ClientOptions{.endpoint = proxy, .verify_crc32c = verify_crc});
@@ -53,31 +49,27 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // ---- test ----
   int passed = 0, failed = 0;
   for (std::uint64_t size : kTestSizes) {
     const std::string key = std::string("rtest-t31-gds-") + rtest::HumanBytes(size) + "-" +
                             rtest::MakeTimestampSuffix();
 
-    // allocate + fill GPU buffer
+    // alloc + fill GPU buffer
     void* dev = nullptr;
     if (cudaMalloc(&dev, size) != cudaSuccess) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": cudaMalloc failed\n";
-      ++failed;
-      continue;
+      ++failed; continue;
     }
     std::vector<std::byte> host(size);
     rtest::FillHostPattern(host);
     if (cudaMemcpy(dev, host.data(), size, cudaMemcpyHostToDevice) != cudaSuccess) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": cudaMemcpy failed\n";
-      cudaFree(dev);
-      ++failed;
-      continue;
+      cudaFree(dev); ++failed; continue;
     }
 
-    // PUT
+    // PUT: 验证 bytes==size、etag 非空
     ClientProxyPutRequest req;
     req.bucket = kBucket;
     req.key = key;
@@ -88,9 +80,7 @@ int main(int argc, char** argv) {
     if (!client.PutObjectGds(req, ConstBufferView{.data = dev, .size = size}, resp)) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": PutObjectGds returned false\n";
-      cudaFree(dev);
-      ++failed;
-      continue;
+      cudaFree(dev); ++failed; continue;
     }
     cudaFree(dev);
 
@@ -98,28 +88,25 @@ int main(int argc, char** argv) {
     if (pr.bytes != size) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": bytes=" << pr.bytes << " expected=" << size << "\n";
-      ++failed;
-      continue;
+      ++failed; continue;
     }
     if (pr.etag.empty()) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": etag is empty\n";
-      ++failed;
-      continue;
+      ++failed; continue;
     }
 
-    // StatObject 确认落盘
+    // StatObject: 确认最终落盘
     std::uint64_t obj_size = 0;
     std::string stat_err;
     if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != size) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
-                << ": StatObject failed or size mismatch: got=" << obj_size << "\n";
-      ++failed;
-      continue;
+                << ": StatObject failed: got=" << obj_size << "\n";
+      ++failed; continue;
     }
 
-    std::cout << "  size=" << rtest::HumanBytes(size) << " etag=" << pr.etag << " crc32c=0x"
-              << std::hex << pr.crc32c << std::dec << " OK\n";
+    std::cout << "  size=" << rtest::HumanBytes(size) << " etag=" << pr.etag
+              << " crc32c=0x" << std::hex << pr.crc32c << std::dec << " OK\n";
     ++passed;
   }
 

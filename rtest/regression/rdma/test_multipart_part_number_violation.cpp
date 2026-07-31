@@ -1,7 +1,9 @@
-// test_multipart_part_number_violation.cpp — RDMA part_number 重复/跳号。
+// test_multipart_part_number_violation.cpp — RDMA part_number 重复/跳号检测。
 //
-// 验证: Scene A — 重复 part_number 非静默失败；Scene B — 跳号被检测。
-// backend 数据面不稳定时 Scene B 判 SKIP(77) 而非 FAIL。host 内存，无 CUDA 依赖。
+// CASE A — 重复 part_number (1,1,2): UploadPart 同一 part_number 两次，
+//   Complete 后必须产生非静默结果（失败或 object_size!=0）。
+// CASE B — 跳号 (1,3 跳过 2): 非连续 part_number 导致 merged_size≠sum，
+//   Complete 必须被拒绝。backend 数据面不稳时判 SKIP(77)。host 内存，无 CUDA 依赖。
 
 #include <cstdint>
 #include <iostream>
