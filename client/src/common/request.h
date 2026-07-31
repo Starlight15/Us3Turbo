@@ -6,22 +6,12 @@
 
 namespace us3_turbo::client {
 
-/** @brief PUT 通路选择(bitflags)。kNone=0 作无效默认,kAll 暂不支持(单 buffer
- * 无法双路)。 */
+/** @brief PUT 通路选择(bitflags)。kNone=0 作无效默认。 */
 enum class PutDataPath : std::uint8_t {
   kNone = 0,
   kGds = 1 << 0,
   kRdma = 1 << 2,
-  kAll = kGds | kRdma,
 };
-
-inline PutDataPath operator|(PutDataPath a, PutDataPath b) {
-  return static_cast<PutDataPath>(static_cast<std::uint8_t>(a) | static_cast<std::uint8_t>(b));
-}
-
-inline bool HasPath(PutDataPath flags, PutDataPath check) {
-  return (static_cast<std::uint8_t>(flags) & static_cast<std::uint8_t>(check)) != 0;
-}
 
 /** @brief client → proxy 统一 PUT 请求;对应通路的 rdma_token 由 PutObject
  * 内部按 path 填充。 */
@@ -55,13 +45,6 @@ struct ClientProxyPutResponse {
 };
 
 // ========== GET（GDS）控制面消息 ==========
-
-/** @brief StatObject 输出：对象布局，供 client 分配 buffer。 */
-struct StatObjectOutput {
-  std::uint64_t object_size{0};
-  std::uint64_t block_size{0};
-  std::string hash;
-};
 
 /** @brief GET 执行结果：按块读取 + crc 重组校验后的结果。 */
 struct GetPathResult {

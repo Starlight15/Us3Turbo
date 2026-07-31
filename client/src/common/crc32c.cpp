@@ -41,8 +41,4 @@ std::uint32_t Crc32c(std::span<const std::byte> data) noexcept {
   return Crc32cFinalize(Crc32cUpdate(Crc32cInit(), data.data(), data.size()));
 }
 
-std::uint32_t Crc32c(std::string_view data) noexcept {
-  return Crc32cFinalize(Crc32cUpdate(Crc32cInit(), data.data(), data.size()));
-}
-
 }  // namespace us3_turbo::client

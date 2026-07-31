@@ -8,14 +8,6 @@
 
 namespace us3_turbo::proxy {
 
-/* 每个 part 作为一个 block 写入 ufile-ac（block 粒度 = part 粒度）*/
-struct BlockInfo {
-  std::string key;          // 格式 mp/{uuid32}/p{part_no:04u}（≤48）
-  std::uint64_t offset{0};  // = gpu/source offset
-  std::uint64_t size{0};    // = part_size（末 part 可能 < part_size）
-  std::uint32_t crc32c{0};  // ufile-ac 返回
-};
-
 /* GET 用对象布局，对齐 fileidx_col schema */
 struct FileIdxRecord {
   std::string first_object;  // block key 前缀

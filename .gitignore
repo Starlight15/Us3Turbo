@@ -1,5 +1,9 @@
 # Build artifacts
 build/
+/Makefile
+/cmake_install.cmake
+/CMakeCache.txt
+tools/
 .claude_tmp/
 
 # Build-output binary symlinks (point into build/)
@@ -14,6 +18,8 @@ nohup.out
 core
 core.*
 *.tmp
+scripts/*_results.txt
+scripts/logs/
 
 # IDE / OS
 .vscode/
