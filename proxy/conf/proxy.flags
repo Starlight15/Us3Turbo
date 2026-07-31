@@ -4,8 +4,8 @@
 --backend_endpoint=192.168.1.198:24000
 --backend_timeout_ms=30000
 --backend_setid=1
---max_single_put_bytes=16777216
---multipart_part_size=16777216
+--max_single_put_bytes=4194304
+--multipart_part_size=4194304
 --log_level=info
 --backend_conn_pool_size=8
 --dbgate_endpoint=192.168.1.198:20165

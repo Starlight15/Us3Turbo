@@ -26,7 +26,7 @@ namespace us3_turbo::proxy {
 constexpr std::uint32_t MESSAGE_MAGIC_NUMBER = 0x0a0a0a0a;
 constexpr std::uint32_t MESSAGE_VERSION_NUMBER = 0x01;
 constexpr std::uint32_t KEY_MAX_LENGTH = 48;
-constexpr std::uint64_t MAX_VALUE_LENGTH = 16777216ULL;  // 16 MiB
+constexpr std::uint64_t MAX_VALUE_LENGTH = 4194304ULL;
 
 /* 消息类型（对齐 ufile-ac message.h MessageType，仅列本仓用到的） */
 enum MessageType : std::uint32_t {
