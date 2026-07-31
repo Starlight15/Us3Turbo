@@ -18,7 +18,6 @@ add_library(us3_turbo_client
   src/rpc/proxy_rpc.cpp
   src/common/crc32c.cpp
   src/memory_manager/gds_memory_manager.cpp
-  src/memory_manager/gds_device_buffer.cpp
   src/memory_manager/rdma_memory_manager.cpp
   src/memory_manager/rdma_qp.cpp
   src/transport/gds_put_channel.cpp
