@@ -36,13 +36,16 @@ int main(int argc, char** argv) {
   }
 
   /* ---- PUT ---- */
+  ClientProxyPutRequest put_req;
+  put_req.bucket = kBucket;
+  put_req.key = "rdma-get-demo";
+  put_req.object_size = kSize;
+  put_req.path = PutDataPath::kRdma;
+
   ClientProxyPutResponse put_resp;
-  bool put_ok = client.PutObjectRdma(
-      ClientProxyPutRequest{.bucket = kBucket,
-                            .key = "rdma-get-demo",
-                            .object_size = kSize,
-                            .path = PutDataPath::kRdma},
-      ConstBufferView{.data = host_put.data(), .size = kSize}, put_resp);
+  bool put_ok = client.PutObjectRdma(put_req,
+                                     ConstBufferView{.data = host_put.data(), .size = kSize},
+                                     put_resp);
   if (!put_ok) {
     std::cerr << "PUT failed\n";
     client.Shutdown();

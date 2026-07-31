@@ -33,10 +33,14 @@ int main(int argc, char** argv) {
   Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
+  ClientProxyPutRequest put_req;
+  put_req.bucket = kBucket;
+  put_req.key = "gds-get-demo";
+  put_req.object_size = kSize;
+  put_req.path = PutDataPath::kGds;
+
   ClientProxyPutResponse put_resp;
-  client.PutObjectGds(ClientProxyPutRequest{.bucket = kBucket, .key = "gds-get-demo",
-                                             .object_size = kSize, .path = PutDataPath::kGds},
-                       ConstBufferView{.data = dev_put, .size = kSize}, put_resp);
+  client.PutObjectGds(put_req, ConstBufferView{.data = dev_put, .size = kSize}, put_resp);
   std::cout << "PUT etag=" << put_resp.gds_result.value().etag << "\n";
 
   std::uint64_t obj_size = 0;

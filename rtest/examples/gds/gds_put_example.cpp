@@ -28,12 +28,14 @@ int main(int argc, char** argv) {
   Client client(ClientOptions{.endpoint = kProxy});
   client.Initialize();
 
+  ClientProxyPutRequest put_req;
+  put_req.bucket = kBucket;
+  put_req.key = "gds-demo";
+  put_req.object_size = kSize;
+  put_req.path = PutDataPath::kGds;
+
   ClientProxyPutResponse resp;
-  client.PutObjectGds(ClientProxyPutRequest{.bucket = kBucket,
-                                             .key = "gds-demo",
-                                             .object_size = kSize,
-                                             .path = PutDataPath::kGds},
-                       ConstBufferView{.data = dev, .size = kSize}, resp);
+  client.PutObjectGds(put_req, ConstBufferView{.data = dev, .size = kSize}, resp);
 
   cudaFree(dev);
   client.Shutdown();
