@@ -1,6 +1,7 @@
-// test_get_single_block_crc.cpp — T2.1 GET 单块对象 CRC 一致性。
+// test_get_single_block_crc.cpp — GDS GET 单块对象 CRC 一致性。
 //
-// 验证: single PUT 后 GET 读回,crc32c/hash/bytes_read 与 PUT 结果一致。
+// 验证: PUT 后 GET 读回，crc32c / hash / bytes_read 与 PUT 结果一致。
+
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -15,148 +16,130 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
+  // ---- 常量 ----
   constexpr const char* kProxy = rtest::kDefaultProxyEndpoint;
   constexpr const char* kBucket = "test-bucket";
-  constexpr char kTestName[] = "gds_get_single_block_crc";
-  constexpr std::uint64_t kBlockSize = rtest::kDefaultPartSize;
+  constexpr const char* kTestName = "gds_get_single_block_crc";
   constexpr std::uint64_t kSinglePutMax = 4ULL * 1024 * 1024;
 
-  std::string proxy_addr = kProxy;
-  std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M（< 4M 单块，≤4M 单步上限）
-  const std::string bucket = kBucket;
-  const std::string key = std::string("rtest-t21-gds-") + rtest::MakeTimestampSuffix();
-
+  // ---- args ----
+  std::string proxy = kProxy;
+  std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M（< 4M 单块）
   for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    auto need = [&](std::string& v) -> bool {
-      if (i + 1 >= argc) {
-        std::cerr << "missing value for " << arg << "\n";
-        return false;
-      }
-      v = argv[++i];
-      return true;
-    };
-    if (arg == "--proxy") {
-      if (!need(proxy_addr)) return 2;
-    } else if (arg == "--size") {
-      std::string v;
-      if (!need(v) || !rtest::ParseSize(v, size)) {
+    std::string a = argv[i];
+    if (a == "--proxy" && i + 1 < argc) {
+      proxy = argv[++i];
+    } else if (a == "--size" && i + 1 < argc) {
+      if (!rtest::ParseSize(argv[++i], size)) {
         std::cerr << "bad --size\n";
         return 2;
       }
     } else {
-      std::cerr << "unknown arg: " << arg << "\n";
+      std::cerr << "unknown arg: " << a << "\n";
       return 2;
     }
   }
 
-  if (size > kSinglePutMax || size >= kBlockSize) {
-    std::cerr << "[FAIL] " << kTestName << ": size must be <= 4M and < 4M for single-block, got "
-              << rtest::HumanBytes(size) << "\n";
+  if (size > kSinglePutMax) {
+    std::cerr << "[FAIL] " << kTestName << ": size must be <= 4M, got " << rtest::HumanBytes(size)
+              << "\n";
     return 2;
   }
 
-  std::cout << "=== T2.1 GDS " << kTestName << " ===\n"
-            << "  proxy : " << proxy_addr << "\n"
+  std::cout << "=== " << kTestName << " ===\n"
+            << "  proxy : " << proxy << "\n"
             << "  size  : " << rtest::HumanBytes(size) << "\n";
 
+  // ---- GPU buffers ----
   void* dev_put = nullptr;
-  cudaError_t e = cudaMalloc(&dev_put, size);
-  if (e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName << ": cudaMalloc(put): " << cudaGetErrorString(e) << "\n";
+  if (cudaMalloc(&dev_put, size) != cudaSuccess) {
+    std::cerr << "[FAIL] " << kTestName << ": cudaMalloc(put) failed\n";
     return 1;
   }
   std::vector<std::byte> host(size);
   rtest::FillHostPattern(host);
-  e = cudaMemcpy(dev_put, host.data(), size, cudaMemcpyHostToDevice);
-  if (e != cudaSuccess) {
-    std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy: " << cudaGetErrorString(e) << "\n";
+  if (cudaMemcpy(dev_put, host.data(), size, cudaMemcpyHostToDevice) != cudaSuccess) {
+    std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy failed\n";
     cudaFree(dev_put);
     return 1;
   }
 
-  ClientOptions opts;
-  opts.endpoint = proxy_addr;
-  opts.verify_crc32c = false;
-  Client client(std::move(opts));
+  void* dev_get = nullptr;
+
+  // ---- init ----
+  Client client(ClientOptions{.endpoint = proxy});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
     cudaFree(dev_put);
     return 1;
   }
 
+  const std::string key = std::string("rtest-t21-gds-") + rtest::MakeTimestampSuffix();
   bool test_passed = false;
-  std::string fail_reason;
-  void* dev_get = nullptr;
 
-  // ---- single PUT ----
+  // ---- PUT ----
   std::uint32_t put_crc = 0;
   std::string put_etag;
   {
-    ClientProxyPutRequest put_req;
-    put_req.bucket = bucket;
-    put_req.key = key;
-    put_req.object_size = size;
-    put_req.path = PutDataPath::kGds;
+    ClientProxyPutRequest req;
+    req.bucket = kBucket;
+    req.key = key;
+    req.object_size = size;
+    req.path = PutDataPath::kGds;
 
-    ClientProxyPutResponse put_resp;
-    if (!client.PutObjectGds(put_req, ConstBufferView{.data = dev_put, .size = size}, put_resp)) {
-      fail_reason = "PutObject FAILED";
+    ClientProxyPutResponse resp;
+    if (!client.PutObjectGds(req, ConstBufferView{.data = dev_put, .size = size}, resp)) {
+      std::cerr << "[FAIL] " << kTestName << ": PutObjectGds returned false\n";
       goto cleanup;
     }
-    const auto& pr = put_resp.gds_result.value();
+    const auto& pr = resp.gds_result.value();
     put_etag = pr.etag;
     put_crc = pr.crc32c;
-    std::cout << "  PUT OK: bytes=" << pr.bytes << " etag=" << put_etag << " crc32c=0x"
-              << std::hex << put_crc << std::dec << "\n";
+    std::cout << "  PUT: bytes=" << pr.bytes << " etag=" << put_etag << " crc32c=0x" << std::hex
+              << put_crc << std::dec << "\n";
   }
 
   // ---- StatObject ----
   {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(bucket, key, obj_size, stat_err) || obj_size != size) {
-      fail_reason = "StatObject failed or size mismatch";
+    if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != size) {
+      std::cerr << "[FAIL] " << kTestName << ": StatObject failed or size mismatch\n";
       goto cleanup;
     }
   }
 
-  // ---- GET（单独分配 dev_get，保持 dev_put 存活，避免 cuObj descriptor
-  // 失效）----
+  // ---- GET ----
   {
-    e = cudaMalloc(&dev_get, size);
-    if (e != cudaSuccess) {
-      fail_reason = std::string("cudaMalloc(get): ") + cudaGetErrorString(e);
+    if (cudaMalloc(&dev_get, size) != cudaSuccess) {
+      std::cerr << "[FAIL] " << kTestName << ": cudaMalloc(get) failed\n";
       goto cleanup;
     }
     cudaMemset(dev_get, 0xAA, size);
     GetPathResult get_res;
-    if (!client.GetObjectGds(bucket, key, MutableBufferView{.data = dev_get, .size = size},
-                             get_res) ||
-        !get_res.ok) {
-      fail_reason = "GetObjectGds FAILED: " + get_res.error_message;
+    if (!client.GetObjectGds(kBucket, key, MutableBufferView{.data = dev_get, .size = size},
+                             get_res) || !get_res.ok) {
+      std::cerr << "[FAIL] " << kTestName << ": GetObjectGds: " << get_res.error_message << "\n";
       goto cleanup;
     }
-    std::cout << "  GET OK: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
+    std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
               << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
 
     if (get_res.crc32c == 0) {
-      fail_reason = "crc32c == 0 (expected non-zero for single block)";
+      std::cerr << "[FAIL] " << kTestName << ": crc32c == 0 (expected non-zero)\n";
     } else if (get_res.hash.empty()) {
-      fail_reason = "hash is empty";
+      std::cerr << "[FAIL] " << kTestName << ": hash is empty\n";
     } else if (get_res.crc32c != put_crc) {
-      fail_reason = "crc32c mismatch: get=0x" + std::to_string(get_res.crc32c) + " put=0x" +
-                    std::to_string(put_crc);
+      std::cerr << "[FAIL] " << kTestName << ": crc32c mismatch\n";
     } else if (get_res.hash != put_etag) {
-      fail_reason = "hash != put.etag: get=" + get_res.hash + " put=" + put_etag;
+      std::cerr << "[FAIL] " << kTestName << ": hash != put.etag\n";
     } else if (get_res.bytes_read != size) {
-      fail_reason = "bytes_read mismatch: got " + std::to_string(get_res.bytes_read) + " want " +
-                    std::to_string(size);
+      std::cerr << "[FAIL] " << kTestName << ": bytes_read mismatch\n";
     } else {
       test_passed = true;
     }
 
-    // D2H + 逐字节比对（加分项）。
+    // D2H 逐字节比对
     std::vector<std::byte> host_read(size);
     cudaMemcpy(host_read.data(), dev_get, size, cudaMemcpyDeviceToHost);
     rtest::VerifyHostBuffer(host_read.data(), size, host, "single-block");
@@ -171,6 +154,5 @@ cleanup:
     std::cout << "[PASS] " << kTestName << "\n";
     return 0;
   }
-  std::cerr << "[FAIL] " << kTestName << ": " << fail_reason << "\n";
   return 1;
 }

@@ -1,6 +1,6 @@
-// test_multipart_single_part.cpp — T1.3 单 part = 整对象。
+// test_multipart_single_part.cpp — RDMA 分段上传，单 part = 整对象。
 //
-// 验证: 单 part RDMA 分段上传 Complete 成功且 object_size==part_size。
+// 验证: 单 part Complete 成功，object_size == part_size。host 内存，无 CUDA 依赖。
 
 #include <iostream>
 #include <string>
@@ -13,100 +13,85 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
+  // ---- 常量 ----
   constexpr const char* kProxy = rtest::kDefaultProxyEndpoint;
   constexpr const char* kBucket = "test-bucket";
-  constexpr char kTestName[] = "rdma_multipart_single_part";
+  constexpr const char* kTestName = "rdma_multipart_single_part";
 
-  std::string proxy_addr = kProxy;
-  std::uint64_t part_size = rtest::kDefaultPartSize;  // 默认 4M（== proxy part 上限）
+  // ---- args ----
+  std::string proxy = kProxy;
+  std::uint64_t part_size = rtest::kDefaultPartSize;
   bool verify = false;
-  const std::string bucket = kBucket;
-  const std::string key = std::string("rtest-t13-rdma-") + rtest::MakeTimestampSuffix();
-
   for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    auto need = [&](std::string& v) -> bool {
-      if (i + 1 >= argc) {
-        std::cerr << "missing value for " << arg << "\n";
-        return false;
-      }
-      v = argv[++i];
-      return true;
-    };
-    if (arg == "--proxy") {
-      if (!need(proxy_addr)) return 2;
-    } else if (arg == "--part-size") {
-      std::string v;
-      if (!need(v) || !rtest::ParseSize(v, part_size)) {
+    std::string a = argv[i];
+    if (a == "--proxy" && i + 1 < argc) {
+      proxy = argv[++i];
+    } else if (a == "--part-size" && i + 1 < argc) {
+      if (!rtest::ParseSize(argv[++i], part_size)) {
         std::cerr << "bad --part-size\n";
         return 2;
       }
-    } else if (arg == "--verify-crc32c") {
+    } else if (a == "--verify-crc32c") {
       verify = true;
     } else {
-      std::cerr << "unknown arg: " << arg << "\n";
+      std::cerr << "unknown arg: " << a << "\n";
       return 2;
     }
   }
 
-  std::cout << "=== T1.3 RDMA " << kTestName << " ===\n"
-            << "  proxy     : " << proxy_addr << "\n"
+  std::cout << "=== " << kTestName << " ===\n"
+            << "  proxy     : " << proxy << "\n"
             << "  part_size : " << rtest::HumanBytes(part_size) << "\n"
             << "  verify    : " << (verify ? "on" : "off") << "\n";
 
-  // host buffer。
+  // ---- host buffer ----
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
 
-  ClientOptions opts;
-  opts.endpoint = proxy_addr;
-  opts.verify_crc32c = verify;
-  Client client(std::move(opts));
+  // ---- init ----
+  Client client(ClientOptions{.endpoint = proxy, .verify_crc32c = verify});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
     return 1;
   }
 
-  bool test_passed = false;
-  std::string fail_reason;
-
   // ---- CreateMultipartUpload ----
+  const std::string key = std::string("rtest-t13-rdma-") + rtest::MakeTimestampSuffix();
   std::string upload_id, error;
-  if (!client.CreateMultipartUpload(bucket, key, PutDataPath::kRdma, upload_id, error)) {
-    fail_reason = "CreateMultipartUpload failed: " + error;
-    goto cleanup;
+  if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kRdma, upload_id, error)) {
+    std::cerr << "[FAIL] " << kTestName << ": CreateMultipartUpload: " << error << "\n";
+    client.Shutdown();
+    return 1;
   }
 
-  // ---- UploadPart (part 1) + Complete ----
+  // ---- UploadPart + Complete ----
+  bool test_passed = false;
   {
     std::string etag;
     if (!client.UploadPartRdma(upload_id, 1,
                                ConstBufferView{.data = host.data(), .size = part_size}, etag,
                                error)) {
-      fail_reason = "UploadPartRdma 1 failed: " + error;
-      goto cleanup;
+      std::cerr << "[FAIL] " << kTestName << ": UploadPartRdma: " << error << "\n";
+    } else {
+      std::vector<Client::PartInfo> parts{{1, etag}};
+      Client::CompletedMultipart done;
+      if (!client.CompleteMultipartUpload(upload_id, parts, done)) {
+        std::cerr << "[FAIL] " << kTestName << ": CompleteMultipartUpload: " << done.error << "\n";
+      } else {
+        std::cout << "  Complete: object_size=" << done.object_size << " etag=" << done.etag << "\n";
+        test_passed = (done.object_size == part_size);
+        if (!test_passed) {
+          std::cerr << "[FAIL] " << kTestName << ": object_size mismatch: got=" << done.object_size
+                    << " want=" << part_size << "\n";
+        }
+      }
     }
-    std::vector<Client::PartInfo> parts{{1, etag}};
-    Client::CompletedMultipart done;
-    if (!client.CompleteMultipartUpload(upload_id, parts, done)) {
-      fail_reason = "CompleteMultipartUpload failed: " + done.error;
-      goto cleanup;
-    }
-    std::cout << "  CompleteMultipartUpload: object_size=" << done.object_size
-              << " etag=" << done.etag << "\n";
-    if (done.object_size != part_size) {
-      fail_reason = "object_size mismatch: got " + std::to_string(done.object_size) + " want " +
-                    std::to_string(part_size);
-      goto cleanup;
-    }
-    test_passed = true;
   }
 
-cleanup:
-  // Abort 幂等。
+  // ---- cleanup ----
   {
     std::string abort_err;
-    (void)client.AbortMultipartUpload(upload_id, abort_err);
+    client.AbortMultipartUpload(upload_id, abort_err);
   }
   client.Shutdown();
 
@@ -114,6 +99,5 @@ cleanup:
     std::cout << "[PASS] " << kTestName << "\n";
     return 0;
   }
-  std::cerr << "[FAIL] " << kTestName << ": " << fail_reason << "\n";
   return 1;
 }
