@@ -16,8 +16,7 @@ struct FileIdxRecord {
   std::string hash;
 };
 
-/* part 元数据，对齐 s3proxy S3PartInfo；当前内存实现，为后续 MongoDB
- * 持久化做准备 */
+/* part 元数据，对齐 s3proxy S3PartInfo */
 struct PartRecord {
   std::uint32_t part_number{0};  // 1-based
   std::uint64_t part_size{0};
@@ -25,17 +24,15 @@ struct PartRecord {
   std::int64_t upload_time_ms{0};
 
   // 对齐 s3proxy 新增字段
-  std::uint64_t file_offset{0};   // 最终文件内偏移
-  bool valid{false};              // 是否完整上传
-  std::uint64_t unmerge_size{0};  // Us3Turbo 恒为 0
+  std::uint64_t file_offset{0};  // 最终文件内偏移
+  bool valid{false};            // 是否完整上传
 
   /* per-block CRC32C 序列，1 block/part（即每 part 一个 crc），Complete
    * 时按 part 升序拼接为全局有序 CRCs */
   std::vector<std::uint32_t> block_crcs;
 };
 
-/* upload 级元数据，对齐 s3proxy S3MinitIdxInfo；当前内存实现，为后续 MongoDB
- * 持久化做准备 */
+/* upload 级元数据，对齐 s3proxy S3MinitIdxInfo */
 struct UploadRecord {
   std::string upload_id;
   std::string bucket;
@@ -55,8 +52,8 @@ struct UploadRecord {
   // 注：per-block crcs 存 PartRecord.block_crcs（有序），不在此处平铺累积。
 };
 
-/* 纯被动元数据存储接口，内存 mock 与 MongoDB 实现同一接口可无差别替换
- * 不含校验/etag 计算/client 比对，全在服务层 */
+/* 纯被动元数据存储接口。当前唯一实现 MongoUploadIndex；保留抽象层以便
+ * 后续替换/测试桩注入。 */
 class IUploadIndex {
  public:
   virtual ~IUploadIndex() = default;
@@ -80,9 +77,6 @@ class IUploadIndex {
 
   /* 删除会话（幂等） */
   virtual void Remove(const std::string& upload_id) = 0;
-
-  /* 删除超过 ttl_ms 的过期会话（后台清理线程调用） */
-  virtual void RemoveExpired(std::int64_t ttl_ms) = 0;
 
   /* 更新已合并大小，对齐 s3proxy merged_size（Us3Turbo 无流式合并但保持兼容）
    */

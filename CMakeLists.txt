@@ -1,10 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(Us3Turbo VERSION 0.1.0 LANGUAGES CXX)
 
-# Us3Turbo — GDS-only 精简工程。
-# 由 Us3Turbo 抽取 proxy / client(原 client-new) / backend / third_party
-# 及 gds_put_example 而来。只保留 GDS PUT 链路:控制面 brpc(proxy)+
-# 数据面 cuObjServer(backend)+ 客户端 GDS 通路。无 RDMA / HTTP / 分段上传。
+# Us3Turbo — GDS + RDMA 双通路对象存储。
+# 控制面 brpc(proxy) + 客户端双通路 client；数据面后端 ufile-ac 在独立仓
+# (ggds-compile-env)。支持单步 PUT、分段上传、GET，GDS(device 显存)+RDMA(host 内存)。
 
 # 强制 out-of-tree build。
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
@@ -62,7 +61,7 @@ else()
   target_link_libraries(us3_turbo_spdlog INTERFACE spdlog::spdlog)
 endif()
 
-# 公共头所在目录（当前仅 client 使用）。
+# 公共头所在目录（client 与 proxy 共用）。
 add_library(us3_turbo_common INTERFACE)
 target_include_directories(us3_turbo_common INTERFACE
   ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -3,11 +3,9 @@ build/
 /Makefile
 /cmake_install.cmake
 /CMakeCache.txt
-tools/
 .claude_tmp/
 
 # Build-output binary symlinks (point into build/)
-us3_turbo_backend
 us3_turbo_proxy
 us3_turbo_gds_put_example
 
@@ -18,7 +16,7 @@ nohup.out
 core
 core.*
 *.tmp
-scripts/*_results.txt
+scripts/*results*
 scripts/logs/
 
 # IDE / OS

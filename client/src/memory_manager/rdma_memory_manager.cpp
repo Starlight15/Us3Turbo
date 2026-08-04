@@ -3,7 +3,6 @@
 #include "client/src/memory_manager/rdma_memory_manager.h"
 
 #include <arpa/inet.h>
-#include <chrono>
 #include <cstring>
 #include <netinet/in.h>
 #include <string>
@@ -171,21 +170,14 @@ bool RdmaMemoryManager::AcquireDescriptorImpl(const void* ptr, std::size_t size,
   }
   void* mut_ptr = const_cast<void*>(ptr);
 
-  // [诊断插桩] 分阶段计时。
-  using diag_clk = std::chrono::steady_clock;
-  const auto t0 = diag_clk::now();
-
   // Fast path: shared_lock 允许并发 cache-hit 无阻塞。
   ibv_mr* mr{};
   bool cache_hit = false;
-  diag_clk::time_point t1, t2;
   {
     std::shared_lock<std::shared_mutex> lk(mu_);
-    t1 = diag_clk::now();
     auto it = registered_.find(mut_ptr);
     cache_hit = (it != registered_.end());
     if (cache_hit) mr = it->second;
-    t2 = diag_clk::now();
   }
 
   // Slow path: cache-miss 需要 exclusive lock 做 ibv_reg_mr (仅首次串行)。
@@ -199,8 +191,8 @@ bool RdmaMemoryManager::AcquireDescriptorImpl(const void* ptr, std::size_t size,
     } else {
       mr = ibv_reg_mr(pd_, mut_ptr, size, access_flags);
       if (mr == nullptr) {
-        LOG_SYS_ERROR("{} ibv_reg_mr failed ptr={} size={} access={:#x}",
-                      tag, mut_ptr, size, access_flags);
+        LOG_SYS_ERROR("{} ibv_reg_mr failed ptr={} size={} access={:#x}", tag, mut_ptr, size,
+                      access_flags);
         return false;
       }
       registered_.emplace(mut_ptr, mr);
@@ -209,20 +201,9 @@ bool RdmaMemoryManager::AcquireDescriptorImpl(const void* ptr, std::size_t size,
   }
 
   // Token 编码（锁外）。
-  const auto t3 = diag_clk::now();
-
   out.token = EncodeToken(listen_ip_.c_str(), listen_port_,
                           mr->rkey, reinterpret_cast<std::uint64_t>(mut_ptr),
                           size);
-
-  const auto diag_us = [](diag_clk::time_point a, diag_clk::time_point b) {
-    return std::chrono::duration<double, std::micro>(b - a).count();
-  };
-  LOG_SYS_INFO(
-      "{} ptr={} size={} token_bytes={} listen={}:{} "
-      "PHASE hit={} lock_wait_us={:.1f} inlock_us={:.1f} encode_us={:.1f}",
-      tag, ptr, size, out.token.size(), listen_ip_, listen_port_,
-      cache_hit, diag_us(t0, t1), diag_us(t1, t2), diag_us(t2, t3));
   return true;
 }
 

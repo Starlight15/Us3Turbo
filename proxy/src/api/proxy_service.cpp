@@ -19,20 +19,6 @@ namespace us3_turbo::proxy {
 // multipart part/complete/abort 无 bucket/key，Access 日志用占位符
 static constexpr const char* kDash = "-";
 
-void ProxyService::CleanupThreadMain() {
-  const std::int64_t kTtlMs = FLAGS_upload_ttl_ms;
-  const auto kScanInterval = std::chrono::milliseconds(FLAGS_upload_ttl_scan_interval_ms);
-  std::unique_lock lock(cleanup_mu_);
-  while (!stop_cleanup_) {
-    if (cleanup_cv_.wait_for(lock, kScanInterval, [this] { return stop_cleanup_; })) {
-      break;  // 析构唤醒
-    }
-    lock.unlock();
-    index_->RemoveExpired(kTtlMs);
-    lock.lock();
-  }
-}
-
 /* 单步 PUT(GDS/RDMA): 薄委托, ret!=0 → SetFailed; 日志+Access 日志 */
 
 void ProxyService::GdsPut(google::protobuf::RpcController* cntl_base,

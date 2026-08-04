@@ -6,11 +6,11 @@
 
 namespace us3_turbo::client {
 
-/** @brief PUT 通路选择(bitflags)。kNone=0 作无效默认。 */
+/** @brief PUT 通路选择。普通枚举（非 bitflag）：v1 仅单路。 */
 enum class PutDataPath : std::uint8_t {
   kNone = 0,
-  kGds = 1 << 0,
-  kRdma = 1 << 2,
+  kGds = 1,
+  kRdma = 2,
 };
 
 /** @brief client → proxy 统一 PUT 请求;对应通路的 rdma_token 由 PutObject
@@ -21,12 +21,9 @@ struct ClientProxyPutRequest {
   std::string key;
   std::uint64_t object_size{0};
   PutDataPath path{PutDataPath::kNone};
-  // GDS: cuObj RDMA token(显存地址 + remote key 自描述串);
-  // RDMA: hex-encoded token 含 listener ip:port + rkey + addr + size。
-  std::optional<std::string> rdma_token;
 };
 
-/** @brief 单条通路的执行结果。ok=false 时 error_code/error_message 描述失败。
+/** @brief 单条通路的执行结果。ok=false 时 error_code/error_message 描述失败原因。
  */
 struct PutPathResult {
   bool ok{false};
@@ -37,9 +34,8 @@ struct PutPathResult {
   std::uint64_t bytes{0};
 };
 
-/** @brief proxy → client 统一 PUT 响应,各通路结果按 path 独立返回。 */
+/** @brief proxy → client 统一 PUT 响应，各通路结果按 path 独立返回。 */
 struct ClientProxyPutResponse {
-  std::string object_id;
   std::optional<PutPathResult> gds_result;
   std::optional<PutPathResult> rdma_result;
 };

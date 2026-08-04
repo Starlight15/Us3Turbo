@@ -241,7 +241,7 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   auto t0 = trace ? detail::clk::now() : detail::clk::time_point{};
 
   GdsMemoryManager::Token token;
-  if (!mgr->AcquireToken(buffer.data, buffer.size, 0, token)) {
+  if (!mgr->AcquireToken(buffer.data, buffer.size, token)) {
     out_error = "failed to acquire GDS token";
     return false;
   }
@@ -254,7 +254,7 @@ bool Client::UploadPartGds(const std::string& upload_id, std::uint32_t part_numb
   auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
 
   if (!rpc_ok || !res.ok) {
-    out_error = res.ok ? res.error_message : res.error_message;
+    out_error = res.error_message;
     if (out_error.empty()) out_error = "UploadPartGds rpc failed";
     return false;
   }

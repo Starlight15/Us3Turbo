@@ -49,7 +49,7 @@ std::unique_ptr<us3_turbo::proxy::AssembledStack> AssembleServices() {
   auto get_object =
       std::make_unique<us3_turbo::proxy::GetObject>(stack->index.get(), stack->ufile_ac.get());
   stack->service = std::make_unique<us3_turbo::proxy::ProxyService>(
-      std::move(single_put), std::move(multipart), std::move(get_object), stack->index.get());
+      std::move(single_put), std::move(multipart), std::move(get_object));
   return stack;
 }
 

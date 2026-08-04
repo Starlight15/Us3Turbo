@@ -1,10 +1,7 @@
-# client — Mode B 双链路(GDS + RDMA)PUT 实现:单 channel 指向 proxy。
+# client — Mode B 双链路(GDS + RDMA)对象存储客户端:单 channel 指向 proxy。
 #
-# 消除旧 client 的过度抽象(TransferRouter / TransferPath / ClientCore /
-# UploadCoordinator 等)。本期范围:GDS PUT + RDMA PUT(跑通 gds_put_example /
-#),不实现分段上传、HeadObject、GetObject。
-#
-# Mode B:MetaRpc + ChunkRpc 合并为单 ProxyRpc(GdsPut / RdmaPut
+# 支持单步 PUT、分段上传、GET，GDS(device 显存)+RDMA(host 内存)双通路。
+# Mode B:MetaRpc + ChunkRpc 合并为单 ProxyRpc(GdsPut / RdmaPut / 分段 / Get
 # 共用一条到 proxy 的 brpc channel)。
 #
 # 目录按职责划分:common/(契约+链路无关工具,零 brpc 依赖)、

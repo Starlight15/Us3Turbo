@@ -1,6 +1,6 @@
 # RDMA (libibverbs) regression tests — host 内存，无 CUDA 依赖
 
-# T1.1 — 中间 part < 16MB 应在 Complete 时被拒绝
+# T1.1 — 中间 part < 4MB 应在 Complete 时被拒
 rtest_add_target(us3_turbo_rtest_rdma_multipart_invalid_part_size
   test_multipart_invalid_part_size.cpp)
 
@@ -12,7 +12,7 @@ rtest_add_target(us3_turbo_rtest_rdma_multipart_part_number_violation
 rtest_add_target(us3_turbo_rtest_rdma_multipart_single_part
   test_multipart_single_part.cpp)
 
-# T3.1 — 单步 PUT（1K / 4M / 16M 尺寸验证）
+# T3.1 — 单步 PUT（1K / 1M / 4M 尺寸验证）
 rtest_add_target(us3_turbo_rtest_rdma_put_single
   test_put_single.cpp)
 

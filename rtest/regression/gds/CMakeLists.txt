@@ -1,6 +1,6 @@
 # GDS regression tests — 每个独立可执行，命名 us3_turbo_rtest_gds_<name>
 
-# T1.1 — 中间 part < 16MB 应在 Complete 时被拒绝
+# T1.1 — 中间 part < 4MB 应在 Complete 时被拒
 rtest_add_target(us3_turbo_rtest_gds_multipart_invalid_part_size
   test_multipart_invalid_part_size.cpp NEEDS_CUDA)
 
@@ -20,6 +20,6 @@ rtest_add_target(us3_turbo_rtest_gds_get_single_block_crc
 rtest_add_target(us3_turbo_rtest_gds_get_multi_block_hash
   test_get_multi_block_hash.cpp NEEDS_CUDA)
 
-# T3.1 — 单步 PUT（1K / 4M / 16M 尺寸验证）
+# T3.1 — 单步 PUT（1K / 1M / 4M 尺寸验证）
 rtest_add_target(us3_turbo_rtest_gds_put_single
   test_put_single.cpp NEEDS_CUDA)

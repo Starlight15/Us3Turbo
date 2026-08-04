@@ -120,7 +120,6 @@ bool Multipart::WritePartIndex(const std::string& request_id, const std::string&
   part.upload_time_ms = utils::NowMs();
   part.file_offset = file_offset;
   part.valid = true;
-  part.unmerge_size = 0;
   part.block_crcs = block_crcs;
   if (!index_->AddPart(upload_id, part)) {
     LOG_ERROR(request_id, "upload={} part={} AddPart failed", upload_id, part_number);

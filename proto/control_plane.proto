@@ -16,9 +16,9 @@ option cc_generic_services = true;
 // 各链路第一版不做任何共同逻辑抽象，各自独立实现。
 // request_id 保留作跨端日志关联。wire 内部协同重编，无外部兼容承诺。
 
-// PUT 通路选择。bitflags 语义但 v1 仅支持单路（PATH_GDS / PATH_RDMA）；
-// PATH_NONE=0 作无效默认（client 校验拒绝）；PATH_ALL 推迟（单 buffer 无法
-// 同时喂 device 显存 + host 内存）。
+// PUT 通路选择。普通枚举（非 bitflag）：v1 仅支持单路（PATH_GDS / PATH_RDMA）；
+// PATH_NONE=0 作无效默认（client 校验拒绝）；PATH_ALL 保留，未启用
+//（单 buffer 无法同时喂 device 显存 + host 内存）。
 enum PutDataPath {
   PATH_NONE = 0;
   PATH_GDS  = 1;
@@ -57,13 +57,6 @@ message PutPathResult {
   string etag          = 4;
   uint32 crc32c        = 5;
   uint64 bytes_written = 6;
-}
-
-// proxy → client 统一 PUT 响应。各通路结果按 path 独立返回（optional）。
-// object_id 由 proxy/backend 生成（bucket/key 派生），供后续对象寻址。
-message ClientProxyPutResponse {
-  string                       object_id  = 1;
-  optional PutPathResult       gds_result = 10;
 }
 
 // ========== 分段上传控制面消息 ==========
@@ -191,36 +184,9 @@ message GetPathResult {
   string hash          = 6;
 }
 
-// ========== Proxy → Backend 数据面消息（block 级，带 offset）==========
-// GDS block 数据源：source_offset 为相对 token 注册 region 的偏移，backend
-// 据此从 client 显存子区间反向 RDMA-READ（cuObjServer handlePutObject 的
-// local_offset 形参，替代单步路径硬编码的 0）。
-message GdsBlockSource {
-  string rdma_token    = 1;
-  uint64 source_offset = 2;
-  uint64 block_size    = 3;
-}
-
-// proxy 向 backend 发送的 block 级请求。oneof source 区分 GDS/RDMA。
-message ProxyBackendPutBlockRequest {
-  string      request_id  = 1;
-  string      upload_id   = 2;
-  uint32      part_number = 3;
-  uint32      block_no    = 4;  // part 内 block 序号（从 0 开始）
-  oneof source {
-    GdsBlockSource gds_source  = 10;
-  }
-}
-
-message ProxyBackendPutBlockResponse {
-  bool             ok            = 1;
-  string           etag          = 2;  // 本 block 的 ETag
-  optional uint32  crc32c        = 3;  // backend 启用 CRC 时返回
-  string           error_message = 4;
-}
-
-// 单一 service，proxy 与 backend 都实现（brpc 按 service descriptor full_name
-// 去重，一进程一实例）。GdsPut / RdmaPut 两个独立 RPC，内部代码独立、无共享逻辑。
+// 单一 service，proxy 实现（client → proxy 控制面）。GdsPut / RdmaPut 两个独立
+// RPC，内部代码独立、无共享逻辑。proxy → backend 数据面走裸 ufile-ac TCP 协议，
+// 不经 brpc。
 service Control {
   rpc GdsPut(ClientProxyPutRequest) returns (PutPathResult);
   rpc RdmaPut(ClientProxyPutRequest) returns (PutPathResult);
@@ -239,12 +205,4 @@ service Control {
   rpc StatObject(StatObjectRequest) returns (StatObjectResponse);
   rpc GdsGet(ClientProxyGetRequest) returns (GetPathResult);
   rpc RdmaGet(ClientProxyGetRequest) returns (GetPathResult);
-}
-
-// Backend 数据面 block 级服务（proxy → backend）。与 Control 同进程注册：
-// brpc 按 service full_name 去重，Control 与 BackendDataPlane 是两个不同
-// descriptor，可共注册于同一 brpc server。backend 用独立的 C++ 类实现
-// （不能与 Control 共类继承——Service 多继承会产生 CallMethod 歧义）。
-service BackendDataPlane {
-  rpc PutBlock(ProxyBackendPutBlockRequest) returns (ProxyBackendPutBlockResponse);
 }

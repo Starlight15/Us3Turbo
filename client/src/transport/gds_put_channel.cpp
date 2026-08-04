@@ -87,7 +87,7 @@ bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView bu
   auto t0 = trace ? clk::now() : clk::time_point{};
 
   GdsMemoryManager::Token token;
-  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token)) {
+  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, token)) {
     return false;
   }
   auto t_token = trace ? clk::now() : clk::time_point{};

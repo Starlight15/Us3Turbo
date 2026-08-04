@@ -110,10 +110,6 @@ void MongoUploadIndex::Remove(const std::string& upload_id) {
   client_->DeleteMinit(upload_id);
 }
 
-void MongoUploadIndex::RemoveExpired(std::int64_t /*ttl_ms*/) {
-  /* TTL managed by MongoDB TTL index; Phase 5 may add explicit cleanup */
-}
-
 bool MongoUploadIndex::UpdateMergedSize(const std::string& upload_id, std::uint64_t merged_size) {
   int ret = client_->UpdateMinit(upload_id, mgo::f::kMergedSize, merged_size);
   return ret == 0;

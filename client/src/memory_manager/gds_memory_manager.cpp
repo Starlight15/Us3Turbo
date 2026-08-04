@@ -1,6 +1,5 @@
 #include "client/src/memory_manager/gds_memory_manager.h"
 
-#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <shared_mutex>
@@ -108,7 +107,7 @@ bool GdsMemoryManager::UnregisterBuffer(void* ptr) {
   return BufferRegistry::UnregisterBuffer(ptr);
 }
 
-bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size, std::size_t offset,
+bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size,
                                     Token& out, cuObjOpType_t op) {
   if (!ptr || size == 0U) {
     LOG_SYS_WARN("requires non-null ptr and positive size (ptr={} size={})", ptr, size);
@@ -116,11 +115,6 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size, std::size
   }
 
   void* mut_ptr = const_cast<void*>(ptr);
-
-  // [诊断插桩] 分阶段计时,定位并发瓶颈:buffer_id 查询 / 等锁 / 持锁
-  // (查表+可能的 DoRegister) / 锁外(GetRDMAToken)。验证完毕后可整块删除。
-  using diag_clk = std::chrono::steady_clock;
-  const auto t0 = diag_clk::now();
 
   // 查 buffer_id 检测地址复用:同进程内不同分配 ID 唯一,free 后不回收。
   // 查询失败直接拒绝,不做降级。
@@ -132,75 +126,59 @@ bool GdsMemoryManager::AcquireToken(const void* ptr, std::size_t size, std::size
                   static_cast<int>(rc));
     return false;
   }
-  const auto t1 = diag_clk::now();  // t1-t0 = buffer_id 查询耗时
 
   bool cache_hit = false;
-  diag_clk::time_point t2, t3;
 
   // Fast path: shared_lock 允许并发 cache-hit 无阻塞。
   {
     std::shared_lock<std::shared_mutex> lk(mu_);
-    t2 = diag_clk::now();
-    const std::size_t needed = size + offset;
     auto it = registered_.find(mut_ptr);
     if (it != registered_.end()) {
       const bool reused = it->second.buffer_id != buf_id;
-      const bool too_small = it->second.size < needed;
+      const bool too_small = it->second.size < size;
       cache_hit = !(reused || too_small);
     }
-    t3 = diag_clk::now();
   }
 
   // Slow path: cache-miss 或 re-register 需要 exclusive lock (仅首次/变更时串行)。
   if (!cache_hit) {
     std::unique_lock<std::shared_mutex> lk(mu_);
-    const std::size_t needed = size + offset;
     auto it = registered_.find(mut_ptr);
     if (it != registered_.end()) {
       // Double-check: 可能被另一个线程在 shared→unique 间隙注册了。
       const bool reused = it->second.buffer_id != buf_id;
-      const bool too_small = it->second.size < needed;
+      const bool too_small = it->second.size < size;
       if (!(reused || too_small)) {
         cache_hit = true;  // 竞态:另一线程已注册
       } else {
         // clang-format off
-        LOG_SYS_INFO("re-register ptr={} reason={} old_sz={} new_sz={} old_id={} new_id={}", mut_ptr, reused ? "reused" : "grew", it->second.size, needed, it->second.buffer_id, buf_id);
+        LOG_SYS_INFO("re-register ptr={} reason={} old_sz={} new_sz={} old_id={} new_id={}", mut_ptr, reused ? "reused" : "grew", it->second.size, size, it->second.buffer_id, buf_id);
         // clang-format on
         DoUnregister(mut_ptr, it->second);
         registered_.erase(it);
         GdsRegEntry entry{};
         entry.buffer_id = buf_id;
-        if (!DoRegister(mut_ptr, needed, entry)) return false;
+        if (!DoRegister(mut_ptr, size, entry)) return false;
         registered_.emplace(mut_ptr, entry);
         cache_hit = true;
       }
     } else {
       GdsRegEntry entry{};
       entry.buffer_id = buf_id;
-      if (!DoRegister(mut_ptr, needed, entry)) return false;
+      if (!DoRegister(mut_ptr, size, entry)) return false;
       registered_.emplace(mut_ptr, entry);
       cache_hit = true;
     }
   }
 
-  // GetRDMAToken 在锁外执行以允许并发。
+  // GetRDMAToken 在锁外执行以允许并发。offset 恒为 0（全 region 注册）。
   char* tok = nullptr;
-  const auto ret = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, offset, op, &tok);
+  const auto ret = impl_->client->cuMemObjGetRDMAToken(mut_ptr, size, 0, op, &tok);
   if (ret != CU_OBJ_SUCCESS || !tok) {
-    LOG_SYS_ERROR("cuMemObjGetRDMAToken failed (ptr={} size={} offset={} op={} rc={})", ptr, size,
-                  offset, static_cast<int>(op), ret);
+    LOG_SYS_ERROR("cuMemObjGetRDMAToken failed (ptr={} size={} op={} rc={})", ptr, size,
+                  static_cast<int>(op), ret);
     return false;
   }
-  const auto t4 = diag_clk::now();  // t4-t3 = GetRDMAToken 耗时
-
-  const auto diag_us = [](diag_clk::time_point a, diag_clk::time_point b) {
-    return std::chrono::duration<double, std::micro>(b - a).count();
-  };
-  LOG_SYS_INFO(
-      "ptr={} size={} offset={} op={} rdma_token={} "
-      "PHASE hit={} bufid_us={:.1f} lock_wait_us={:.1f} inlock_us={:.1f} token_us={:.1f}",
-      ptr, size, offset, static_cast<int>(op), tok, cache_hit, diag_us(t0, t1), diag_us(t1, t2),
-      diag_us(t2, t3), diag_us(t3, t4));
   out = Token(impl_->client.get(), tok);
   return true;
 }

@@ -7,8 +7,6 @@ DECLARE_int32(num_threads);
 DECLARE_string(backend_endpoint);
 DECLARE_int32(backend_timeout_ms);
 DECLARE_int32(backend_setid);
-DECLARE_int64(upload_ttl_ms);
-DECLARE_int64(upload_ttl_scan_interval_ms);
 DECLARE_int64(max_single_put_bytes);
 DECLARE_int64(multipart_part_size);
 DECLARE_string(log_level);

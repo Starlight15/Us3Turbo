@@ -26,7 +26,7 @@ bool GdsGetChannel::GetOnce(const std::string& bucket, const std::string& key,
   const std::string req_id = detail::MakeReqId();
 
   GdsMemoryManager::Token token;
-  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, 0, token, CUOBJ_GET)) {
+  if (!gds_mgr_->AcquireToken(buffer.data, buffer.size, token, CUOBJ_GET)) {
     LOG_ERROR(req_id, "AcquireToken(CUOBJ_GET) failed");
     return false;
   }

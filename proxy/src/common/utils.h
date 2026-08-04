@@ -28,7 +28,7 @@ namespace us3_turbo::proxy::utils {
 
 /* 汇总多个 etag：单元素直接返回；
  * 多元素 → 4 字节 LE count + SHA1 拼接 + base64。
- * SessionManager 与 MultipartPutHandler 共用此纯算法。 */
+ * SinglePut 与 Multipart 共用此纯算法。 */
 [[nodiscard]] std::string CombineETags(const std::vector<std::string>& etags);
 
 /* 单个 CRC32C → 8 位十六进制 ETag，单 block 与单步 PUT 复用。

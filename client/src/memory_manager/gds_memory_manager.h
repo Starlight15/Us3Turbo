@@ -61,7 +61,7 @@ class GdsMemoryManager : public BufferRegistry<GdsRegEntry> {
   /** @brief 获取 RDMA token(RAII 析构自动释放)。未注册的 ptr 会 lazy register。
    *  operation: CUOBJ_PUT(默认，写场景 backend RDMA_READ) 或
    *  CUOBJ_GET(读场景 backend RDMA_WRITE)。 */
-  [[nodiscard]] bool AcquireToken(const void* ptr, std::size_t size, std::size_t offset, Token& out,
+  [[nodiscard]] bool AcquireToken(const void* ptr, std::size_t size, Token& out,
                                   cuObjOpType_t op = static_cast<cuObjOpType_t>(0));
 
   GdsMemoryManager(const GdsMemoryManager&) = delete;

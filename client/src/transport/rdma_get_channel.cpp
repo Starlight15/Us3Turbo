@@ -12,12 +12,6 @@
 
 namespace us3_turbo::client {
 
-bool RdmaGetChannel::StatObject(const std::string& bucket, const std::string& key,
-                                std::uint64_t& out_object_size, std::string& out_error) const {
-  const std::string req_id = detail::MakeReqId();
-  return proxy_.StatObject(req_id, bucket, key, out_object_size, out_error);
-}
-
 bool RdmaGetChannel::GetOnce(const std::string& bucket, const std::string& key,
                              MutableBufferView buffer, GetPathResult& res) const {
   assert(rdma_mgr_ != nullptr);

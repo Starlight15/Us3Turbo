@@ -26,7 +26,8 @@ struct GetOutput {
 };
 
 /* 读取逻辑层（GDS）。镜像 SinglePut 的结构：校验 → 编排 backend 调用 →
-   如果同时需要两个通路请分别调用。 */class GetObject {
+   如果同时需要两个通路请分别调用。 */
+class GetObject {
  public:
   explicit GetObject(IUploadIndex* index, UfileAcClient* client) : index_(index), client_(client) {}
 
