@@ -8,6 +8,7 @@
 
 #include "client/src/common/request.h"
 #include "rtest/common.h"
+#include "rtest/cuda_guard.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
@@ -43,16 +44,15 @@ int main(int argc, char** argv) {
             << "  part_size : " << rtest::HumanBytes(part_size) << "\n";
 
   // ---- GPU buffer ----
-  void* dev_put = nullptr;
-  if (cudaMalloc(&dev_put, part_size) != cudaSuccess) {
+  rtest::DevMem dev_put(part_size);
+  if (!dev_put.valid()) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMalloc failed\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
-  if (cudaMemcpy(dev_put, host.data(), part_size, cudaMemcpyHostToDevice) != cudaSuccess) {
+  if (cudaMemcpy(dev_put.get(), host.data(), part_size, cudaMemcpyHostToDevice) != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy failed\n";
-    cudaFree(dev_put);
     return 1;
   }
 
@@ -60,7 +60,6 @@ int main(int argc, char** argv) {
   Client client(ClientOptions{.endpoint = proxy});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
-    cudaFree(dev_put);
     return 1;
   }
 
@@ -70,17 +69,17 @@ int main(int argc, char** argv) {
   if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kGds, upload_id, error)) {
     std::cerr << "[FAIL] " << kTestName << ": CreateMultipartUpload: " << error << "\n";
     client.Shutdown();
-    cudaFree(dev_put);
     return 1;
   }
 
   // ---- UploadPart + Complete ----
   bool test_passed = false;
-  void* dev_get = nullptr;
+  rtest::DevMem dev_get;
   {
     std::string etag;
-    if (!client.UploadPartGds(upload_id, 1, ConstBufferView{.data = dev_put, .size = part_size},
-                              etag, error)) {
+    if (!client.UploadPartGds(upload_id, 1,
+                              ConstBufferView{.data = dev_put.get(), .size = part_size}, etag,
+                              error)) {
       std::cerr << "[FAIL] " << kTestName << ": UploadPartGds: " << error << "\n";
     } else {
       std::vector<Client::PartInfo> parts{{1, etag}};
@@ -104,12 +103,13 @@ int main(int argc, char** argv) {
     std::string stat_err;
     if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != part_size) {
       std::cout << "  (optional GET skipped: StatObject failed)\n";
-    } else if (cudaMalloc(&dev_get, obj_size) != cudaSuccess) {
+    } else if (!dev_get.alloc(obj_size)) {
       std::cout << "  (optional GET skipped: cudaMalloc failed)\n";
     } else {
-      cudaMemset(dev_get, 0xAA, obj_size);
+      cudaMemset(dev_get.get(), 0xAA, obj_size);
       GetPathResult get_res;
-      if (client.GetObjectGds(kBucket, key, MutableBufferView{.data = dev_get, .size = obj_size},
+      if (client.GetObjectGds(kBucket, key,
+                              MutableBufferView{.data = dev_get.get(), .size = obj_size},
                               get_res) && get_res.ok) {
         std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
                   << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
           std::cout << "  optional GET checks OK (hash non-empty)\n";
         }
         std::vector<std::byte> host_read(obj_size);
-        cudaMemcpy(host_read.data(), dev_get, obj_size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_read.data(), dev_get.get(), obj_size, cudaMemcpyDeviceToHost);
         rtest::VerifyHostBuffer(host_read.data(), obj_size, host, "single-part");
       } else {
         std::cout << "  (optional GET failed: " << get_res.error_message << ")\n";
@@ -126,8 +126,6 @@ int main(int argc, char** argv) {
   }
 
   // ---- cleanup ----
-  if (dev_get) cudaFree(dev_get);
-  cudaFree(dev_put);
   client.Shutdown();
 
   if (test_passed) {

@@ -12,6 +12,7 @@
 
 #include "client/src/common/request.h"
 #include "rtest/common.h"
+#include "rtest/cuda_guard.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
@@ -47,16 +48,15 @@ int main(int argc, char** argv) {
             << "  part_size : " << rtest::HumanBytes(part_size) << "\n";
 
   // ---- GPU buffer (复用) ----
-  void* dev = nullptr;
-  if (cudaMalloc(&dev, part_size) != cudaSuccess) {
+  rtest::DevMem dev(part_size);
+  if (!dev.valid()) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMalloc failed\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
-  if (cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice) != cudaSuccess) {
+  if (cudaMemcpy(dev.get(), host.data(), part_size, cudaMemcpyHostToDevice) != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy failed\n";
-    cudaFree(dev);
     return 1;
   }
 
@@ -64,7 +64,6 @@ int main(int argc, char** argv) {
   Client client(ClientOptions{.endpoint = proxy});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
-    cudaFree(dev);
     return 1;
   }
 
@@ -72,8 +71,9 @@ int main(int argc, char** argv) {
   const auto upload_part = [&](const std::string& upload_id, std::uint32_t part_no,
                                std::string& etag, std::string& err, int retries = 1) -> bool {
     for (int attempt = 0; attempt <= retries; ++attempt) {
-      if (client.UploadPartGds(upload_id, part_no, ConstBufferView{.data = dev, .size = part_size},
-                               etag, err)) {
+      if (client.UploadPartGds(upload_id, part_no,
+                                ConstBufferView{.data = dev.get(), .size = part_size}, etag,
+                                err)) {
         return true;
       }
     }
@@ -153,7 +153,6 @@ int main(int argc, char** argv) {
 
   // ---- cleanup ----
   client.Shutdown();
-  cudaFree(dev);
 
   // ---- result ----
   if (scene_b_skipped) {

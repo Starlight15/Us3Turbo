@@ -10,6 +10,7 @@
 
 #include "client/src/common/request.h"
 #include "rtest/common.h"
+#include "rtest/cuda_guard.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
@@ -55,18 +56,18 @@ int main(int argc, char** argv) {
                             rtest::MakeTimestampSuffix();
 
     // alloc + fill GPU buffer
-    void* dev = nullptr;
-    if (cudaMalloc(&dev, size) != cudaSuccess) {
+    rtest::DevMem dev(size);
+    if (!dev.valid()) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": cudaMalloc failed\n";
       ++failed; continue;
     }
     std::vector<std::byte> host(size);
     rtest::FillHostPattern(host);
-    if (cudaMemcpy(dev, host.data(), size, cudaMemcpyHostToDevice) != cudaSuccess) {
+    if (cudaMemcpy(dev.get(), host.data(), size, cudaMemcpyHostToDevice) != cudaSuccess) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": cudaMemcpy failed\n";
-      cudaFree(dev); ++failed; continue;
+      ++failed; continue;
     }
 
     // PUT: 验证 bytes==size、etag 非空
@@ -77,12 +78,11 @@ int main(int argc, char** argv) {
     req.path = PutDataPath::kGds;
 
     ClientProxyPutResponse resp;
-    if (!client.PutObjectGds(req, ConstBufferView{.data = dev, .size = size}, resp)) {
+    if (!client.PutObjectGds(req, ConstBufferView{.data = dev.get(), .size = size}, resp)) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": PutObjectGds returned false\n";
-      cudaFree(dev); ++failed; continue;
+      ++failed; continue;
     }
-    cudaFree(dev);
 
     const auto& pr = resp.gds_result.value();
     if (pr.bytes != size) {

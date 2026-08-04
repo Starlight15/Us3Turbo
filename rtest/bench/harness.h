@@ -69,6 +69,16 @@ inline bool ParseUint(std::string_view s, std::uint64_t& out) {
   return true;
 }
 
+// 取 argv[i+1] 到 val；越界报错。bench 共用 arg 解析样板。
+inline bool NeedVal(int& i, int argc, char** argv, std::string_view arg, std::string_view& val) {
+  if (i + 1 >= argc) {
+    std::cerr << "missing value for " << arg << "\n";
+    return false;
+  }
+  val = argv[++i];
+  return true;
+}
+
 // ---- 公共类型 ----
 
 // 基准测试共用参数。通路特定字段（size/count/part_size 等）由各 bench 在局部
@@ -85,6 +95,43 @@ struct BaseArgs {
   bool trace{false};
   bool csv{false};
 };
+
+// 处理 BaseArgs 公共 flag（所有 bench 共享）。
+// 返回：1=已处理（i 已推进）；0=非公共 flag，调用方自行处理；-1=出错或 --help。
+// 调用方约定：返回 <0 时整体 ParseArgs 返回 false（用法错误/帮助打印完毕）。
+inline int ParseCommonArg(BaseArgs& a, int& i, int argc, char** argv, std::string_view arg) {
+  std::string_view val;
+  auto need = [&] { return NeedVal(i, argc, argv, arg, val); };
+  if (arg == "--proxy") {
+    if (!need()) return -1;
+    a.proxy = std::string(val);
+  } else if (arg == "--bucket") {
+    if (!need()) return -1;
+    a.bucket = std::string(val);
+  } else if (arg == "--key-prefix") {
+    if (!need()) return -1;
+    a.key_prefix = std::string(val);
+  } else if (arg == "--concurrency") {
+    std::uint64_t v;
+    if (!need() || !ParseUint(val, v)) { std::cerr << "bad --concurrency\n"; return -1; }
+    a.concurrency = static_cast<std::uint32_t>(v);
+  } else if (arg == "--warmup") {
+    std::uint64_t v;
+    if (!need() || !ParseUint(val, v)) { std::cerr << "bad --warmup\n"; return -1; }
+    a.warmup = static_cast<std::uint32_t>(v);
+  } else if (arg == "--verify-crc32c") {
+    a.verify_crc32c = true;
+  } else if (arg == "--trace") {
+    a.trace = true;
+  } else if (arg == "--csv") {
+    a.csv = true;
+  } else if (arg == "--help" || arg == "-h") {
+    return -1;  // 调用方打印各自 help 并 return false
+  } else {
+    return 0;
+  }
+  return 1;
+}
 
 // 单轮结果。各 bench 的 RunOneRound / do_put / do_get 填充此结构。
 struct RoundResult {
@@ -210,9 +257,7 @@ inline void PrintReport(std::string_view bench_name, const std::vector<RoundResu
 }
 
 // PUT/GET bench 结果报告 (单阶段计时，无 setup/ctrl 分阶段)。
-inline void PrintPutGetResults(std::string_view path, std::string_view op,
-                                const std::vector<WorkerStats>& stats_vec,
-                                std::uint32_t concurrency,
+inline void PrintPutGetResults(const std::vector<WorkerStats>& stats_vec,
                                 clk::time_point t_start) {
   // 聚合
   std::uint32_t ok = 0, fail = 0;

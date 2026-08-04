@@ -29,38 +29,10 @@ struct RdmaPutArgs : rtest::bench::BaseArgs {
 bool RdmaPutParseArgs(int argc, char** argv, RdmaPutArgs& a) {
   for (int i = 1; i < argc; ++i) {
     std::string_view arg = argv[i];
-    auto need = [&](std::string_view& val) -> bool {
-      if (i + 1 >= argc) { std::cerr << "missing value for " << arg << "\n"; return false; }
-      val = argv[++i];
-      return true;
-    };
     std::string_view val;
-    if (arg == "--proxy") {
-      if (!need(val)) return false;
-      a.proxy = std::string(val);
-    } else if (arg == "--size") {
-      if (!need(val) || !rtest::ParseSize(val, a.size)) { std::cerr << "bad --size\n"; return false; }
-    } else if (arg == "--count") {
-      if (!need(val) || !rtest::bench::ParseUint(val, a.count)) { std::cerr << "bad --count\n"; return false; }
-    } else if (arg == "--concurrency") {
-      std::uint64_t v;
-      if (!need(val) || !rtest::bench::ParseUint(val, v)) { std::cerr << "bad --concurrency\n"; return false; }
-      a.concurrency = static_cast<std::uint32_t>(v);
-    } else if (arg == "--warmup") {
-      std::uint64_t v;
-      if (!need(val) || !rtest::bench::ParseUint(val, v)) { std::cerr << "bad --warmup\n"; return false; }
-      a.warmup = static_cast<std::uint32_t>(v);
-    } else if (arg == "--bucket") {
-      if (!need(val)) return false;
-      a.bucket = std::string(val);
-    } else if (arg == "--key-prefix") {
-      if (!need(val)) return false;
-      a.key_prefix = std::string(val);
-    } else if (arg == "--verify-crc32c") {
-      a.verify_crc32c = true;
-    } else if (arg == "--trace") {
-      a.trace = true;
-    } else if (arg == "--help" || arg == "-h") {
+    auto need = [&] { return rtest::bench::NeedVal(i, argc, argv, arg, val); };
+    const int r = rtest::bench::ParseCommonArg(a, i, argc, argv, arg);
+    if (r < 0) {
       std::cout << "usage: us3_turbo_bench_rdma_put [options]\n"
                 << "  --proxy HOST:PORT     proxy endpoint (default " << rtest::kDefaultProxyEndpoint << ")\n"
                 << "  --size N[K|M|G]        object size (default 100M)\n"
@@ -72,6 +44,12 @@ bool RdmaPutParseArgs(int argc, char** argv, RdmaPutArgs& a) {
                 << "  --verify-crc32c        enable CRC32C verification\n"
                 << "  --trace                log per-PUT stage latency\n";
       return false;
+    }
+    if (r > 0) continue;
+    if (arg == "--size") {
+      if (!need() || !rtest::ParseSize(val, a.size)) { std::cerr << "bad --size\n"; return false; }
+    } else if (arg == "--count") {
+      if (!need() || !rtest::bench::ParseUint(val, a.count)) { std::cerr << "bad --count\n"; return false; }
     } else {
       std::cerr << "unknown arg: " << arg << "\n";
       return false;
@@ -181,7 +159,7 @@ int main(int argc, char** argv) {
 
   // 结果报告
   const clk::time_point t_start = start.load(std::memory_order_relaxed);
-  rtest::bench::PrintPutGetResults("rdma", "PUT", stats, a.concurrency, t_start);
+  rtest::bench::PrintPutGetResults(stats, t_start);
 
   client.Shutdown();
   for (const auto& s : stats)

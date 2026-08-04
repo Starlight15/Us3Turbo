@@ -119,42 +119,11 @@ void RdmaMpWorker(std::uint32_t wid, const RdmaMpArgs& a, us3_turbo::client::Cli
 
 bool RdmaMpParseArgs(int argc, char** argv, RdmaMpArgs& a) {
   for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    auto need = [&](std::string& v) -> bool {
-      if (i + 1 >= argc) { std::cerr << "missing value for " << arg << "\n"; return false; }
-      v = argv[++i];
-      return true;
-    };
-    auto need_u32 = [&](std::uint32_t& v) -> bool {
-      std::string s;
-      if (!need(s)) return false;
-      return rtest::bench::ParseUint(s, reinterpret_cast<std::uint64_t&>(v));
-    };
-    if (arg == "--proxy") {
-      if (!need(a.proxy)) return false;
-    } else if (arg == "--total") {
-      std::string v;
-      if (!need(v) || !rtest::ParseSize(v, a.total)) { std::cerr << "bad --total\n"; return false; }
-    } else if (arg == "--part-size") {
-      std::string v;
-      if (!need(v) || !rtest::ParseSize(v, a.part_size)) { std::cerr << "bad --part-size\n"; return false; }
-    } else if (arg == "--reps") {
-      if (!need_u32(a.reps)) return false;
-    } else if (arg == "--warmup") {
-      if (!need_u32(a.warmup)) return false;
-    } else if (arg == "--concurrency") {
-      if (!need_u32(a.concurrency)) return false;
-    } else if (arg == "--bucket") {
-      if (!need(a.bucket)) return false;
-    } else if (arg == "--key-prefix") {
-      if (!need(a.key_prefix)) return false;
-    } else if (arg == "--verify-crc32c") {
-      a.verify_crc32c = true;
-    } else if (arg == "--trace") {
-      a.trace = true;
-    } else if (arg == "--csv") {
-      a.csv = true;
-    } else if (arg == "--help" || arg == "-h") {
+    std::string_view arg = argv[i];
+    std::string_view val;
+    auto need = [&] { return rtest::bench::NeedVal(i, argc, argv, arg, val); };
+    const int r = rtest::bench::ParseCommonArg(a, i, argc, argv, arg);
+    if (r < 0) {
       std::cout << "usage: us3_turbo_bench_rdma_multipart [options]\n"
                 << "  --proxy ADDR        proxy endpoint\n"
                 << "  --total SIZE        total object size (default 64M)\n"
@@ -168,6 +137,16 @@ bool RdmaMpParseArgs(int argc, char** argv, RdmaMpArgs& a) {
                 << "  --trace             enable client latency_trace\n"
                 << "  --csv               emit CSV instead of summary\n";
       return false;
+    }
+    if (r > 0) continue;
+    if (arg == "--total") {
+      if (!need() || !rtest::ParseSize(val, a.total)) { std::cerr << "bad --total\n"; return false; }
+    } else if (arg == "--part-size") {
+      if (!need() || !rtest::ParseSize(val, a.part_size)) { std::cerr << "bad --part-size\n"; return false; }
+    } else if (arg == "--reps") {
+      std::uint64_t v;
+      if (!need() || !rtest::bench::ParseUint(val, v)) { std::cerr << "bad --reps\n"; return false; }
+      a.reps = static_cast<std::uint32_t>(v);
     } else {
       std::cerr << "unknown arg: " << arg << "\n";
       return false;

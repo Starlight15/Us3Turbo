@@ -9,6 +9,7 @@
 
 #include "client/src/common/request.h"
 #include "rtest/common.h"
+#include "rtest/cuda_guard.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
@@ -51,28 +52,30 @@ int main(int argc, char** argv) {
             << "  size  : " << rtest::HumanBytes(size) << "\n";
 
   // ---- GPU buffers ----
-  void* dev_put = nullptr;
-  if (cudaMalloc(&dev_put, size) != cudaSuccess) {
+  rtest::DevMem dev_put(size);
+  if (!dev_put.valid()) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMalloc(put) failed\n";
     return 1;
   }
+  rtest::DevMem dev_get;  // GET buffer，懒分配
   std::vector<std::byte> host(size);
   rtest::FillHostPattern(host);
-  if (cudaMemcpy(dev_put, host.data(), size, cudaMemcpyHostToDevice) != cudaSuccess) {
+  if (cudaMemcpy(dev_put.get(), host.data(), size, cudaMemcpyHostToDevice) != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy failed\n";
-    cudaFree(dev_put);
     return 1;
   }
-
-  void* dev_get = nullptr;
 
   // ---- init ----
   Client client(ClientOptions{.endpoint = proxy});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
-    cudaFree(dev_put);
     return 1;
   }
+  // RAII：作用域退出即 Shutdown（即使 early-return 也覆盖）。
+  struct ShutdownGuard {
+    Client* c;
+    ~ShutdownGuard() { c->Shutdown(); }
+  } shutdown_guard{&client};
 
   const std::string key = std::string("rtest-t21-gds-") + rtest::MakeTimestampSuffix();
   bool test_passed = false;
@@ -88,9 +91,9 @@ int main(int argc, char** argv) {
     req.path = PutDataPath::kGds;
 
     ClientProxyPutResponse resp;
-    if (!client.PutObjectGds(req, ConstBufferView{.data = dev_put, .size = size}, resp)) {
+    if (!client.PutObjectGds(req, ConstBufferView{.data = dev_put.get(), .size = size}, resp)) {
       std::cerr << "[FAIL] " << kTestName << ": PutObjectGds returned false\n";
-      goto cleanup;
+      return 1;
     }
     const auto& pr = resp.gds_result.value();
     put_etag = pr.etag;
@@ -105,22 +108,22 @@ int main(int argc, char** argv) {
     std::string stat_err;
     if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != size) {
       std::cerr << "[FAIL] " << kTestName << ": StatObject failed or size mismatch\n";
-      goto cleanup;
+      return 1;
     }
   }
 
   // ---- GET ----
   {
-    if (cudaMalloc(&dev_get, size) != cudaSuccess) {
+    if (!dev_get.alloc(size)) {
       std::cerr << "[FAIL] " << kTestName << ": cudaMalloc(get) failed\n";
-      goto cleanup;
+      return 1;
     }
-    cudaMemset(dev_get, 0xAA, size);
+    cudaMemset(dev_get.get(), 0xAA, size);
     GetPathResult get_res;
-    if (!client.GetObjectGds(kBucket, key, MutableBufferView{.data = dev_get, .size = size},
+    if (!client.GetObjectGds(kBucket, key, MutableBufferView{.data = dev_get.get(), .size = size},
                              get_res) || !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectGds: " << get_res.error_message << "\n";
-      goto cleanup;
+      return 1;
     }
     std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex
               << get_res.crc32c << std::dec << " hash=" << get_res.hash << "\n";
@@ -141,14 +144,9 @@ int main(int argc, char** argv) {
 
     // D2H 逐字节比对
     std::vector<std::byte> host_read(size);
-    cudaMemcpy(host_read.data(), dev_get, size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_read.data(), dev_get.get(), size, cudaMemcpyDeviceToHost);
     rtest::VerifyHostBuffer(host_read.data(), size, host, "single-block");
   }
-
-cleanup:
-  client.Shutdown();
-  if (dev_get) cudaFree(dev_get);
-  cudaFree(dev_put);
 
   if (test_passed) {
     std::cout << "[PASS] " << kTestName << "\n";

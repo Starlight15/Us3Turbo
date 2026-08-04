@@ -8,6 +8,7 @@
 
 #include "client/src/common/request.h"
 #include "rtest/common.h"
+#include "rtest/cuda_guard.h"
 #include "us3_turbo/client/client.h"
 
 #include <cuda_runtime.h>
@@ -45,16 +46,15 @@ int main(int argc, char** argv) {
             << "\n";
 
   // ---- GPU buffer ----
-  void* dev = nullptr;
-  if (cudaMalloc(&dev, part_size) != cudaSuccess) {
+  rtest::DevMem dev(part_size);
+  if (!dev.valid()) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMalloc failed\n";
     return 1;
   }
   std::vector<std::byte> host(part_size);
   rtest::FillHostPattern(host);
-  if (cudaMemcpy(dev, host.data(), part_size, cudaMemcpyHostToDevice) != cudaSuccess) {
+  if (cudaMemcpy(dev.get(), host.data(), part_size, cudaMemcpyHostToDevice) != cudaSuccess) {
     std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy failed\n";
-    cudaFree(dev);
     return 1;
   }
 
@@ -62,7 +62,6 @@ int main(int argc, char** argv) {
   Client client(ClientOptions{.endpoint = proxy});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
-    cudaFree(dev);
     return 1;
   }
 
@@ -72,7 +71,6 @@ int main(int argc, char** argv) {
   if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kGds, upload_id, error)) {
     std::cerr << "[FAIL] " << kTestName << ": CreateMultipartUpload: " << error << "\n";
     client.Shutdown();
-    cudaFree(dev);
     return 1;
   }
   std::cout << "  CreateMultipartUpload: upload_id=" << upload_id << "\n";
@@ -83,8 +81,8 @@ int main(int argc, char** argv) {
     std::vector<Client::PartInfo> parts;
     for (std::uint32_t i = 1; i <= kNumParts; ++i) {
       std::string etag;
-      if (client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = part_size}, etag,
-                               error)) {
+      if (client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev.get(), .size = part_size},
+                               etag, error)) {
         std::cout << "  UploadPartGds " << i << " ok etag=" << etag << "\n";
         parts.push_back({i, etag});
       } else {
@@ -113,7 +111,6 @@ int main(int argc, char** argv) {
     client.AbortMultipartUpload(upload_id, abort_err);
   }
   client.Shutdown();
-  cudaFree(dev);
 
   if (test_passed) {
     std::cout << "[PASS] " << kTestName << "\n";
