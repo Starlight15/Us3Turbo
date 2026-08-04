@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
 
   // 解析参数
   GdsPutArgs a;
-  if (!GdsPutParseArgs(argc, argv, a)) return 1;
+  if (!GdsPutParseArgs(argc, argv, a)) return 2;
 
   std::cout << "=== gds PUT bench ===\n"
             << "  proxy       : " << a.proxy << "\n"

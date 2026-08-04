@@ -208,8 +208,14 @@ bool Client::CreateMultipartUpload(const std::string& bucket, const std::string&
     return false;
   }
   const std::string req_id = detail::MakeReqId();
-  const ::us3_turbo::proxy::PutDataPath proto_path =
-      (path == PutDataPath::kGds) ? ::us3_turbo::proxy::PATH_GDS : ::us3_turbo::proxy::PATH_RDMA;
+  ::us3_turbo::proxy::PutDataPath proto_path;
+  switch (path) {
+    case PutDataPath::kGds:  proto_path = ::us3_turbo::proxy::PATH_GDS;  break;
+    case PutDataPath::kRdma: proto_path = ::us3_turbo::proxy::PATH_RDMA; break;
+    default:
+      out_error = "invalid PutDataPath (kNone)";
+      return false;
+  }
   return proxy_->CreateMultipartUpload(req_id, bucket, key, proto_path, out_upload_id, out_error);
 }
 

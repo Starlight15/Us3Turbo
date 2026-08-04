@@ -75,13 +75,20 @@ if $NEED_BUILD; then
 fi
 
 # ---- 运行 ----
+# 每通路 6 项测试，按 MODE 计算 test-plan 总数供计数显示。
+TOTAL_TESTS=0
+case "$MODE" in
+  all)  TOTAL_TESTS=12 ;;
+  gds)  TOTAL_TESTS=6 ;;
+  rdma) TOTAL_TESTS=6 ;;
+esac
 PASS=0; FAIL=0; TOTAL=0
 declare -a FAILED_TESTS=()
 
 run_one() {
   local name="$1"; shift
   TOTAL=$((TOTAL + 1))
-  printf "[%2d/%-2d] %-55s " "$TOTAL" "$((TOTAL))" "$name"
+  printf "[%2d/%-2d] %-55s " "$TOTAL" "$TOTAL_TESTS" "$name"
   local log
   if log=$("$@" --proxy "$PROXY" 2>&1); then
     echo "PASS"

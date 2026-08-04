@@ -49,7 +49,9 @@ message ClientProxyPutRequest {
   optional RdmaDataSource    rdma_source = 12;
 }
 
-// 单条通路的执行结果。ok=false 时 error_code/error_message 描述失败原因。
+// 单条通路的执行结果。PUT 失败由 proxy 经 brpc controller.SetFailed 上报
+//（RPC 层失败），不在此填充 error_code/error_message；GET 失败 ok=false 且填
+// error_code/error_message。两种路径均经 client 统一回填 PutPathResult。
 message PutPathResult {
   bool   ok            = 1;
   int32  error_code    = 2;

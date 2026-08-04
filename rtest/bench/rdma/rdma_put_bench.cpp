@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
   RdmaPutArgs a;
-  if (!RdmaPutParseArgs(argc, argv, a)) return 1;
+  if (!RdmaPutParseArgs(argc, argv, a)) return 2;
 
   std::cout << "=== rdma PUT bench ===\n"
             << "  proxy       : " << a.proxy << "\n"

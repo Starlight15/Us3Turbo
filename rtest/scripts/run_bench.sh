@@ -194,6 +194,9 @@ if $RUN_GET; then
   if [[ "$PATH_MODE" == "all" || "$PATH_MODE" == "rdma" ]]; then
     run_get "RDMA" "${RDMA_DIR}/us3_turbo_bench_rdma_get"
   fi
+  if [[ "$PATH_MODE" == "all" || "$PATH_MODE" == "gds" ]]; then
+    echo "── GDS GET 无 bench（暂未实现），跳过 ──"
+  fi
 fi
 
 echo "══════════════════════════════════════════════════════════"

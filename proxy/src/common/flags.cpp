@@ -1,11 +1,12 @@
 #include "proxy/src/common/flags.h"
 
 DEFINE_int32(proxy_port, 9100, "proxy control-plane brpc port");
-DEFINE_string(bind_host, "192.168.1.198", "Bind host for the brpc listener");
+DEFINE_string(bind_host, "0.0.0.0", "Bind host for the brpc listener (0.0.0.0 = all interfaces)");
 DEFINE_int32(num_threads, 4, "brpc worker thread count");
 DEFINE_string(backend_endpoint, "192.168.1.198:24000",
               "backend ufile-ac TCP endpoint for single-step GdsPut/RdmaPut "
-              "(doc F5; setid must match backend [common] setid).");
+              "(doc F5; setid must match backend [common] setid). "
+              "本测试环境 fallback；跨环境部署须显式设置。");
 DEFINE_int32(backend_timeout_ms, 30000,
              "Timeout (ms) for proxy→backend forward (GdsPut/RdmaPut/PutBlock)");
 DEFINE_int32(backend_setid, 1,
@@ -27,7 +28,8 @@ DEFINE_int32(backend_send_recv_max_retry, 2,
              "max retry attempts (inclusive) for SendAndRecv on connection-level "
              "failure; protocol errors are not retried");
 DEFINE_string(dbgate_endpoint, "192.168.1.198:20165",
-              "DBGate proxy endpoint for MongoDB operations");
+              "DBGate proxy endpoint for MongoDB operations. "
+              "本测试环境 fallback；跨环境部署须显式设置。");
 DEFINE_int32(dbgate_timeout_ms, 5000, "DBGate request timeout in milliseconds");
 DEFINE_int32(dbgate_conn_pool_size, 4,
              "DBGate connection pool size (recommend: match num_threads)");

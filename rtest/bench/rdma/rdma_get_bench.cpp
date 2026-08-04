@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
 
   RdmaGetArgs a;
   a.key_prefix = "bench-get";
-  if (!RdmaGetParseArgs(argc, argv, a)) return 1;
+  if (!RdmaGetParseArgs(argc, argv, a)) return 2;
 
   std::cout << "=== rdma GET bench ===\n"
             << "  proxy       : " << a.proxy << "\n"
