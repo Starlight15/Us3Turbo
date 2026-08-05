@@ -65,8 +65,8 @@ int main(int argc, char** argv) {
 
   // ---- CreateMultipartUpload ----
   const std::string key = std::string("rtest-t13-gds-") + rtest::MakeTimestampSuffix();
-  std::string upload_id, error;
-  if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kGds, upload_id, error)) {
+  std::string upload_id, trace_id, error;
+  if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kGds, upload_id, trace_id, error)) {
     std::cerr << "[FAIL] " << kTestName << ": CreateMultipartUpload: " << error << "\n";
     client.Shutdown();
     return 1;
@@ -77,14 +77,14 @@ int main(int argc, char** argv) {
   rtest::DevMem dev_get;
   {
     std::string etag;
-    if (!client.UploadPartGds(upload_id, 1,
+    if (!client.UploadPartGds(upload_id, trace_id, 1,
                               ConstBufferView{.data = dev_put.get(), .size = part_size}, etag,
                               error)) {
       std::cerr << "[FAIL] " << kTestName << ": UploadPartGds: " << error << "\n";
     } else {
       std::vector<Client::PartInfo> parts{{1, etag}};
       Client::CompletedMultipart done;
-      if (!client.CompleteMultipartUpload(upload_id, parts, done)) {
+      if (!client.CompleteMultipartUpload(upload_id, trace_id, parts, done)) {
         std::cerr << "[FAIL] " << kTestName << ": CompleteMultipartUpload: " << done.error << "\n";
       } else {
         std::cout << "  Complete: object_size=" << done.object_size << " etag=" << done.etag << "\n";
@@ -100,15 +100,15 @@ int main(int argc, char** argv) {
   // ---- optional GET ----
   if (test_passed) {
     std::uint64_t obj_size = 0;
-    std::string stat_err;
-    if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != part_size) {
+    std::string get_trace_id, stat_err;
+    if (!client.StatObject(kBucket, key, obj_size, get_trace_id, stat_err) || obj_size != part_size) {
       std::cout << "  (optional GET skipped: StatObject failed)\n";
     } else if (!dev_get.alloc(obj_size)) {
       std::cout << "  (optional GET skipped: cudaMalloc failed)\n";
     } else {
       cudaMemset(dev_get.get(), 0xAA, obj_size);
       GetPathResult get_res;
-      if (client.GetObjectGds(kBucket, key,
+      if (client.GetObjectGds(kBucket, key, get_trace_id,
                               MutableBufferView{.data = dev_get.get(), .size = obj_size},
                               get_res) && get_res.ok) {
         std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex

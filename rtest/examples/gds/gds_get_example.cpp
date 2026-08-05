@@ -44,13 +44,13 @@ int main(int argc, char** argv) {
   std::cout << "PUT etag=" << put_resp.gds_result.value().etag << "\n";
 
   std::uint64_t obj_size = 0;
-  std::string stat_err;
-  client.StatObject(kBucket, "gds-get-demo", obj_size, stat_err);
+  std::string trace_id, stat_err;
+  client.StatObject(kBucket, "gds-get-demo", obj_size, trace_id, stat_err);
   std::cout << "StatObject size=" << rtest::HumanBytes(obj_size) << "\n";
 
   cudaMemset(dev_get, 0xAA, kSize);
   GetPathResult get_res;
-  client.GetObjectGds(kBucket, "gds-get-demo",
+  client.GetObjectGds(kBucket, "gds-get-demo", trace_id,
                       MutableBufferView{.data = dev_get, .size = obj_size}, get_res);
   std::cout << "GET bytes_read=" << get_res.bytes_read << "\n";
 

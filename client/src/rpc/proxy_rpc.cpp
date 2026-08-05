@@ -110,8 +110,11 @@ bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const
 
 bool ProxyRpc::CreateMultipartUpload(std::string_view req_id, const std::string& bucket,
                                      const std::string& key, ::us3_turbo::proxy::PutDataPath path,
-                                     std::string& out_upload_id, std::string& out_error) const {
+                                     std::string& out_upload_id, std::string& out_trace_id,
+                                     std::string& out_error) const {
   if (!ok()) {
+    out_upload_id.clear();
+    out_trace_id.clear();
     out_error = std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
@@ -127,19 +130,25 @@ bool ProxyRpc::CreateMultipartUpload(std::string_view req_id, const std::string&
   ::us3_turbo::proxy::CreateMultipartUploadResponse resp;
   stub()->CreateMultipartUpload(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
+    out_upload_id.clear();
+    out_trace_id.clear();
     out_error = controller.ErrorText();
     LOG_ERROR(req_id, "rpc failed: {}", controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
+    out_upload_id.clear();
+    out_trace_id.clear();
     out_error = resp.error_message();
     return false;
   }
   out_upload_id = resp.upload_id();
+  out_trace_id = resp.trace_id();
   return true;
 }
 
-bool ProxyRpc::UploadPartGds(std::string_view req_id, const std::string& upload_id,
+bool ProxyRpc::UploadPartGds(std::string_view req_id, std::string_view trace_id,
+                             const std::string& upload_id,
                              std::uint32_t part_number, std::uint64_t part_size,
                              const std::string& rdma_token, PutPathResult& res) const {
   if (!ok()) {
@@ -156,6 +165,7 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, const std::string& upload_
   req.set_part_number(part_number);
   req.set_part_size(part_size);
   req.set_rdma_token(rdma_token);
+  req.set_trace_id(std::string(trace_id));
 
   ::us3_turbo::proxy::UploadPartResponse resp;
   stub()->UploadPartGds(&controller, &req, &resp, nullptr);
@@ -170,7 +180,8 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, const std::string& upload_
   return resp.ok();
 }
 
-bool ProxyRpc::UploadPartRdma(std::string_view req_id, const std::string& upload_id,
+bool ProxyRpc::UploadPartRdma(std::string_view req_id, std::string_view trace_id,
+                              const std::string& upload_id,
                               std::uint32_t part_number, std::uint64_t part_size,
                               const std::string& rdma_token, PutPathResult& res) const {
   if (!ok()) {
@@ -187,6 +198,7 @@ bool ProxyRpc::UploadPartRdma(std::string_view req_id, const std::string& upload
   req.set_part_number(part_number);
   req.set_part_size(part_size);
   req.set_rdma_token(rdma_token);
+  req.set_trace_id(std::string(trace_id));
 
   ::us3_turbo::proxy::UploadPartResponse resp;
   stub()->UploadPartRdma(&controller, &req, &resp, nullptr);
@@ -202,7 +214,7 @@ bool ProxyRpc::UploadPartRdma(std::string_view req_id, const std::string& upload
 }
 
 bool ProxyRpc::CompleteMultipartUpload(
-    std::string_view req_id, const std::string& upload_id,
+    std::string_view req_id, std::string_view trace_id, const std::string& upload_id,
     const std::vector<std::pair<std::uint32_t, std::string>>& parts,
     CompletedMultipart& out) const {
   if (!ok()) {
@@ -215,6 +227,7 @@ bool ProxyRpc::CompleteMultipartUpload(
   ::us3_turbo::proxy::CompleteMultipartUploadRequest req;
   req.set_request_id(std::string(req_id));
   req.set_upload_id(upload_id);
+  req.set_trace_id(std::string(trace_id));
   for (const auto& [no, etag] : parts) {
     auto* p = req.add_parts();
     p->set_part_number(no);
@@ -236,7 +249,8 @@ bool ProxyRpc::CompleteMultipartUpload(
   return resp.ok();
 }
 
-bool ProxyRpc::AbortMultipartUpload(std::string_view req_id, const std::string& upload_id,
+bool ProxyRpc::AbortMultipartUpload(std::string_view req_id, std::string_view trace_id,
+                                    const std::string& upload_id,
                                     std::string& out_error) const {
   if (!ok()) {
     out_error = std::string{"proxy channel not ready: "} + init_error();
@@ -248,6 +262,7 @@ bool ProxyRpc::AbortMultipartUpload(std::string_view req_id, const std::string& 
   ::us3_turbo::proxy::AbortMultipartUploadRequest req;
   req.set_request_id(std::string(req_id));
   req.set_upload_id(upload_id);
+  req.set_trace_id(std::string(trace_id));
 
   ::us3_turbo::proxy::AbortMultipartUploadResponse resp;
   stub()->AbortMultipartUpload(&controller, &req, &resp, nullptr);
@@ -269,8 +284,9 @@ bool ProxyRpc::AbortMultipartUpload(std::string_view req_id, const std::string& 
 
 bool ProxyRpc::StatObject(std::string_view req_id, const std::string& bucket,
                           const std::string& key, std::uint64_t& out_object_size,
-                          std::string& out_error) const {
+                          std::string& out_trace_id, std::string& out_error) const {
   if (!ok()) {
+    out_trace_id.clear();
     out_error = std::string{"proxy channel not ready: "} + init_error();
     return false;
   }
@@ -285,19 +301,23 @@ bool ProxyRpc::StatObject(std::string_view req_id, const std::string& bucket,
   ::us3_turbo::proxy::StatObjectResponse resp;
   stub()->StatObject(&controller, &req, &resp, nullptr);
   if (controller.Failed()) {
+    out_trace_id.clear();
     out_error = controller.ErrorText();
     LOG_ERROR(req_id, "rpc failed: {}", controller.ErrorText());
     return false;
   }
   if (!resp.ok()) {
+    out_trace_id.clear();
     out_error = resp.error_message();
     return false;
   }
   out_object_size = resp.object_size();
+  out_trace_id = resp.trace_id();
   return true;
 }
 
-bool ProxyRpc::GdsGet(std::string_view req_id, const std::string& bucket, const std::string& key,
+bool ProxyRpc::GdsGet(std::string_view req_id, std::string_view trace_id,
+                      const std::string& bucket, const std::string& key,
                       std::uint64_t object_size, const std::string& rdma_token,
                       GetPathResult& res) const {
   if (!ok()) {
@@ -315,6 +335,7 @@ bool ProxyRpc::GdsGet(std::string_view req_id, const std::string& bucket, const 
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
+  rpc_request.set_trace_id(std::string(trace_id));
   rpc_request.mutable_gds_source()->set_rdma_token(rdma_token);
 
   us3_turbo::proxy::GetPathResult resp;
@@ -339,7 +360,8 @@ bool ProxyRpc::GdsGet(std::string_view req_id, const std::string& bucket, const 
   return resp.ok();
 }
 
-bool ProxyRpc::RdmaGet(std::string_view req_id, const std::string& bucket, const std::string& key,
+bool ProxyRpc::RdmaGet(std::string_view req_id, std::string_view trace_id,
+                       const std::string& bucket, const std::string& key,
                        std::uint64_t object_size, const std::string& rdma_token,
                        GetPathResult& res) const {
   if (!ok()) {
@@ -357,6 +379,7 @@ bool ProxyRpc::RdmaGet(std::string_view req_id, const std::string& bucket, const
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
+  rpc_request.set_trace_id(std::string(trace_id));
   rpc_request.mutable_rdma_source()->set_rdma_token(rdma_token);
 
   us3_turbo::proxy::GetPathResult resp;

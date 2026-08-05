@@ -18,8 +18,10 @@ class RdmaGetChannel final {
   RdmaGetChannel(const ClientOptions& options, const ProxyRpc& proxy, RdmaMemoryManager* rdma_mgr)
       : opts_(options), proxy_(proxy), rdma_mgr_(rdma_mgr) {}
 
-  /** @brief 单次 GET 尝试：buffer 须已按 StatObject 返回的 size 分配。 */
+  /** @brief 单次 GET 尝试：buffer 须已按 StatObject 返回的 size 分配。
+   * trace_id 由 StatObject 返回、调用方透传。 */
   [[nodiscard]] bool GetOnce(const std::string& bucket, const std::string& key,
+                             std::string_view trace_id,
                              MutableBufferView buffer, GetPathResult& res) const;
 
  private:

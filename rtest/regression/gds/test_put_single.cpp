@@ -98,8 +98,8 @@ int main(int argc, char** argv) {
 
     // StatObject: 确认最终落盘
     std::uint64_t obj_size = 0;
-    std::string stat_err;
-    if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != size) {
+    std::string trace_id, stat_err;
+    if (!client.StatObject(kBucket, key, obj_size, trace_id, stat_err) || obj_size != size) {
       std::cerr << "[FAIL] " << kTestName << " size=" << rtest::HumanBytes(size)
                 << ": StatObject failed: got=" << obj_size << "\n";
       ++failed; continue;

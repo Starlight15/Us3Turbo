@@ -67,8 +67,8 @@ int main(int argc, char** argv) {
   // ---- multipart PUT ----
   std::string completed_etag;
   {
-    std::string upload_id, err;
-    if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kRdma, upload_id, err)) {
+    std::string upload_id, trace_id, err;
+    if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kRdma, upload_id, trace_id, err)) {
       std::cerr << "[FAIL] " << kTestName << ": CreateMultipartUpload: " << err << "\n";
       goto cleanup;
     }
@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
     for (int p = 0; p < kNumParts; ++p) {
       std::string etag;
       ConstBufferView part_buf{.data = host_put.data() + (p * part_size), .size = part_size};
-      if (!client.UploadPartRdma(upload_id, static_cast<std::uint32_t>(p + 1), part_buf, etag,
+      if (!client.UploadPartRdma(upload_id, trace_id, static_cast<std::uint32_t>(p + 1), part_buf, etag,
                                  err)) {
         std::cerr << "[FAIL] " << kTestName << ": UploadPartRdma " << (p + 1) << ": " << err
                   << "\n";
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     }
 
     Client::CompletedMultipart result;
-    if (!client.CompleteMultipartUpload(upload_id, parts, result)) {
+    if (!client.CompleteMultipartUpload(upload_id, trace_id, parts, result)) {
       std::cerr << "[FAIL] " << kTestName << ": Complete: " << result.error << "\n";
       goto cleanup;
     }
@@ -101,14 +101,14 @@ int main(int argc, char** argv) {
   // ---- StatObject + GET ----
   {
     std::uint64_t obj_size = 0;
-    std::string stat_err;
-    if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != total) {
+    std::string get_trace_id, stat_err;
+    if (!client.StatObject(kBucket, key, obj_size, get_trace_id, stat_err) || obj_size != total) {
       std::cerr << "[FAIL] " << kTestName << ": StatObject failed or size mismatch\n";
       goto cleanup;
     }
 
     GetPathResult get_res;
-    if (!client.GetObjectRdma(kBucket, key,
+    if (!client.GetObjectRdma(kBucket, key, get_trace_id,
                               MutableBufferView{.data = host_get.data(), .size = total}, get_res) ||
         !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectRdma: " << get_res.error_message << "\n";

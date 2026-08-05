@@ -65,6 +65,7 @@ int main(int argc, char** argv) {
 
   const std::string key = std::string("rtest-t21-rdma-") + rtest::MakeTimestampSuffix();
   bool test_passed = false;
+  std::string trace_id;
 
   // ---- PUT ----
   std::uint32_t put_crc = 0;
@@ -92,7 +93,7 @@ int main(int argc, char** argv) {
   {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != size) {
+    if (!client.StatObject(kBucket, key, obj_size, trace_id, stat_err) || obj_size != size) {
       std::cerr << "[FAIL] " << kTestName << ": StatObject failed or size mismatch\n";
       goto cleanup;
     }
@@ -101,7 +102,7 @@ int main(int argc, char** argv) {
   // ---- GET ----
   {
     GetPathResult get_res;
-    if (!client.GetObjectRdma(kBucket, key,
+    if (!client.GetObjectRdma(kBucket, key, trace_id,
                               MutableBufferView{.data = host_get.data(), .size = size}, get_res) ||
         !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectRdma: " << get_res.error_message << "\n";

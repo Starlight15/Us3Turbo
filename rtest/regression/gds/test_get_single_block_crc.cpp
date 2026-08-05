@@ -102,11 +102,13 @@ int main(int argc, char** argv) {
               << put_crc << std::dec << "\n";
   }
 
+  std::string trace_id;
+
   // ---- StatObject ----
   {
     std::uint64_t obj_size = 0;
     std::string stat_err;
-    if (!client.StatObject(kBucket, key, obj_size, stat_err) || obj_size != size) {
+    if (!client.StatObject(kBucket, key, obj_size, trace_id, stat_err) || obj_size != size) {
       std::cerr << "[FAIL] " << kTestName << ": StatObject failed or size mismatch\n";
       return 1;
     }
@@ -120,7 +122,7 @@ int main(int argc, char** argv) {
     }
     cudaMemset(dev_get.get(), 0xAA, size);
     GetPathResult get_res;
-    if (!client.GetObjectGds(kBucket, key, MutableBufferView{.data = dev_get.get(), .size = size},
+    if (!client.GetObjectGds(kBucket, key, trace_id, MutableBufferView{.data = dev_get.get(), .size = size},
                              get_res) || !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectGds: " << get_res.error_message << "\n";
       return 1;

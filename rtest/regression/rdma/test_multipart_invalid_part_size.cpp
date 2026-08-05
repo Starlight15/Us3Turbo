@@ -55,8 +55,8 @@ int main(int argc, char** argv) {
 
   // ---- CreateMultipartUpload ----
   const std::string key = std::string("rtest-t11-rdma-") + rtest::MakeTimestampSuffix();
-  std::string upload_id, error;
-  if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kRdma, upload_id, error)) {
+  std::string upload_id, trace_id, error;
+  if (!client.CreateMultipartUpload(kBucket, key, PutDataPath::kRdma, upload_id, trace_id, error)) {
     std::cerr << "[FAIL] " << kTestName << ": CreateMultipartUpload: " << error << "\n";
     client.Shutdown();
     return 1;
@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
     std::vector<Client::PartInfo> parts;
     for (std::uint32_t i = 1; i <= kNumParts; ++i) {
       std::string etag;
-      if (client.UploadPartRdma(upload_id, i,
+      if (client.UploadPartRdma(upload_id, trace_id, i,
                                 ConstBufferView{.data = host.data(), .size = part_size}, etag,
                                 error)) {
         std::cout << "  UploadPartRdma " << i << " ok etag=" << etag << "\n";
@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
     }
 
     Client::CompletedMultipart done;
-    const bool ok = client.CompleteMultipartUpload(upload_id, parts, done);
+    const bool ok = client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
     std::cout << "  Complete: " << (ok ? "succeeded" : "FAILED (expected)")
               << " error=" << done.error << "\n";
 
@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
   // ---- cleanup ----
   {
     std::string abort_err;
-    client.AbortMultipartUpload(upload_id, abort_err);
+    client.AbortMultipartUpload(upload_id, trace_id, abort_err);
   }
   client.Shutdown();
 

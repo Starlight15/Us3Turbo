@@ -13,6 +13,7 @@
 namespace us3_turbo::client {
 
 bool RdmaGetChannel::GetOnce(const std::string& bucket, const std::string& key,
+                             std::string_view trace_id,
                              MutableBufferView buffer, GetPathResult& res) const {
   assert(rdma_mgr_ != nullptr);
   const std::string req_id = detail::MakeReqId();
@@ -23,7 +24,7 @@ bool RdmaGetChannel::GetOnce(const std::string& bucket, const std::string& key,
     LOG_ERROR(req_id, "AcquireDescriptorForWrite failed");
     return false;
   }
-  return proxy_.RdmaGet(req_id, bucket, key, buffer.size, desc.token, res);
+  return proxy_.RdmaGet(req_id, trace_id, bucket, key, buffer.size, desc.token, res);
 }
 
 }  // namespace us3_turbo::client

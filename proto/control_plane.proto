@@ -80,6 +80,7 @@ message CreateMultipartUploadResponse {
   bool   ok            = 1;
   string upload_id     = 2;  // UUID，proxy 生成
   string error_message = 3;
+  string trace_id      = 4;  // proxy 生成，供后续 UploadPart/Complete/Abort 透传做日志关联
 }
 
 // 上传单个 part — GDS 路径。rdma_token 为本 part 独立注册的 cuObj RDMA
@@ -90,6 +91,7 @@ message UploadPartGdsRequest {
   uint32 part_number = 3;  // 从 1 开始，客户端分配
   uint64 part_size   = 4;  // 本 part 总大小
   string rdma_token  = 5;
+  string trace_id    = 6;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
 }
 
 // 上传单个 part — RDMA (libibverbs) 路径。rdma_token 编码了 client listener
@@ -101,6 +103,7 @@ message UploadPartRdmaRequest {
   uint32 part_number = 3;  // 从 1 开始，客户端分配
   uint64 part_size   = 4;  // 本 part 总大小
   string rdma_token  = 5;
+  string trace_id    = 6;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
 }
 
 // UploadPart 响应（GDS/RDMA 共用）。etag 为本 part 的 ETag（proxy 汇总 block
@@ -118,6 +121,7 @@ message CompleteMultipartUploadRequest {
   string request_id = 1;
   string upload_id  = 2;
   repeated PartInfo parts = 3;
+  string trace_id   = 4;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
 
   message PartInfo {
     uint32 part_number = 1;
@@ -138,6 +142,7 @@ message CompleteMultipartUploadResponse {
 message AbortMultipartUploadRequest {
   string request_id = 1;
   string upload_id  = 2;
+  string trace_id   = 3;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
 }
 message AbortMultipartUploadResponse {
   bool   ok            = 1;
@@ -162,6 +167,7 @@ message StatObjectResponse {
   uint64 object_size   = 3;  // filesize，client 据此 cudaMalloc
   uint64 block_size    = 4;  // 仅日志/调试用
   string hash          = 5;  // fileidx 存的 hash，client 可选比对
+  string trace_id      = 6;  // proxy 生成，供后续 GetObject 透传做日志关联
 }
 
 // client → proxy GET 请求。object_size 须与 StatObject 返回一致
@@ -171,6 +177,7 @@ message ClientProxyGetRequest {
   string        bucket         = 2;
   string        key            = 3;
   uint64        object_size    = 4;
+  string        trace_id       = 5;  // 由 StatObject 响应带回，透传做日志关联
   optional GdsDataSource  gds_source  = 10;
   optional RdmaDataSource rdma_source = 12;
 }

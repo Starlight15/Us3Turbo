@@ -55,8 +55,8 @@ int main(int argc, char** argv) {
 
   /* ---- StatObject ---- */
   std::uint64_t obj_size = 0;
-  std::string stat_err;
-  if (!client.StatObject(kBucket, "rdma-get-demo", obj_size, stat_err)) {
+  std::string trace_id, stat_err;
+  if (!client.StatObject(kBucket, "rdma-get-demo", obj_size, trace_id, stat_err)) {
     std::cerr << "StatObject failed: " << stat_err << "\n";
     client.Shutdown();
     return 1;
@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
   /* ---- GET ---- */
   GetPathResult get_res;
   bool get_ok = client.GetObjectRdma(
-      kBucket, "rdma-get-demo",
+      kBucket, "rdma-get-demo", trace_id,
       MutableBufferView{.data = host_get.data(), .size = obj_size}, get_res);
   if (!get_ok) {
     std::cerr << "GET failed: " << get_res.error_message << "\n";

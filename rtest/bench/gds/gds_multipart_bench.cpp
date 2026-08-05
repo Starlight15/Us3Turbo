@@ -41,9 +41,9 @@ RoundResult GdsMpRunOneRound(us3_turbo::client::Client& client, const GdsMpArgs&
                           "-r" + std::to_string(round_idx) + "-" + rtest::MakeTimestampSuffix();
 
   // ---- CreateMultipartUpload ----
-  std::string upload_id, error;
+  std::string upload_id, trace_id, error;
   const auto t_create0 = clk::now();
-  if (!client.CreateMultipartUpload(a.bucket, key, PutDataPath::kGds, upload_id, error)) {
+  if (!client.CreateMultipartUpload(a.bucket, key, PutDataPath::kGds, upload_id, trace_id, error)) {
     lat.error = "CreateMultipartUpload failed: " + error;
     std::cerr << "[w" << worker_idx << " r" << round_idx << "] " << lat.error << "\n";
     return lat;
@@ -62,10 +62,10 @@ RoundResult GdsMpRunOneRound(us3_turbo::client::Client& client, const GdsMpArgs&
     const std::uint64_t len = std::min(a.part_size, a.total - off);
     std::string etag;
     ConstBufferView buf{static_cast<char*>(dev_buf) + off, len};
-    if (!client.UploadPartGds(upload_id, i, buf, etag, error)) {
+    if (!client.UploadPartGds(upload_id, trace_id, i, buf, etag, error)) {
       lat.error = "UploadPartGds " + std::to_string(i) + " failed: " + error;
       std::cerr << "[w" << worker_idx << " r" << round_idx << "] " << lat.error << "\n";
-      client.AbortMultipartUpload(upload_id, error);
+      client.AbortMultipartUpload(upload_id, trace_id, error);
       return lat;
     }
     parts.push_back({i, etag});
@@ -75,7 +75,7 @@ RoundResult GdsMpRunOneRound(us3_turbo::client::Client& client, const GdsMpArgs&
   // ---- CompleteMultipartUpload ----
   Client::CompletedMultipart done;
   const auto t_cmp0 = clk::now();
-  const bool ok = client.CompleteMultipartUpload(upload_id, parts, done);
+  const bool ok = client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
   lat.control_plane_ms = ms_double(clk::now() - t_cmp0).count();
 
   if (!ok || done.object_size != a.total) {

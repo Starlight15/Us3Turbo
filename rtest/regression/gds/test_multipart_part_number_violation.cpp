@@ -68,10 +68,11 @@ int main(int argc, char** argv) {
   }
 
   // lambda: UploadPart 带重试 (默认 retries=1，重复 part 传 0)
-  const auto upload_part = [&](const std::string& upload_id, std::uint32_t part_no,
+  const auto upload_part = [&](const std::string& upload_id, const std::string& trace_id,
+                               std::uint32_t part_no,
                                std::string& etag, std::string& err, int retries = 1) -> bool {
     for (int attempt = 0; attempt <= retries; ++attempt) {
-      if (client.UploadPartGds(upload_id, part_no,
+      if (client.UploadPartGds(upload_id, trace_id, part_no,
                                 ConstBufferView{.data = dev.get(), .size = part_size}, etag,
                                 err)) {
         return true;
@@ -85,14 +86,14 @@ int main(int argc, char** argv) {
   const std::string key_a = std::string("rtest-t12a-gds-") + rtest::MakeTimestampSuffix();
   bool scene_a_pass = false;
   {
-    std::string upload_id, error;
-    if (!client.CreateMultipartUpload(kBucket, key_a, PutDataPath::kGds, upload_id, error)) {
+    std::string upload_id, trace_id, error;
+    if (!client.CreateMultipartUpload(kBucket, key_a, PutDataPath::kGds, upload_id, trace_id, error)) {
       std::cerr << "  CreateMultipartUpload failed: " << error << "\n";
     } else {
       std::string e1, e1b_err, e1b, e1b_err2, e2v, e2_err;
-      const bool up1_ok = upload_part(upload_id, 1, e1, e1b_err);
-      const bool up1b_ok = upload_part(upload_id, 1, e1b, e1b_err2, /*retries=*/0);
-      const bool up2_ok = upload_part(upload_id, 2, e2v, e2_err);
+      const bool up1_ok = upload_part(upload_id, trace_id, 1, e1, e1b_err);
+      const bool up1b_ok = upload_part(upload_id, trace_id, 1, e1b, e1b_err2, /*retries=*/0);
+      const bool up2_ok = upload_part(upload_id, trace_id, 2, e2v, e2_err);
 
       std::cout << "  up1 ok=" << up1_ok << " | dup up1' ok=" << up1b_ok << " err=\"" << e1b_err2
                 << "\" | up2 ok=" << up2_ok << "\n";
@@ -104,7 +105,7 @@ int main(int argc, char** argv) {
 
       Client::CompletedMultipart done;
       const bool ok =
-          parts.empty() ? false : client.CompleteMultipartUpload(upload_id, parts, done);
+          parts.empty() ? false : client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
       std::cout << "  Complete ok=" << ok << " error=\"" << done.error
                 << "\" size=" << done.object_size << "\n";
 
@@ -117,7 +118,7 @@ int main(int argc, char** argv) {
       }
 
       std::string ab;
-      client.AbortMultipartUpload(upload_id, ab);
+      client.AbortMultipartUpload(upload_id, trace_id, ab);
     }
   }
 
@@ -126,13 +127,13 @@ int main(int argc, char** argv) {
   const std::string key_b = std::string("rtest-t12b-gds-") + rtest::MakeTimestampSuffix();
   bool scene_b_pass = false, scene_b_skipped = false;
   {
-    std::string upload_id, error;
-    if (!client.CreateMultipartUpload(kBucket, key_b, PutDataPath::kGds, upload_id, error)) {
+    std::string upload_id, trace_id, error;
+    if (!client.CreateMultipartUpload(kBucket, key_b, PutDataPath::kGds, upload_id, trace_id, error)) {
       std::cerr << "  CreateMultipartUpload failed: " << error << "\n";
     } else {
       std::string e1, e1_err, e3, e3_err;
-      const bool up1_ok = upload_part(upload_id, 1, e1, e1_err);
-      const bool up3_ok = upload_part(upload_id, 3, e3, e3_err);
+      const bool up1_ok = upload_part(upload_id, trace_id, 1, e1, e1_err);
+      const bool up3_ok = upload_part(upload_id, trace_id, 3, e3, e3_err);
       std::cout << "  up1 ok=" << up1_ok << " | up3 ok=" << up3_ok << "\n";
 
       if (!up1_ok || !up3_ok) {
@@ -141,13 +142,13 @@ int main(int argc, char** argv) {
       } else {
         std::vector<Client::PartInfo> parts{{1, e1}, {3, e3}};
         Client::CompletedMultipart done;
-        const bool ok = client.CompleteMultipartUpload(upload_id, parts, done);
+        const bool ok = client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
         std::cout << "  Complete ok=" << ok << " error=\"" << done.error << "\"\n";
         scene_b_pass = (!ok && !done.error.empty());
       }
 
       std::string ab;
-      client.AbortMultipartUpload(upload_id, ab);
+      client.AbortMultipartUpload(upload_id, trace_id, ab);
     }
   }
 

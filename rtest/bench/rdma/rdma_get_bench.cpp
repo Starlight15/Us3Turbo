@@ -75,11 +75,12 @@ void RdmaGetWorker(std::size_t wid, const RdmaGetArgs& a, us3_turbo::client::Cli
   std::vector<std::byte> get_buf(a.size);
   stats.ready = true;
 
+  std::string trace_id;
   MutableBufferView buf{.data = get_buf.data(), .size = a.size};
   auto do_get = [&](const std::string& key) {
     GetPathResult res;
     auto t0 = clk::now();
-    bool ok = client.GetObjectRdma(a.bucket, key, buf, res);
+    bool ok = client.GetObjectRdma(a.bucket, key, trace_id, buf, res);
     auto t1 = clk::now();
     if (ok) {
       stats.rounds.push_back(

@@ -64,44 +64,57 @@ class Client {
     std::string etag;
   };
 
-  /** @brief 初始化分段上传，返回 upload_id。path 锁定整条会话通路。 */
+  /** @brief 初始化分段上传，返回 upload_id 与 proxy 生成的 trace_id。
+   * path 锁定整条会话通路。后续 UploadPart/Complete/Abort 需透传 trace_id。 */
   [[nodiscard]] bool CreateMultipartUpload(const std::string& bucket, const std::string& key,
                                            PutDataPath path, std::string& out_upload_id,
+                                           std::string& out_trace_id,
                                            std::string& out_error) const;
 
-  /** @brief GDS 路径上传单个 part：为本 part 独立注册 RDMA token。 */
-  [[nodiscard]] bool UploadPartGds(const std::string& upload_id, std::uint32_t part_number,
+  /** @brief GDS 路径上传单个 part：为本 part 独立注册 RDMA token。
+   * trace_id 由 CreateMultipartUpload 返回、调用方透传。 */
+  [[nodiscard]] bool UploadPartGds(const std::string& upload_id, std::string_view trace_id,
+                                   std::uint32_t part_number,
                                    ConstBufferView buffer, std::string& out_etag,
                                    std::string& out_error) const;
 
-  /** @brief RDMA (libibverbs) 路径上传单个 part：为本 part 独立注册 MR + 编码 token。 */
-  [[nodiscard]] bool UploadPartRdma(const std::string& upload_id, std::uint32_t part_number,
+  /** @brief RDMA (libibverbs) 路径上传单个 part：为本 part 独立注册 MR + 编码 token。
+   * trace_id 由 CreateMultipartUpload 返回、调用方透传。 */
+  [[nodiscard]] bool UploadPartRdma(const std::string& upload_id, std::string_view trace_id,
+                                    std::uint32_t part_number,
                                     ConstBufferView buffer, std::string& out_etag,
                                     std::string& out_error) const;
 
-  /** @brief 完成分段上传，返回最终 object_id/etag/size。 */
-  [[nodiscard]] bool CompleteMultipartUpload(const std::string& upload_id,
+  /** @brief 完成分段上传，返回最终 object_id/etag/size。
+   * trace_id 由 CreateMultipartUpload 返回、调用方透传。 */
+  [[nodiscard]] bool CompleteMultipartUpload(const std::string& upload_id, std::string_view trace_id,
                                              const std::vector<PartInfo>& parts,
                                              CompletedMultipart& out) const;
 
-  /** @brief 终止分段上传，释放 proxy 会话（幂等）。 */
-  [[nodiscard]] bool AbortMultipartUpload(const std::string& upload_id,
+  /** @brief 终止分段上传，释放 proxy 会话（幂等）。
+   * trace_id 由 CreateMultipartUpload 返回、调用方透传。 */
+  [[nodiscard]] bool AbortMultipartUpload(const std::string& upload_id, std::string_view trace_id,
                                           std::string& out_error) const;
 
   // ===== GET 接口 =====
 
-  /** @brief 查对象布局（GetObject 第一步），返回 object_size
-   * 供调用方分配buffer。 */
+  /** @brief 查对象布局（GetObject 第一步），返回 object_size 与 proxy
+   * 生成的 trace_id。trace_id 供后续 GetObjectGds/GetObjectRdma 透传。 */
   [[nodiscard]] bool StatObject(const std::string& bucket, const std::string& key,
-                                std::uint64_t& out_object_size, std::string& out_error) const;
+                                std::uint64_t& out_object_size, std::string& out_trace_id,
+                                std::string& out_error) const;
 
-  /**  @brief GDS 通路 GET：buffer 须已按 StatObject 返回的 size 分配。 */
+  /**  @brief GDS 通路 GET：buffer 须已按 StatObject 返回的 size 分配。
+   * trace_id 由 StatObject 返回、调用方透传。 */
   [[nodiscard]] bool GetObjectGds(const std::string& bucket, const std::string& key,
+                                  std::string_view trace_id,
                                   MutableBufferView buffer, GetPathResult& res) const;
 
   /** @brief RDMA (libibverbs) 通路 GET：buffer 须已按 StatObject 返回的 size 分配。
-   * backend 从 NVMe 读数据后 RDMA WRITE 推到 client host buffer。 */
+   * backend 从 NVMe 读数据后 RDMA WRITE 推到 client host buffer。
+   * trace_id 由 StatObject 返回、调用方透传。 */
   [[nodiscard]] bool GetObjectRdma(const std::string& bucket, const std::string& key,
+                                   std::string_view trace_id,
                                    MutableBufferView buffer, GetPathResult& res) const;
 
  private:
