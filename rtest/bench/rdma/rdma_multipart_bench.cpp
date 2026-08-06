@@ -156,8 +156,10 @@ bool RdmaMpParseArgs(int argc, char** argv, RdmaMpArgs& a) {
     std::cerr << "total/part-size/reps/concurrency must be > 0\n";
     return false;
   }
-  if (a.part_size > 4ULL * 1024 * 1024) {
-    std::cerr << "part-size " << rtest::HumanBytes(a.part_size) << " > 4M (backend limit)\n";
+  if (a.part_size > 16ULL * 1024 * 1024) {
+    std::cerr << "part-size " << rtest::HumanBytes(a.part_size)
+              << " > 16M (backend MAX_VALUE_LENGTH)\n"
+              << "  注意: part-size 须与 proxy --multipart_part_size 一致，否则 proxy 会拒。\n";
     return false;
   }
   return true;
@@ -195,8 +197,11 @@ int main(int argc, char** argv) {
   rtest::FillHostPattern(host_pattern);
 
   // init
-  Client client(ClientOptions{.endpoint = a.proxy, .verify_crc32c = a.verify_crc32c,
-                               .latency_trace = a.trace});
+  Client client(ClientOptions{.endpoint = a.proxy,
+                               .multipart_part_size = a.part_size,
+                               .verify_crc32c = a.verify_crc32c,
+                               .latency_trace = a.trace,
+                               .log_level = a.trace ? "info" : "warn"});
   if (!client.Initialize()) {
     std::cerr << "Client::Initialize failed\n";
     return 1;
