@@ -319,6 +319,9 @@ nohup ./build/proxy/us3_turbo_proxy --flagfile=proxy/conf/proxy.flags > /tmp/pro
 分段 GDS ≈ 1714、RDMA ≈ 3743 MiB/s；下载 RDMA GET ≈ 2513 MiB/s。较 mock 纯搬运
 降 43–56%（NVMe 落盘开销），最优点不变。
 
+> GDS buffer pool 扩容优化已证伪:max_per_class=4 已最优,扩容反降 ~27%,pool 非 GDS 瓶颈;
+> 详见 `docs/GDS_POOL_OPTIMIZATION.md`。注意:测试机根盘满(100%)会拉低真实写 RDMA 数值,测前需清盘。
+
 ## 7. 关停
 
 ```bash
