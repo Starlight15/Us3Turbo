@@ -138,7 +138,7 @@ bool GdsMpParseArgs(int argc, char** argv, GdsMpArgs& a) {
       std::cout << "usage: us3_turbo_bench_gds_multipart [options]\n"
                 << "  --proxy ADDR        proxy endpoint\n"
                 << "  --total SIZE        total object size (default 64M)\n"
-                << "  --part-size SIZE    part size (default 4M, <=4M)\n"
+                << "  --part-size SIZE    part size (default 8M, <=16M)\n"
                 << "  --reps N            reps per worker (default 5)\n"
                 << "  --warmup N          warmup rounds (default 0)\n"
                 << "  --concurrency N     worker threads (default 1)\n"

@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
 
   // ---- args ----
   std::string proxy = kProxy;
-  std::uint64_t size = rtest::kDefaultPartSize / 2;  // 默认 2M（< 4M 单块）
+  std::uint64_t size = 2ULL * 1024 * 1024;  // 2M，< 4M 单块（与 kDefaultPartSize 解耦，避免 part 默认值变动影响）
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--proxy" && i + 1 < argc) {

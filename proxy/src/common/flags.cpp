@@ -2,7 +2,9 @@
 
 DEFINE_int32(proxy_port, 9100, "proxy control-plane brpc port");
 DEFINE_string(bind_host, "0.0.0.0", "Bind host for the brpc listener (0.0.0.0 = all interfaces)");
-DEFINE_int32(num_threads, 4, "brpc worker thread count");
+DEFINE_int32(num_threads, 16, "brpc worker thread count "
+             "(perf-tuned 默认 16，须 ≈ backend_conn_pool_size，见 "
+             "docs/NUM_THREADS_DEEP_ANALYSIS.md)");
 DEFINE_string(backend_endpoint, "192.168.1.198:24000",
               "backend ufile-ac TCP endpoint for single-step GdsPut/RdmaPut "
               "(doc F5; setid must match backend [common] setid). "
@@ -15,15 +17,16 @@ DEFINE_int32(backend_setid, 1,
 DEFINE_int64(max_single_put_bytes, 4LL * 1024 * 1024,
              "max object size (bytes) for single-step GdsPut/RdmaPut; larger "
              "objects must use multipart");
-DEFINE_int64(multipart_part_size, 4LL * 1024 * 1024,
+DEFINE_int64(multipart_part_size, 8LL * 1024 * 1024,
              "part size (bytes) for multipart upload, also the on-disk block "
-             "size (each part is written as one block)");
+             "size (each part is written as one block) "
+             "(perf-tuned 默认 8M，见 docs/PART_SIZE_DEEP_ANALYSIS.md)");
 DEFINE_string(log_level, "info", "app log level: debug/info/warn/error");
 DEFINE_int32(log_max_size_mb, 50, "max size per app log file (MB); rotates when exceeded");
 DEFINE_int32(log_max_files, 10, "max number of rotated app log files to keep");
-DEFINE_int32(backend_conn_pool_size, 8,
+DEFINE_int32(backend_conn_pool_size, 16,
              "backend connection pool size (recommend: ≈ num_threads for best "
-             "throughput)");
+             "throughput; perf-tuned 默认 16，见 docs/CONN_POOL_DEEP_ANALYSIS.md)");
 DEFINE_int32(backend_send_recv_max_retry, 2,
              "max retry attempts (inclusive) for SendAndRecv on connection-level "
              "failure; protocol errors are not retried");
