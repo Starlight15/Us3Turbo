@@ -88,15 +88,29 @@ void GdsPutWorker(std::size_t wid, const GdsPutArgs& a, us3_turbo::client::Clien
   stats.ready = true;
 
   ConstBufferView buf{.data = dev, .size = a.size};
-  auto do_put = [&](const std::string& key) {
+  // 原始 PUT，返回是否成功；warmup 与测量分别记账，避免 warmup 字节污染吞吐。
+  auto put_one = [&](const std::string& key) -> bool {
     ClientProxyPutRequest req;
     req.bucket = a.bucket;
     req.key = key;
     req.object_size = a.size;
     req.path = PutDataPath::kGds;
     ClientProxyPutResponse out;
+    return client.PutObjectGds(req, buf, out);
+  };
+
+  // warmup（不计入 stats，不进吞吐分子）
+  for (std::uint64_t i = 0; i < a.warmup; ++i)
+    (void)put_one(a.key_prefix + "-warmup-" + std::to_string(wid) + "-" + std::to_string(i));
+
+  // barrier 对齐起跑
+  sync.arrive_and_wait();
+
+  // 原子计数器领取任务（正式测量）
+  std::uint64_t idx;
+  while ((idx = next.fetch_add(1, std::memory_order_relaxed)) < total) {
     auto t0 = clk::now();
-    bool ok = client.PutObjectGds(req, buf, out);
+    const bool ok = put_one(a.key_prefix + "-" + std::to_string(idx));
     auto t1 = clk::now();
     if (ok) {
       stats.rounds.push_back(
@@ -108,19 +122,7 @@ void GdsPutWorker(std::size_t wid, const GdsPutArgs& a, us3_turbo::client::Clien
       stats.rounds.push_back(RoundResult{.ok = false});
       ++stats.fail;
     }
-  };
-
-  // warmup
-  for (std::uint64_t i = 0; i < a.warmup; ++i)
-    do_put(a.key_prefix + "-warmup-" + std::to_string(wid) + "-" + std::to_string(i));
-
-  // barrier 对齐起跑
-  sync.arrive_and_wait();
-
-  // 原子计数器领取任务
-  std::uint64_t idx;
-  while ((idx = next.fetch_add(1, std::memory_order_relaxed)) < total)
-    do_put(a.key_prefix + "-" + std::to_string(idx));
+  }
   stats.end = clk::now();
 
   cudaFree(dev);

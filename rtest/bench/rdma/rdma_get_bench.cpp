@@ -77,10 +77,24 @@ void RdmaGetWorker(std::size_t wid, const RdmaGetArgs& a, us3_turbo::client::Cli
 
   std::string trace_id;
   MutableBufferView buf{.data = get_buf.data(), .size = a.size};
-  auto do_get = [&](const std::string& key) {
+  // 原始 GET，返回是否成功；warmup 与测量分别记账。
+  auto get_one = [&](const std::string& key) -> bool {
     GetPathResult res;
+    return client.GetObjectRdma(a.bucket, key, trace_id, buf, res);
+  };
+
+  // warmup（命中已播种 key，不计入 stats，不进吞吐分子，也不产生假 fail）
+  for (std::uint64_t i = 0; i < a.warmup; ++i)
+    (void)get_one(a.key_prefix + "-" + std::to_string(i % a.count));
+
+  // barrier 对齐起跑
+  sync.arrive_and_wait();
+
+  // 原子计数器领取任务（正式测量）
+  std::uint64_t idx;
+  while ((idx = next.fetch_add(1, std::memory_order_relaxed)) < total) {
     auto t0 = clk::now();
-    bool ok = client.GetObjectRdma(a.bucket, key, trace_id, buf, res);
+    const bool ok = get_one(a.key_prefix + "-" + std::to_string(idx));
     auto t1 = clk::now();
     if (ok) {
       stats.rounds.push_back(
@@ -92,19 +106,7 @@ void RdmaGetWorker(std::size_t wid, const RdmaGetArgs& a, us3_turbo::client::Cli
       stats.rounds.push_back(RoundResult{.ok = false});
       ++stats.fail;
     }
-  };
-
-  // warmup
-  for (std::uint64_t i = 0; i < a.warmup; ++i)
-    do_get(a.key_prefix + "-warmup-" + std::to_string(wid) + "-" + std::to_string(i));
-
-  // barrier 对齐起跑
-  sync.arrive_and_wait();
-
-  // 原子计数器领取任务
-  std::uint64_t idx;
-  while ((idx = next.fetch_add(1, std::memory_order_relaxed)) < total)
-    do_get(a.key_prefix + "-" + std::to_string(idx));
+  }
   stats.end = clk::now();
 }
 

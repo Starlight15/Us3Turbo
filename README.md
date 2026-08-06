@@ -116,7 +116,8 @@ nohup ./build/ufile-ac \
   > /tmp/uac_mock.log 2>&1 &
 ```
 
-- 真实端到端测试（含落盘）去掉 `--mock-aio-write=1`。
+- 真实端到端测试（含落盘、GET 可用）去掉 `--mock-aio-write=1`；真实读写吞吐见
+  `docs/REAL_READWRITE_REPORT.md`。
 - backend `worker_threads`、`[rdma] mock_mode`、`[gds] mock_rdma_read` 由 ini 控制，
   性能测试固定 `worker_threads=8`、`mock_mode=0`、`mock_rdma_read=0`。
 
@@ -211,24 +212,26 @@ avg/p50/p95/min/max）、ok/fail 计数。
 ### 4.2 单步 PUT / GET bench
 
 ```bash
-# GDS 单步 PUT（size ≤ 4M，否则须走 multipart）
+# GDS 单步 PUT（size ≤ 4M max_single_put，否则须走 multipart）
 ./build/rtest/bench/gds/us3_turbo_bench_gds_put \
-  --size 100M --count 10 --concurrency 4 --warmup 1
+  --size 4M --count 40 --concurrency 8 --warmup 2
 
 # RDMA 单步 PUT
 ./build/rtest/bench/rdma/us3_turbo_bench_rdma_put \
-  --size 100M --count 10 --concurrency 4 --warmup 1
+  --size 4M --count 40 --concurrency 8 --warmup 2
 
 # RDMA GET（关 mock、有已上传对象时）
 ./build/rtest/bench/rdma/us3_turbo_bench_rdma_get \
-  --size 4M --count 10 --concurrency 4
+  --size 4M --count 100 --concurrency 8 --warmup 2
 ```
 
-PUT bench 参数：`--size`（默认 100M）、`--count`（对象数，默认 10）、`--concurrency`、
-`--warmup`、`--bucket`、`--key-prefix`、`--verify-crc32c`、`--trace`。GET bench 同构，
-默认 `--size 4M`、`--key-prefix bench-get`。
+PUT bench 参数：`--size`（默认 100M，但单步须 ≤ 4M）、`--count`（对象数，默认 10）、
+`--concurrency`、`--warmup`、`--bucket`、`--key-prefix`、`--verify-crc32c`、`--trace`。
+GET bench 同构，默认 `--size 4M`、`--key-prefix bench-get`；GET bench 内部先串行 PUT
+全部对象再并发 GET 测读吞吐，故 count 即播种+读取对象数。
 
 > 注意：`--mock-aio-write=1` 下 GET 不可用（数据未落盘），GET bench 必须在关 mock 后跑。
+> bench warmup 统计已修复（见 `docs/BENCH_FIX.md`），`--warmup` 不再虚高吞吐。
 
 ### 4.3 时延 trace（用于调参分析）
 
@@ -284,6 +287,37 @@ nohup ./build/proxy/us3_turbo_proxy --flagfile=proxy/conf/proxy.flags > /tmp/pro
 最优配置（mock-on，client 32 线程，64M）实测：part=8M / nt=16 / cp=16 →
 GDS ≈ 3864 MiB/s、RDMA ≈ 6527–6700 MiB/s。完整数据与参数影响分析见
 `docs/PERF_BENCH_REPORT.md` 与 `docs/{PART_SIZE,NUM_THREADS,CONN_POOL}_DEEP_ANALYSIS.md`。
+
+## 6.1 真实读写端到端（mock 关闭）
+
+关 mock 后 PUT 真落盘、GET 可用，覆盖单步 PUT / 分段上传 / 下载 GET。完整数据见
+`docs/REAL_READWRITE_REPORT.md`，bench 修复说明见 `docs/BENCH_FIX.md`。
+
+```bash
+# 1. 后端真实读写（去掉 --mock-aio-write=1）
+cd /mnt/us3_test/xinghui.shao/gds/ggds-compile-env/ufile-ac
+nohup ./build/ufile-ac --config-file=config/ufile-ac-gds-proxy.ini \
+  > /tmp/uac_real.log 2>&1 &
+
+# 2. proxy 最优配置（同上）
+cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
+nohup ./build/proxy/us3_turbo_proxy --flagfile=proxy/conf/proxy.flags > /tmp/proxy.log 2>&1 &
+
+# 3. 单步 PUT（size ≤ 4M）
+./build/rtest/bench/gds/us3_turbo_bench_gds_put  --size 4M --count 40 --concurrency 8 --warmup 2
+./build/rtest/bench/rdma/us3_turbo_bench_rdma_put --size 4M --count 40 --concurrency 8 --warmup 2
+
+# 4. 分段上传
+./build/rtest/bench/gds/us3_turbo_bench_gds_multipart  --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2
+./build/rtest/bench/rdma/us3_turbo_bench_rdma_multipart --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2
+
+# 5. 下载 GET（RDMA）
+./build/rtest/bench/rdma/us3_turbo_bench_rdma_get --size 4M --count 100 --concurrency 8 --warmup 2
+```
+
+真实读写实测（3 轮稳定值）：单步 PUT RDMA ≈ 3258、GDS ≈ 1273–1503 MiB/s；
+分段 GDS ≈ 1714、RDMA ≈ 3743 MiB/s；下载 RDMA GET ≈ 2513 MiB/s。较 mock 纯搬运
+降 43–56%（NVMe 落盘开销），最优点不变。
 
 ## 7. 关停
 
