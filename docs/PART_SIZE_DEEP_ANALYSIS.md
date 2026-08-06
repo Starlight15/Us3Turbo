@@ -1,7 +1,7 @@
 # part_size 性能差异深度分析:为什么 8M 最好
 
 **日期**:2026-08-06
-**范围**:仅分析 `--multipart_part_size`(块大小)对 GDS / RDMA 两条通路性能差异的**根因**,解释 8M 为何是甜点。固定 `num_threads=8`、`backend_conn_pool_size=8`(测试一基线),client 32 线程,total=64M,mock 开启(纯数据搬运)。
+**范围**:仅分析 `--multipart_part_size`(块大小)对 GDS / RDMA 两条通路性能差异的**根因**,解释 8M 为何是甜点。固定 `num_threads=8`、`backend_conn_pool_size=8`(测试一基线),client 32 线程,total=64M,mock 开启(纯数据搬运)。另见 [num_threads 分析](NUM_THREADS_DEEP_ANALYSIS.md) 与 [conn_pool 分析](CONN_POOL_DEEP_ANALYSIS.md)——三参数最优统一为 part=8M / nt=16 / cp=16。
 **方法**:补全 client 端 per-part trace 日志(见 §2),重跑 4M/8M/16M × {GDS,RDMA} 六组,结合 backend `PHASE` 阶段计时,用 per-part 成本模型量化每一档的瓶颈。
 
 ---

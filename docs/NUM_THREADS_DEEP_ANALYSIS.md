@@ -1,7 +1,7 @@
 # num_threads 性能差异深度分析:proxy 线程数的影响
 
 **日期**:2026-08-06
-**范围**:仅分析 proxy `--num_threads`(工作线程数)对 GDS / RDMA 两条通路性能的影响与根因。承接 [part_size 分析](PART_SIZE_DEEP_ANALYSIS.md)——那次发现 16M 的罚项是"32 worker 抢 8 proxy 线程 / 8 backend 连接"的排队超线性,`num_threads` 正是控制该队列深度的旋钮。
+**范围**:仅分析 proxy `--num_threads`(工作线程数)对 GDS / RDMA 两条通路性能的影响与根因。承接 [part_size 分析](PART_SIZE_DEEP_ANALYSIS.md)——那次发现 16M 的罚项是"32 worker 抢 8 proxy 线程 / 8 backend 连接"的排队超线性,`num_threads` 正是控制该队列深度的旋钮。配套 [conn_pool 分析](CONN_POOL_DEEP_ANALYSIS.md)从 cp 方向交叉验证本文的 `nt≈cp` 规则。
 **方法**:控制变量(只改 nt),固定 `backend_conn_pool_size=8`、`part_size=8M`(part_size 分析的最优)、client 32 线程、total=64M、mock 开启。扫描 nt ∈ {4,8,16,32}(从 8 倍过排队到 1:1 无排队)。补一个决定性对照点 nt=16/cp=16(cp 与 nt 同步放大)以定位 nt>cp 时劣化的根因。
 
 ---
