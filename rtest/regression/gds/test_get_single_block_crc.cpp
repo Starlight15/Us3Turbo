@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
     }
     cudaMemset(dev_get.get(), 0xAA, size);
     GetPathResult get_res;
-    if (!client.GetObjectGds(kBucket, key, trace_id, MutableBufferView{.data = dev_get.get(), .size = size},
+    if (!client.GetObjectGds(kBucket, key, MutableBufferView{.data = dev_get.get(), .size = size},
                              get_res) || !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectGds: " << get_res.error_message << "\n";
       return 1;

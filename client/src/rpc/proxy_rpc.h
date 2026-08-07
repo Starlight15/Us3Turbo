@@ -84,22 +84,22 @@ class ProxyRpc {
                                            std::string& out_upload_id, std::string& out_trace_id,
                                            std::string& out_error) const;
 
-  /** @brief GDS 路径上传单个 part：rdma_token 随 RPC 透传。
-   * trace_id 由 CreateMultipartUpload 响应带回、调用方透传。 */
-  [[nodiscard]] bool UploadPartGds(std::string_view req_id, std::string_view trace_id,
+  /** @brief GDS 路径上传单个 part：rdma_token 随 RPC 透传。trace_id 由 proxy
+   * 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
+  [[nodiscard]] bool UploadPartGds(std::string_view req_id,
                                    const std::string& upload_id,
                                    std::uint32_t part_number, std::uint64_t part_size,
                                    const std::string& rdma_token, PutPathResult& res) const;
 
   /** @brief RDMA (libibverbs) 路径上传单个 part：rdma_token 随 RPC 透传。
-   * trace_id 由 CreateMultipartUpload 响应带回、调用方透传。 */
-  [[nodiscard]] bool UploadPartRdma(std::string_view req_id, std::string_view trace_id,
+   * trace_id 由 proxy 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
+  [[nodiscard]] bool UploadPartRdma(std::string_view req_id,
                                     const std::string& upload_id,
                                     std::uint32_t part_number, std::uint64_t part_size,
                                     const std::string& rdma_token, PutPathResult& res) const;
 
-  /** @brief 完成分段上传，返回最终 object_id/etag/size。
-   * trace_id 由 CreateMultipartUpload 响应带回、调用方透传。 */
+  /** @brief 完成分段上传，返回最终 object_id/etag/size。trace_id 由 proxy
+   * 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
   struct CompletedMultipart {
     bool ok{false};
     std::string object_id;
@@ -109,14 +109,14 @@ class ProxyRpc {
     std::uint64_t trace_id{0};  // proxy snowflake trace_id(从 RPC 响应取)
   };
   [[nodiscard]] bool CompleteMultipartUpload(
-      std::string_view req_id, std::string_view trace_id,
+      std::string_view req_id,
       const std::string& upload_id,
       const std::vector<std::pair<std::uint32_t, std::string>>& parts,
       CompletedMultipart& out) const;
 
-  /** @brief 终止分段上传，proxy 清理会话（幂等）。
-   * trace_id 由 CreateMultipartUpload 响应带回、调用方透传。 */
-  [[nodiscard]] bool AbortMultipartUpload(std::string_view req_id, std::string_view trace_id,
+  /** @brief 终止分段上传，proxy 清理会话（幂等）。trace_id 由 proxy 每请求
+   * 生成、在响应里回 client(非入参,对齐 s3proxy)。 */
+  [[nodiscard]] bool AbortMultipartUpload(std::string_view req_id,
                                           const std::string& upload_id,
                                           std::string& out_error) const;
 
@@ -128,17 +128,17 @@ class ProxyRpc {
                                 std::string& out_trace_id, std::string& out_error) const;
 
   /** @brief GDS 通路 GET：cuObj RDMA token(CUOBJ_GET) 随 RPC 透传，
-   * backend RDMA_WRITE 推数据到 client。
-   * trace_id 由 StatObject 响应带回、调用方透传。 */
-  [[nodiscard]] bool GdsGet(std::string_view req_id, std::string_view trace_id,
+   * backend RDMA_WRITE 推数据到 client。trace_id 由 proxy 每请求生成、在响应里
+   * 回 client(非入参,对齐 s3proxy)。 */
+  [[nodiscard]] bool GdsGet(std::string_view req_id,
                             const std::string& bucket,
                             const std::string& key, std::uint64_t object_size,
                             const std::string& rdma_token, GetPathResult& res) const;
 
   /** @brief RDMA (libibverbs) 通路 GET：token 随 RPC 透传，
    * backend 从 NVMe 读数据后 RDMA WRITE 推数据到 client host buffer。
-   * trace_id 由 StatObject 响应带回、调用方透传。 */
-  [[nodiscard]] bool RdmaGet(std::string_view req_id, std::string_view trace_id,
+   * trace_id 由 proxy 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
+  [[nodiscard]] bool RdmaGet(std::string_view req_id,
                              const std::string& bucket,
                              const std::string& key, std::uint64_t object_size,
                              const std::string& rdma_token, GetPathResult& res) const;

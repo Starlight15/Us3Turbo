@@ -31,13 +31,13 @@ int main(int argc, char** argv) {
   for (std::uint32_t i = 1; i <= kNumParts; ++i) {
     const std::uint64_t off = (i - 1) * kPartSize;
     std::string etag;
-    client.UploadPartRdma(upload_id, trace_id, i,
+    client.UploadPartRdma(upload_id, i,
                           ConstBufferView{.data = host.data() + off, .size = kPartSize}, etag, err);
     parts.push_back({i, etag});
   }
 
   Client::CompletedMultipart done;
-  client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
+  client.CompleteMultipartUpload(upload_id, parts, done);
   client.Shutdown();
 
   if (done.object_size == kTotal) {

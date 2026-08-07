@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
   /* ---- GET ---- */
   GetPathResult get_res;
   bool get_ok = client.GetObjectRdma(
-      kBucket, "rdma-get-demo", trace_id,
+      kBucket, "rdma-get-demo",
       MutableBufferView{.data = host_get.data(), .size = obj_size}, get_res);
   if (!get_ok) {
     std::cerr << "GET failed: " << get_res.error_message << "\n";

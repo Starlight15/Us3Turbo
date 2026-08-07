@@ -224,7 +224,7 @@ bool Client::CreateMultipartUpload(const std::string& bucket, const std::string&
 /*
  * GDS 分段上传单个 part：注册 token → proxy.UploadPartGds → 可选 CRC。
  */
-bool Client::UploadPartGds(const std::string& upload_id, std::string_view trace_id,
+bool Client::UploadPartGds(const std::string& upload_id,
                            std::uint32_t part_number,
                            ConstBufferView buffer, std::string& out_etag,
                            std::string& out_error) const {
@@ -259,7 +259,7 @@ bool Client::UploadPartGds(const std::string& upload_id, std::string_view trace_
 
   PutPathResult res;
   const bool rpc_ok =
-      proxy_->UploadPartGds(req_id, trace_id, upload_id, part_number, buffer.size, rdma_token, res);
+      proxy_->UploadPartGds(req_id, upload_id, part_number, buffer.size, rdma_token, res);
   auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
 
   if (!rpc_ok || !res.ok) {
@@ -286,7 +286,7 @@ bool Client::UploadPartGds(const std::string& upload_id, std::string_view trace_
 /*
  * RDMA 分段上传单个 part：注册 MR → proxy.UploadPartRdma → 可选 CRC。
  */
-bool Client::UploadPartRdma(const std::string& upload_id, std::string_view trace_id,
+bool Client::UploadPartRdma(const std::string& upload_id,
                             std::uint32_t part_number,
                             ConstBufferView buffer, std::string& out_etag,
                             std::string& out_error) const {
@@ -320,7 +320,7 @@ bool Client::UploadPartRdma(const std::string& upload_id, std::string_view trace
 
   PutPathResult res;
   const bool rpc_ok =
-      proxy_->UploadPartRdma(req_id, trace_id, upload_id, part_number, buffer.size, desc.token, res);
+      proxy_->UploadPartRdma(req_id, upload_id, part_number, buffer.size, desc.token, res);
   auto t_rpc = trace ? detail::clk::now() : detail::clk::time_point{};
 
   if (!rpc_ok || !res.ok) {
@@ -344,7 +344,7 @@ bool Client::UploadPartRdma(const std::string& upload_id, std::string_view trace
   return true;
 }
 
-bool Client::CompleteMultipartUpload(const std::string& upload_id, std::string_view trace_id,
+bool Client::CompleteMultipartUpload(const std::string& upload_id,
                                      const std::vector<PartInfo>& parts,
                                      CompletedMultipart& out) const {
   if (!initialized_) {
@@ -358,7 +358,7 @@ bool Client::CompleteMultipartUpload(const std::string& upload_id, std::string_v
     proto_parts.emplace_back(p.part_number, p.etag);
   }
   ProxyRpc::CompletedMultipart rpc_out;
-  if (!proxy_->CompleteMultipartUpload(req_id, trace_id, upload_id, proto_parts, rpc_out)) {
+  if (!proxy_->CompleteMultipartUpload(req_id, upload_id, proto_parts, rpc_out)) {
     out = rpc_out;
     return false;
   }
@@ -366,14 +366,14 @@ bool Client::CompleteMultipartUpload(const std::string& upload_id, std::string_v
   return out.ok;
 }
 
-bool Client::AbortMultipartUpload(const std::string& upload_id, std::string_view trace_id,
+bool Client::AbortMultipartUpload(const std::string& upload_id,
                                   std::string& out_error) const {
   if (!initialized_) {
     out_error = "Client not initialized";
     return false;
   }
   const std::string req_id = detail::MakeReqId();
-  return proxy_->AbortMultipartUpload(req_id, trace_id, upload_id, out_error);
+  return proxy_->AbortMultipartUpload(req_id, upload_id, out_error);
 }
 
 // ---- GET ----
@@ -393,7 +393,6 @@ bool Client::StatObject(const std::string& bucket, const std::string& key,
 }
 
 bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
-                          std::string_view trace_id,
                           MutableBufferView buffer, GetPathResult& res) const {
   if (!initialized_) {
     LOG_SYS_ERROR("Client not initialized");
@@ -403,11 +402,10 @@ bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
     LOG_SYS_ERROR("GDS get channel not initialized");
     return false;
   }
-  return gds_get_channel_->GetOnce(bucket, key, trace_id, buffer, res);
+  return gds_get_channel_->GetOnce(bucket, key, buffer, res);
 }
 
 bool Client::GetObjectRdma(const std::string& bucket, const std::string& key,
-                           std::string_view trace_id,
                            MutableBufferView buffer, GetPathResult& res) const {
   if (!initialized_) {
     LOG_SYS_ERROR("Client not initialized");
@@ -417,7 +415,7 @@ bool Client::GetObjectRdma(const std::string& bucket, const std::string& key,
     LOG_SYS_ERROR("RDMA get channel not initialized");
     return false;
   }
-  return rdma_get_channel_->GetOnce(bucket, key, trace_id, buffer, res);
+  return rdma_get_channel_->GetOnce(bucket, key, buffer, res);
 }
 
 }  // namespace us3_turbo::client

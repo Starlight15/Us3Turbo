@@ -22,7 +22,6 @@ bool GdsGetChannel::StatObject(const std::string& bucket, const std::string& key
 }
 
 bool GdsGetChannel::GetOnce(const std::string& bucket, const std::string& key,
-                            std::string_view trace_id,
                             MutableBufferView buffer, GetPathResult& res) const {
   assert(gds_mgr_ != nullptr);
   const std::string req_id = detail::MakeReqId();
@@ -32,7 +31,7 @@ bool GdsGetChannel::GetOnce(const std::string& bucket, const std::string& key,
     LOG_ERROR(req_id, "AcquireToken(CUOBJ_GET) failed");
     return false;
   }
-  return proxy_.GdsGet(req_id, trace_id, bucket, key, buffer.size, std::string(token.str()), res);
+  return proxy_.GdsGet(req_id, bucket, key, buffer.size, std::string(token.str()), res);
 }
 
 }  // namespace us3_turbo::client

@@ -61,10 +61,10 @@ RoundResult RdmaMpRunOneRound(us3_turbo::client::Client& client, const RdmaMpArg
     const std::uint64_t len = std::min(a.part_size, a.total - off);
     std::string etag;
     ConstBufferView buf{host_buf.data() + off, len};
-    if (!client.UploadPartRdma(upload_id, trace_id, i, buf, etag, error)) {
+    if (!client.UploadPartRdma(upload_id, i, buf, etag, error)) {
       lat.error = "UploadPartRdma " + std::to_string(i) + " failed: " + error;
       std::cerr << "[w" << worker_idx << " r" << round_idx << "] " << lat.error << "\n";
-      client.AbortMultipartUpload(upload_id, trace_id, error);
+      client.AbortMultipartUpload(upload_id, error);
       return lat;
     }
     parts.push_back({i, etag});
@@ -74,7 +74,7 @@ RoundResult RdmaMpRunOneRound(us3_turbo::client::Client& client, const RdmaMpArg
   // ---- CompleteMultipartUpload ----
   Client::CompletedMultipart done;
   const auto t_cmp0 = clk::now();
-  const bool ok = client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
+  const bool ok = client.CompleteMultipartUpload(upload_id, parts, done);
   lat.control_plane_ms = ms_double(clk::now() - t_cmp0).count();
 
   if (!ok || done.object_size != a.total) {

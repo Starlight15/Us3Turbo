@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
                                std::uint32_t part_no,
                                std::string& etag, std::string& err, int retries = 1) -> bool {
     for (int attempt = 0; attempt <= retries; ++attempt) {
-      if (client.UploadPartRdma(upload_id, trace_id, part_no,
+      if (client.UploadPartRdma(upload_id, part_no,
                                 ConstBufferView{.data = host.data(), .size = part_size}, etag,
                                 err)) {
         return true;
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
 
       Client::CompletedMultipart done;
       const bool ok =
-          parts.empty() ? false : client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
+          parts.empty() ? false : client.CompleteMultipartUpload(upload_id, parts, done);
       std::cout << "  Complete ok=" << ok << " error=\"" << done.error
                 << "\" size=" << done.object_size << "\n";
 
@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
       }
 
       std::string ab;
-      client.AbortMultipartUpload(upload_id, trace_id, ab);
+      client.AbortMultipartUpload(upload_id, ab);
     }
   }
 
@@ -130,13 +130,13 @@ int main(int argc, char** argv) {
       } else {
         std::vector<Client::PartInfo> parts{{1, e1}, {3, e3}};
         Client::CompletedMultipart done;
-        const bool ok = client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
+        const bool ok = client.CompleteMultipartUpload(upload_id, parts, done);
         std::cout << "  Complete ok=" << ok << " error=\"" << done.error << "\"\n";
         scene_b_pass = (!ok && !done.error.empty());
       }
 
       std::string ab;
-      client.AbortMultipartUpload(upload_id, trace_id, ab);
+      client.AbortMultipartUpload(upload_id, ab);
     }
   }
 

@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
     std::vector<Client::PartInfo> parts;
     for (std::uint32_t i = 1; i <= kNumParts; ++i) {
       std::string etag;
-      if (client.UploadPartGds(upload_id, trace_id, i, ConstBufferView{.data = dev.get(), .size = part_size},
+      if (client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev.get(), .size = part_size},
                                etag, error)) {
         std::cout << "  UploadPartGds " << i << " ok etag=" << etag << "\n";
         parts.push_back({i, etag});
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
     }
 
     Client::CompletedMultipart done;
-    const bool ok = client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
+    const bool ok = client.CompleteMultipartUpload(upload_id, parts, done);
     std::cout << "  Complete: " << (ok ? "succeeded" : "FAILED (expected)")
               << " error=" << done.error << "\n";
 
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
   // ---- cleanup ----
   {
     std::string abort_err;
-    client.AbortMultipartUpload(upload_id, trace_id, abort_err);
+    client.AbortMultipartUpload(upload_id, abort_err);
   }
   client.Shutdown();
 

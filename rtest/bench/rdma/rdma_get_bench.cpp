@@ -80,7 +80,7 @@ void RdmaGetWorker(std::size_t wid, const RdmaGetArgs& a, us3_turbo::client::Cli
   // 原始 GET，返回是否成功；warmup 与测量分别记账。
   auto get_one = [&](const std::string& key) -> bool {
     GetPathResult res;
-    return client.GetObjectRdma(a.bucket, key, trace_id, buf, res);
+    return client.GetObjectRdma(a.bucket, key, buf, res);
   };
 
   // warmup（命中已播种 key，不计入 stats，不进吞吐分子，也不产生假 fail）

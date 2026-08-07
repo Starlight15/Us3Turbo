@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
 
   cudaMemset(dev_get, 0xAA, kSize);
   GetPathResult get_res;
-  client.GetObjectGds(kBucket, "gds-get-demo", trace_id,
+  client.GetObjectGds(kBucket, "gds-get-demo",
                       MutableBufferView{.data = dev_get, .size = obj_size}, get_res);
   std::cout << "GET bytes_read=" << get_res.bytes_read << "\n";
 

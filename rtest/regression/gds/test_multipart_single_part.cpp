@@ -77,14 +77,14 @@ int main(int argc, char** argv) {
   rtest::DevMem dev_get;
   {
     std::string etag;
-    if (!client.UploadPartGds(upload_id, trace_id, 1,
+    if (!client.UploadPartGds(upload_id, 1,
                               ConstBufferView{.data = dev_put.get(), .size = part_size}, etag,
                               error)) {
       std::cerr << "[FAIL] " << kTestName << ": UploadPartGds: " << error << "\n";
     } else {
       std::vector<Client::PartInfo> parts{{1, etag}};
       Client::CompletedMultipart done;
-      if (!client.CompleteMultipartUpload(upload_id, trace_id, parts, done)) {
+      if (!client.CompleteMultipartUpload(upload_id, parts, done)) {
         std::cerr << "[FAIL] " << kTestName << ": CompleteMultipartUpload: " << done.error << "\n";
       } else {
         std::cout << "  Complete: object_size=" << done.object_size << " etag=" << done.etag << "\n";
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
     } else {
       cudaMemset(dev_get.get(), 0xAA, obj_size);
       GetPathResult get_res;
-      if (client.GetObjectGds(kBucket, key, get_trace_id,
+      if (client.GetObjectGds(kBucket, key,
                               MutableBufferView{.data = dev_get.get(), .size = obj_size},
                               get_res) && get_res.ok) {
         std::cout << "  GET: bytes_read=" << get_res.bytes_read << " crc32c=0x" << std::hex

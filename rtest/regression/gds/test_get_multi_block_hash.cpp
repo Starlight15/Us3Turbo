@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
       std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy p1 failed\n";
       return 1;
     }
-    if (!client.UploadPartGds(upload_id, trace_id, 1, ConstBufferView{.data = dev_put.get(), .size = part1},
+    if (!client.UploadPartGds(upload_id, 1, ConstBufferView{.data = dev_put.get(), .size = part1},
                               etag1, error)) {
       std::cerr << "[FAIL] " << kTestName << ": UploadPartGds 1: " << error << "\n";
       return 1;
@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
       std::cerr << "[FAIL] " << kTestName << ": cudaMemcpy p2 failed\n";
       return 1;
     }
-    if (!client.UploadPartGds(upload_id, trace_id, 2, ConstBufferView{.data = dev_put.get(), .size = part2},
+    if (!client.UploadPartGds(upload_id, 2, ConstBufferView{.data = dev_put.get(), .size = part2},
                               etag2, error)) {
       std::cerr << "[FAIL] " << kTestName << ": UploadPartGds 2: " << error << "\n";
       return 1;
@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
     // Complete
     std::vector<Client::PartInfo> parts{{1, etag1}, {2, etag2}};
     Client::CompletedMultipart done;
-    if (!client.CompleteMultipartUpload(upload_id, trace_id, parts, done)) {
+    if (!client.CompleteMultipartUpload(upload_id, parts, done)) {
       std::cerr << "[FAIL] " << kTestName << ": Complete: " << done.error << "\n";
       return 1;
     }
@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
     }
     cudaMemset(dev_get.get(), 0xBB, total);
     GetPathResult get_res;
-    if (!client.GetObjectGds(kBucket, key, get_trace_id, MutableBufferView{.data = dev_get.get(), .size = total},
+    if (!client.GetObjectGds(kBucket, key, MutableBufferView{.data = dev_get.get(), .size = total},
                              get_res) || !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectGds: " << get_res.error_message << "\n";
       return 1;

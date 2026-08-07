@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
     for (int p = 0; p < kNumParts; ++p) {
       std::string etag;
       ConstBufferView part_buf{.data = host_put.data() + (p * part_size), .size = part_size};
-      if (!client.UploadPartRdma(upload_id, trace_id, static_cast<std::uint32_t>(p + 1), part_buf, etag,
+      if (!client.UploadPartRdma(upload_id, static_cast<std::uint32_t>(p + 1), part_buf, etag,
                                  err)) {
         std::cerr << "[FAIL] " << kTestName << ": UploadPartRdma " << (p + 1) << ": " << err
                   << "\n";
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     }
 
     Client::CompletedMultipart result;
-    if (!client.CompleteMultipartUpload(upload_id, trace_id, parts, result)) {
+    if (!client.CompleteMultipartUpload(upload_id, parts, result)) {
       std::cerr << "[FAIL] " << kTestName << ": Complete: " << result.error << "\n";
       goto cleanup;
     }
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
     }
 
     GetPathResult get_res;
-    if (!client.GetObjectRdma(kBucket, key, get_trace_id,
+    if (!client.GetObjectRdma(kBucket, key,
                               MutableBufferView{.data = host_get.data(), .size = total}, get_res) ||
         !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectRdma: " << get_res.error_message << "\n";

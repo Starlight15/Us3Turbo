@@ -19,15 +19,14 @@ class GdsGetChannel final {
       : opts_(options), proxy_(proxy), gds_mgr_(gds_mgr) {}
 
   /** @brief 查对象布局(object_size)，调用方据此分配 buffer。
-   * 返回 proxy 生成的 trace_id，供后续 GetOnce 透传做日志关联。 */
+   * 返回 proxy 生成的 trace_id(仅代表本笔 Stat RPC),供调用方日志关联。 */
   [[nodiscard]] bool StatObject(const std::string& bucket, const std::string& key,
                                 std::uint64_t& out_object_size, std::string& out_trace_id,
                                 std::string& out_error) const;
 
   /** @brief 单次 GET 尝试：buffer 须已按 StatObject 返回的 size 分配。
-   * trace_id 由 StatObject 返回、调用方透传。 */
+   * trace_id 由 proxy 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
   [[nodiscard]] bool GetOnce(const std::string& bucket, const std::string& key,
-                             std::string_view trace_id,
                              MutableBufferView buffer, GetPathResult& res) const;
 
  private:

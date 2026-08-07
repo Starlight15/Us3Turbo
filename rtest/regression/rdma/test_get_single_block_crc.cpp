@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
   // ---- GET ----
   {
     GetPathResult get_res;
-    if (!client.GetObjectRdma(kBucket, key, trace_id,
+    if (!client.GetObjectRdma(kBucket, key,
                               MutableBufferView{.data = host_get.data(), .size = size}, get_res) ||
         !get_res.ok) {
       std::cerr << "[FAIL] " << kTestName << ": GetObjectRdma: " << get_res.error_message << "\n";

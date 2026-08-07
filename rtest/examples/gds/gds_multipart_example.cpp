@@ -36,12 +36,12 @@ int main(int argc, char** argv) {
   std::vector<Client::PartInfo> parts;
   for (std::uint32_t i = 1; i <= kNumParts; ++i) {
     std::string etag;
-    client.UploadPartGds(upload_id, trace_id, i, ConstBufferView{.data = dev, .size = kPartSize}, etag, err);
+    client.UploadPartGds(upload_id, i, ConstBufferView{.data = dev, .size = kPartSize}, etag, err);
     parts.push_back({i, etag});
   }
 
   Client::CompletedMultipart done;
-  client.CompleteMultipartUpload(upload_id, trace_id, parts, done);
+  client.CompleteMultipartUpload(upload_id, parts, done);
 
   cudaFree(dev);
   client.Shutdown();

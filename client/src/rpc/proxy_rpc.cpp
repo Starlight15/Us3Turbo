@@ -149,7 +149,7 @@ bool ProxyRpc::CreateMultipartUpload(std::string_view req_id, const std::string&
   return true;
 }
 
-bool ProxyRpc::UploadPartGds(std::string_view req_id, std::string_view trace_id,
+bool ProxyRpc::UploadPartGds(std::string_view req_id,
                              const std::string& upload_id,
                              std::uint32_t part_number, std::uint64_t part_size,
                              const std::string& rdma_token, PutPathResult& res) const {
@@ -167,7 +167,6 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, std::string_view trace_id,
   req.set_part_number(part_number);
   req.set_part_size(part_size);
   req.set_rdma_token(rdma_token);
-  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
 
   ::us3_turbo::proxy::UploadPartResponse resp;
   stub()->UploadPartGds(&controller, &req, &resp, nullptr);
@@ -183,7 +182,7 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, std::string_view trace_id,
   return resp.ok();
 }
 
-bool ProxyRpc::UploadPartRdma(std::string_view req_id, std::string_view trace_id,
+bool ProxyRpc::UploadPartRdma(std::string_view req_id,
                               const std::string& upload_id,
                               std::uint32_t part_number, std::uint64_t part_size,
                               const std::string& rdma_token, PutPathResult& res) const {
@@ -201,7 +200,6 @@ bool ProxyRpc::UploadPartRdma(std::string_view req_id, std::string_view trace_id
   req.set_part_number(part_number);
   req.set_part_size(part_size);
   req.set_rdma_token(rdma_token);
-  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
 
   ::us3_turbo::proxy::UploadPartResponse resp;
   stub()->UploadPartRdma(&controller, &req, &resp, nullptr);
@@ -218,7 +216,7 @@ bool ProxyRpc::UploadPartRdma(std::string_view req_id, std::string_view trace_id
 }
 
 bool ProxyRpc::CompleteMultipartUpload(
-    std::string_view req_id, std::string_view trace_id, const std::string& upload_id,
+    std::string_view req_id, const std::string& upload_id,
     const std::vector<std::pair<std::uint32_t, std::string>>& parts,
     CompletedMultipart& out) const {
   if (!ok()) {
@@ -231,7 +229,6 @@ bool ProxyRpc::CompleteMultipartUpload(
   ::us3_turbo::proxy::CompleteMultipartUploadRequest req;
   // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_upload_id(upload_id);
-  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
   for (const auto& [no, etag] : parts) {
     auto* p = req.add_parts();
     p->set_part_number(no);
@@ -254,7 +251,7 @@ bool ProxyRpc::CompleteMultipartUpload(
   return resp.ok();
 }
 
-bool ProxyRpc::AbortMultipartUpload(std::string_view req_id, std::string_view trace_id,
+bool ProxyRpc::AbortMultipartUpload(std::string_view req_id,
                                     const std::string& upload_id,
                                     std::string& out_error) const {
   if (!ok()) {
@@ -267,7 +264,6 @@ bool ProxyRpc::AbortMultipartUpload(std::string_view req_id, std::string_view tr
   ::us3_turbo::proxy::AbortMultipartUploadRequest req;
   // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_upload_id(upload_id);
-  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
 
   ::us3_turbo::proxy::AbortMultipartUploadResponse resp;
   stub()->AbortMultipartUpload(&controller, &req, &resp, nullptr);
@@ -321,7 +317,7 @@ bool ProxyRpc::StatObject(std::string_view req_id, const std::string& bucket,
   return true;
 }
 
-bool ProxyRpc::GdsGet(std::string_view req_id, std::string_view trace_id,
+bool ProxyRpc::GdsGet(std::string_view req_id,
                       const std::string& bucket, const std::string& key,
                       std::uint64_t object_size, const std::string& rdma_token,
                       GetPathResult& res) const {
@@ -340,7 +336,6 @@ bool ProxyRpc::GdsGet(std::string_view req_id, std::string_view trace_id,
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
-  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
   rpc_request.mutable_gds_source()->set_rdma_token(rdma_token);
 
   us3_turbo::proxy::GetPathResult resp;
@@ -366,7 +361,7 @@ bool ProxyRpc::GdsGet(std::string_view req_id, std::string_view trace_id,
   return resp.ok();
 }
 
-bool ProxyRpc::RdmaGet(std::string_view req_id, std::string_view trace_id,
+bool ProxyRpc::RdmaGet(std::string_view req_id,
                        const std::string& bucket, const std::string& key,
                        std::uint64_t object_size, const std::string& rdma_token,
                        GetPathResult& res) const {
@@ -385,7 +380,6 @@ bool ProxyRpc::RdmaGet(std::string_view req_id, std::string_view trace_id,
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
-  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
   rpc_request.mutable_rdma_source()->set_rdma_token(rdma_token);
 
   us3_turbo::proxy::GetPathResult resp;
