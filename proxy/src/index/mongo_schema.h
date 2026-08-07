@@ -21,6 +21,7 @@ inline constexpr auto kHash = "hash";
 inline constexpr auto kFinished = "finished";
 inline constexpr auto kDelete = "delete";
 inline constexpr auto kUploadId = "uploadid";
+inline constexpr auto kFileid = "fileid";  // proxy snowflake trace_id,Create 时冻结(对齐 s3proxy minit.Fileid)
 inline constexpr auto kPath = "path";
 inline constexpr auto kMergedSize = "merged_size";
 inline constexpr auto kLastMergedPart = "last_merged_part";

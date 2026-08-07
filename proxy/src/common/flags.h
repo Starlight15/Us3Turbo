@@ -19,3 +19,7 @@ DECLARE_int32(dbgate_timeout_ms);
 DECLARE_int32(dbgate_conn_pool_size);
 DECLARE_int32(dbgate_send_recv_max_retry);
 DECLARE_int32(bucket_id);
+// perf 打点总开关：true 时 proxy 各层(multipart per-RPC、SendAndRecv 三段)
+// 输出 [perf/proxy] ... _us=.. 规范行(µs)。默认关,零开销。
+DECLARE_bool(enable_perf_stats);
+DECLARE_int32(snowflake_node_id);

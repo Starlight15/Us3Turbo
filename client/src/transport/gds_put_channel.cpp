@@ -105,7 +105,7 @@ bool GdsPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView bu
 
   if (trace) {
     const LatencyStage stages[] = {{"start", t0}, {"token", t_token}, {"put", t_put}};
-    TraceLatency(req_id, "GdsPut", stages, buffer.size);
+    TraceLatency(res.trace_id, "GdsPut", stages, buffer.size);
   }
 
   return true;

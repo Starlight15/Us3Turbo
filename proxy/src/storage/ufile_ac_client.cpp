@@ -1,11 +1,14 @@
 #include "proxy/src/storage/ufile_ac_client.h"
 
+#include <chrono>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
+#include "proxy/src/common/snowflake.h"
+#include "proxy/src/common/utils.h"
 #include "proxy/src/storage/ufile_ac_protocol.h"
 #include "us3_turbo/common/logger.h"
 
@@ -45,7 +48,7 @@ BlockResult UfileAcClient::PutBlockGds(const std::string& key, const std::string
   // 编码
   std::vector<char> req;
   EncodeGdsPutRequest(key, rdma_token, gpu_offset, data_len, setid_,
-                      session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+                      CurrentTraceId(), req);
 
   // 收发
   std::vector<char> rsp_body;
@@ -67,7 +70,7 @@ BlockResult UfileAcClient::PutBlockRdma(const std::string& key, const std::strin
 
   std::vector<char> req;
   EncodeRdmaPutRequest(key, token, source_offset, data_len, setid_,
-                       session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+                       CurrentTraceId(), req);
 
   std::vector<char> rsp_body;
   BlockResult result;
@@ -85,7 +88,7 @@ BlockResult UfileAcClient::DeleteBlock(const std::string& key) {
 
   // 编码
   std::vector<char> req;
-  EncodeDelRequest(key, setid_, session_seq_.fetch_add(1, std::memory_order_relaxed), req);
+  EncodeDelRequest(key, setid_, CurrentTraceId(), req);
 
   // 收发
   std::vector<char> rsp_body;
@@ -109,7 +112,14 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
    * PutBlock 失败调用方已 CleanupWrittenBlocks 回滚, 重试用新连接发新请求
    * (keyed by block_id), 幂等安全。 */
   const int max_retry = FLAGS_backend_send_recv_max_retry;
+  using clk = std::chrono::steady_clock;
+  // perf 三段计时(仅成功 attempt 末尾 emit,见下):
+  //   acquire_conn_us = AcquireConn + per-conn 锁(连接池争抢/序列化)
+  //   send_us         = TCP SendAll(µs 级)
+  //   recv_us         = RecvAll(header+body)= 等 backend 处理 + 回包(定位 proxy 慢 / backend 慢)
+  clk::time_point t_acq{}, t_send{}, t_recv{};
   for (int attempt = 0; attempt < max_retry; ++attempt) {
+    const auto t_loop = clk::now();
     // 取连接
     auto [idx, conn] = AcquireConn();
     if (conn == nullptr) {
@@ -124,6 +134,7 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
     }
 
     std::lock_guard<std::mutex> lk(*conn_mutexes_[idx]);
+    t_acq = clk::now();
 
     // 发送
     bool ok = true;
@@ -131,6 +142,7 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
       LOG_SYS_ERROR("{}: send failed", op_name);
       ok = false;
     }
+    t_send = clk::now();
 
     // 收响应头并校验
     Message rmsg{};
@@ -169,8 +181,18 @@ int UfileAcClient::SendAndRecv(const char* op_name, std::uint32_t expected_type,
         ok = false;
       }
     }
+    t_recv = clk::now();
 
     if (ok) {
+      if (FLAGS_enable_perf_stats) {
+        const auto us = [](clk::time_point a, clk::time_point b) {
+          return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count();
+        };
+        LOG_SYS_INFO("[perf/proxy] op={}:sendrecv acquire_conn_us={} send_us={} recv_us={} "
+                     "attempt={}",
+                     op_name, us(t_loop, t_acq), us(t_acq, t_send), us(t_send, t_recv),
+                     attempt);
+      }
       return 0;  // 成功
     }
 
@@ -267,7 +289,7 @@ BlockResult UfileAcClient::GetBlockGds(const std::string& key, const std::string
   // 编码
   std::vector<char> req;
   EncodeGdsGetRequest(key, rdma_token, read_offset, gpu_offset, data_len, setid_,
-                      session_seq_.fetch_add(1, std::memory_order_relaxed), request_id, req);
+                      CurrentTraceId(), request_id, req);
 
   // 收发
   std::vector<char> rsp_body;
@@ -350,7 +372,7 @@ BlockResult UfileAcClient::GetBlockRdma(const std::string& key, const std::strin
   // 编码
   std::vector<char> req;
   EncodeRdmaGetRequest(key, token, read_offset, dest_offset, data_len, setid_,
-                       session_seq_.fetch_add(1, std::memory_order_relaxed), request_id, req);
+                       CurrentTraceId(), request_id, req);
 
   // 收发
   std::vector<char> rsp_body;

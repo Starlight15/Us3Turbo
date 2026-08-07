@@ -1,6 +1,7 @@
 #include "proxy/src/service/multipart.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -160,6 +161,7 @@ int Multipart::CreateUpload(const std::string& request_id, const std::string& bu
 int Multipart::UploadPartGds(const std::string& request_id, const std::string& upload_id,
                              std::uint32_t part_number, std::uint64_t part_size,
                              const std::string& rdma_token, UploadPartOutput& out) {
+  const auto t_start = std::chrono::steady_clock::now();
   /* 1. 校验参数。 */
   UploadRecord upload;
   int ret =
@@ -181,7 +183,9 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
   }
 
   /* 2. 写整 part 到 backend。 */
+  const auto t_backend_start = std::chrono::steady_clock::now();
   const auto result = client_->PutBlockGds(block_key, rdma_token, /*gpu_offset=*/0, part_size);
+  const auto t_backend = std::chrono::steady_clock::now();
   if (result.ret_code != 0) {
     LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id, part_number,
               result.error);
@@ -192,11 +196,24 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
 
   /* 3. 写索引并填充输出。索引失败回滚已写块。 */
   const std::vector<std::uint32_t> crcs{result.crc32c};
-  if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out)) {
+  const bool index_ok =
+      WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out);
+  const auto t_index = std::chrono::steady_clock::now();
+  if (!index_ok) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id, part_number);
     const std::vector<std::string> written_keys{block_key};
     CleanupWrittenBlocks(request_id, written_keys);
     return PROXY_ERR_INDEX_FAILED;
+  }
+  if (FLAGS_enable_perf_stats) {
+    using clk = std::chrono::steady_clock;
+    const auto us = [](clk::time_point a, clk::time_point b) {
+      return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count();
+    };
+    LOG_INFO(request_id, "[perf/proxy] req={} op=UploadPartGds key={} validate_us={} backend_us={} "
+             "index_us={} total_us={} bytes={}",
+             request_id, block_key, us(t_start, t_backend_start), us(t_backend_start, t_backend),
+             us(t_backend, t_index), us(t_start, t_index), part_size);
   }
   return 0;
 }
@@ -205,6 +222,7 @@ int Multipart::UploadPartGds(const std::string& request_id, const std::string& u
 int Multipart::UploadPartRdma(const std::string& request_id, const std::string& upload_id,
                               std::uint32_t part_number, std::uint64_t part_size,
                               const std::string& rdma_token, UploadPartOutput& out) {
+  const auto t_start = std::chrono::steady_clock::now();
   /* 1. 校验参数。 */
   UploadRecord upload;
   int ret =
@@ -226,7 +244,9 @@ int Multipart::UploadPartRdma(const std::string& request_id, const std::string& 
   }
 
   /* 2. 写整 part 到 backend。 */
+  const auto t_backend_start = std::chrono::steady_clock::now();
   const auto result = client_->PutBlockRdma(block_key, rdma_token, /*source_offset=*/0, part_size);
+  const auto t_backend = std::chrono::steady_clock::now();
   if (result.ret_code != 0) {
     LOG_ERROR(request_id, "upload={} part={} block failed: {}", upload_id, part_number,
               result.error);
@@ -237,11 +257,24 @@ int Multipart::UploadPartRdma(const std::string& request_id, const std::string& 
 
   /* 3. 写索引并填充输出。索引失败回滚已写块。 */
   const std::vector<std::uint32_t> crcs{result.crc32c};
-  if (!WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out)) {
+  const bool index_ok =
+      WritePartIndex(request_id, upload_id, part_number, part_size, file_offset, crcs, out);
+  const auto t_index = std::chrono::steady_clock::now();
+  if (!index_ok) {
     LOG_ERROR(request_id, "WritePartIndex failed for upload={} part={}", upload_id, part_number);
     const std::vector<std::string> written_keys{block_key};
     CleanupWrittenBlocks(request_id, written_keys);
     return PROXY_ERR_INDEX_FAILED;
+  }
+  if (FLAGS_enable_perf_stats) {
+    using clk = std::chrono::steady_clock;
+    const auto us = [](clk::time_point a, clk::time_point b) {
+      return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count();
+    };
+    LOG_INFO(request_id, "[perf/proxy] req={} op=UploadPartRdma key={} validate_us={} backend_us={} "
+             "index_us={} total_us={} bytes={}",
+             request_id, block_key, us(t_start, t_backend_start), us(t_backend_start, t_backend),
+             us(t_backend, t_index), us(t_start, t_index), part_size);
   }
   return 0;
 }

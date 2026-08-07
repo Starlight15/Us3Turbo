@@ -42,3 +42,9 @@ DEFINE_int32(dbgate_send_recv_max_retry, 2,
 DEFINE_int32(bucket_id, 1,
              "Bucket ID for index operations (temporary hardcoded, Phase 5 "
              "will query bucketidx_col)");
+DEFINE_bool(enable_perf_stats, false,
+            "emit [perf/proxy] per-RPC stage timing (us) for bottleneck "
+            "localization; off by default, zero overhead when disabled");
+DEFINE_int32(snowflake_node_id, 1,
+            "snowflake trace_id 的 node 位(0~1023);多 proxy 实例须不同以保证 "
+            "trace_id 全局唯一(对齐 s3proxy 的 snowflake node)");

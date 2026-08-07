@@ -43,7 +43,7 @@ bool ProxyRpc::GdsPut(std::string_view req_id, const std::string& bucket, const 
   ApplyTimeout(controller);
 
   us3_turbo::proxy::ClientProxyPutRequest rpc_request;
-  rpc_request.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
@@ -63,6 +63,7 @@ bool ProxyRpc::GdsPut(std::string_view req_id, const std::string& bucket, const 
   res.etag = resp.etag();
   res.crc32c = resp.crc32c();
   res.bytes = resp.bytes_written();
+  res.trace_id = resp.trace_id();
   return resp.ok();
 }
 
@@ -80,7 +81,7 @@ bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const
   ApplyTimeout(controller);
 
   us3_turbo::proxy::ClientProxyPutRequest rpc_request;
-  rpc_request.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
@@ -100,6 +101,7 @@ bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const
   res.etag = resp.etag();
   res.crc32c = resp.crc32c();
   res.bytes = resp.bytes_written();
+  res.trace_id = resp.trace_id();
   return resp.ok();
 }
 
@@ -122,7 +124,7 @@ bool ProxyRpc::CreateMultipartUpload(std::string_view req_id, const std::string&
   ApplyTimeout(controller);
 
   ::us3_turbo::proxy::CreateMultipartUploadRequest req;
-  req.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_bucket(bucket);
   req.set_key(key);
   req.set_path(path);
@@ -143,7 +145,7 @@ bool ProxyRpc::CreateMultipartUpload(std::string_view req_id, const std::string&
     return false;
   }
   out_upload_id = resp.upload_id();
-  out_trace_id = resp.trace_id();
+  out_trace_id = std::to_string(resp.trace_id());
   return true;
 }
 
@@ -160,12 +162,12 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, std::string_view trace_id,
   ApplyTimeout(controller);
 
   ::us3_turbo::proxy::UploadPartGdsRequest req;
-  req.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_upload_id(upload_id);
   req.set_part_number(part_number);
   req.set_part_size(part_size);
   req.set_rdma_token(rdma_token);
-  req.set_trace_id(std::string(trace_id));
+  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
 
   ::us3_turbo::proxy::UploadPartResponse resp;
   stub()->UploadPartGds(&controller, &req, &resp, nullptr);
@@ -177,6 +179,7 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id, std::string_view trace_id,
   res.etag = resp.etag();
   res.bytes = resp.bytes_written();
   if (resp.has_crc32c()) res.crc32c = resp.crc32c();
+  res.trace_id = resp.trace_id();
   return resp.ok();
 }
 
@@ -193,12 +196,12 @@ bool ProxyRpc::UploadPartRdma(std::string_view req_id, std::string_view trace_id
   ApplyTimeout(controller);
 
   ::us3_turbo::proxy::UploadPartRdmaRequest req;
-  req.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_upload_id(upload_id);
   req.set_part_number(part_number);
   req.set_part_size(part_size);
   req.set_rdma_token(rdma_token);
-  req.set_trace_id(std::string(trace_id));
+  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
 
   ::us3_turbo::proxy::UploadPartResponse resp;
   stub()->UploadPartRdma(&controller, &req, &resp, nullptr);
@@ -210,6 +213,7 @@ bool ProxyRpc::UploadPartRdma(std::string_view req_id, std::string_view trace_id
   res.etag = resp.etag();
   res.bytes = resp.bytes_written();
   if (resp.has_crc32c()) res.crc32c = resp.crc32c();
+  res.trace_id = resp.trace_id();
   return resp.ok();
 }
 
@@ -225,9 +229,9 @@ bool ProxyRpc::CompleteMultipartUpload(
   ApplyTimeout(controller);
 
   ::us3_turbo::proxy::CompleteMultipartUploadRequest req;
-  req.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_upload_id(upload_id);
-  req.set_trace_id(std::string(trace_id));
+  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
   for (const auto& [no, etag] : parts) {
     auto* p = req.add_parts();
     p->set_part_number(no);
@@ -246,6 +250,7 @@ bool ProxyRpc::CompleteMultipartUpload(
   out.etag = resp.etag();
   out.object_size = resp.object_size();
   out.error = resp.error_message();
+  out.trace_id = resp.trace_id();
   return resp.ok();
 }
 
@@ -260,9 +265,9 @@ bool ProxyRpc::AbortMultipartUpload(std::string_view req_id, std::string_view tr
   ApplyTimeout(controller);
 
   ::us3_turbo::proxy::AbortMultipartUploadRequest req;
-  req.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_upload_id(upload_id);
-  req.set_trace_id(std::string(trace_id));
+  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
 
   ::us3_turbo::proxy::AbortMultipartUploadResponse resp;
   stub()->AbortMultipartUpload(&controller, &req, &resp, nullptr);
@@ -294,7 +299,7 @@ bool ProxyRpc::StatObject(std::string_view req_id, const std::string& bucket,
   ApplyTimeout(controller);
 
   ::us3_turbo::proxy::StatObjectRequest req;
-  req.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   req.set_bucket(bucket);
   req.set_key(key);
 
@@ -312,7 +317,7 @@ bool ProxyRpc::StatObject(std::string_view req_id, const std::string& bucket,
     return false;
   }
   out_object_size = resp.object_size();
-  out_trace_id = resp.trace_id();
+  out_trace_id = std::to_string(resp.trace_id());
   return true;
 }
 
@@ -331,11 +336,11 @@ bool ProxyRpc::GdsGet(std::string_view req_id, std::string_view trace_id,
   ApplyTimeout(controller);
 
   us3_turbo::proxy::ClientProxyGetRequest rpc_request;
-  rpc_request.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
-  rpc_request.set_trace_id(std::string(trace_id));
+  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
   rpc_request.mutable_gds_source()->set_rdma_token(rdma_token);
 
   us3_turbo::proxy::GetPathResult resp;
@@ -357,6 +362,7 @@ bool ProxyRpc::GdsGet(std::string_view req_id, std::string_view trace_id,
   res.crc32c = resp.crc32c();
   res.bytes_read = resp.bytes_read();
   res.hash = resp.hash();
+  res.trace_id = resp.trace_id();
   return resp.ok();
 }
 
@@ -375,11 +381,11 @@ bool ProxyRpc::RdmaGet(std::string_view req_id, std::string_view trace_id,
   ApplyTimeout(controller);
 
   us3_turbo::proxy::ClientProxyGetRequest rpc_request;
-  rpc_request.set_request_id(std::string(req_id));
+  // request_id 字段已移除;trace_id 由 proxy snowflake 生成,client 不发任何 id(对齐 s3proxy)
   rpc_request.set_bucket(bucket);
   rpc_request.set_key(key);
   rpc_request.set_object_size(object_size);
-  rpc_request.set_trace_id(std::string(trace_id));
+  (void)trace_id;  // trace_id 字段已从 request 移除(proxy 每请求自生成);此入参保留仅为不破坏调用方签名,不再回传
   rpc_request.mutable_rdma_source()->set_rdma_token(rdma_token);
 
   us3_turbo::proxy::GetPathResult resp;
@@ -401,6 +407,7 @@ bool ProxyRpc::RdmaGet(std::string_view req_id, std::string_view trace_id,
   res.crc32c = resp.crc32c();
   res.bytes_read = resp.bytes_read();
   res.hash = resp.hash();
+  res.trace_id = resp.trace_id();
   return resp.ok();
 }
 

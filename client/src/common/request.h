@@ -32,6 +32,7 @@ struct PutPathResult {
   std::string etag;
   std::uint32_t crc32c{0};
   std::uint64_t bytes{0};
+  std::uint64_t trace_id{0};  // proxy snowflake trace_id(从 RPC 响应取,做跨层关联)
 };
 
 /** @brief proxy → client 统一 PUT 响应，各通路结果按 path 独立返回。 */
@@ -50,6 +51,7 @@ struct GetPathResult {
   std::uint32_t crc32c{0};
   std::uint64_t bytes_read{0};
   std::string hash;
+  std::uint64_t trace_id{0};  // proxy snowflake trace_id(从 RPC 响应取,做跨层关联)
 };
 
 }  // namespace us3_turbo::client

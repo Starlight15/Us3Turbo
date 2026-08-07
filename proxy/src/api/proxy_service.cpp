@@ -10,6 +10,7 @@
 
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
+#include "proxy/src/common/snowflake.h"
 #include "proxy/src/common/utils.h"
 #include "proxy/src/logging/access_logger.h"
 #include "us3_turbo/common/logger.h"
@@ -19,6 +20,15 @@ namespace us3_turbo::proxy {
 // multipart part/complete/abort 无 bucket/key，Access 日志用占位符
 static constexpr const char* kDash = "-";
 
+// 每个 RPC 入口生成 snowflake trace_id(proxy 生成,对齐 s3proxy TraceId),
+// 写入 CurrentTraceId()(同线程叶层 dbgate/ufile-ac/minit 取用),并在响应里
+// 回 client。rid 为 trace_id 的十进制串,供 LOG/AccessLogger 关联。
+#define TRACE_INIT()                                       \
+  const std::uint64_t trace_id = GenTraceId();             \
+  CurrentTraceId() = trace_id;                             \
+  const std::string rid = std::to_string(trace_id);       \
+  response->set_trace_id(trace_id)
+
 /* 单步 PUT(GDS/RDMA): 薄委托, ret!=0 → SetFailed; 日志+Access 日志 */
 
 void ProxyService::GdsPut(google::protobuf::RpcController* cntl_base,
@@ -27,7 +37,7 @@ void ProxyService::GdsPut(google::protobuf::RpcController* cntl_base,
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
   LOG_INFO(rid, "start bucket={} key={} size={}", request->bucket(), request->key(),
            request->object_size());
@@ -59,7 +69,7 @@ void ProxyService::RdmaPut(google::protobuf::RpcController* cntl_base,
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
   LOG_INFO(rid, "start bucket={} key={} size={}", request->bucket(), request->key(),
            request->object_size());
@@ -94,11 +104,10 @@ void ProxyService::CreateMultipartUpload(google::protobuf::RpcController* cntl_b
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
-  const std::string trace_id = utils::GenUuid();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start bucket={} key={} path={} trace_id={}", request->bucket(), request->key(),
-           static_cast<int>(request->path()), trace_id);
+  LOG_INFO(rid, "start bucket={} key={} path={}", request->bucket(), request->key(),
+           static_cast<int>(request->path()));
 
   std::string upload_id;
   int ret =
@@ -107,7 +116,7 @@ void ProxyService::CreateMultipartUpload(google::protobuf::RpcController* cntl_b
 
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
-    LOG_WARN(rid, "failed code={} trace_id={}", ret, trace_id);
+    LOG_WARN(rid, "failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "%s", msg);
@@ -117,8 +126,7 @@ void ProxyService::CreateMultipartUpload(google::protobuf::RpcController* cntl_b
   }
   response->set_ok(true);
   response->set_upload_id(upload_id);
-  response->set_trace_id(trace_id);
-  LOG_INFO(rid, "success upload_id={} trace_id={}", upload_id, trace_id);
+  LOG_INFO(rid, "success upload_id={}", upload_id);
   AccessLogger::Instance().LogRequest("CreateMultipartUpload", rid, request->bucket(),
                                       request->key(), 0, 0, latency);
 }
@@ -129,20 +137,20 @@ void ProxyService::UploadPartGds(google::protobuf::RpcController* cntl_base,
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start upload={} part={} size={} trace_id={}", request->upload_id(), request->part_number(),
-           request->part_size(), request->trace_id());
+  LOG_INFO(rid, "start upload={} part={} size={}", request->upload_id(), request->part_number(),
+           request->part_size());
 
   UploadPartOutput out;
   int ret =
-      multipart_->UploadPartGds(request->request_id(), request->upload_id(), request->part_number(),
+      multipart_->UploadPartGds(rid, request->upload_id(), request->part_number(),
                                 request->part_size(), request->rdma_token(), out);
   const auto latency = utils::ElapsedMs(start);
 
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
-    LOG_WARN(rid, "failed code={} trace_id={}", ret, request->trace_id());
+    LOG_WARN(rid, "failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "UploadPartGds failed: %s", msg);
@@ -153,8 +161,7 @@ void ProxyService::UploadPartGds(google::protobuf::RpcController* cntl_base,
   response->set_etag(out.etag);
   response->set_bytes_written(out.bytes);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  LOG_INFO(rid, "success part={} etag={} bytes={} trace_id={}", request->part_number(), out.etag,
-           out.bytes, request->trace_id());
+  LOG_INFO(rid, "success part={} etag={} bytes={}", request->part_number(), out.etag, out.bytes);
   AccessLogger::Instance().LogRequest("UploadPartGds", rid, kDash, kDash, 0, out.bytes,
                                       latency);
 }
@@ -166,20 +173,19 @@ void ProxyService::UploadPartRdma(google::protobuf::RpcController* cntl_base,
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start upload={} part={} size={} trace_id={}", request->upload_id(), request->part_number(),
-           request->part_size(), request->trace_id());
+  LOG_INFO(rid, "start upload={} part={} size={}", request->upload_id(), request->part_number(),
+           request->part_size());
 
   UploadPartOutput out;
-  int ret = multipart_->UploadPartRdma(request->request_id(), request->upload_id(),
-                                       request->part_number(), request->part_size(),
-                                       request->rdma_token(), out);
+  int ret = multipart_->UploadPartRdma(rid, request->upload_id(), request->part_number(),
+                                       request->part_size(), request->rdma_token(), out);
   const auto latency = utils::ElapsedMs(start);
 
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
-    LOG_WARN(rid, "failed code={} trace_id={}", ret, request->trace_id());
+    LOG_WARN(rid, "failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "UploadPartRdma failed: %s", msg);
@@ -190,8 +196,7 @@ void ProxyService::UploadPartRdma(google::protobuf::RpcController* cntl_base,
   response->set_etag(out.etag);
   response->set_bytes_written(out.bytes);
   if (out.crc32c != 0) response->set_crc32c(out.crc32c);
-  LOG_INFO(rid, "success part={} etag={} bytes={} trace_id={}", request->part_number(), out.etag,
-           out.bytes, request->trace_id());
+  LOG_INFO(rid, "success part={} etag={} bytes={}", request->part_number(), out.etag, out.bytes);
   AccessLogger::Instance().LogRequest("UploadPartRdma", rid, kDash, kDash, 0, out.bytes,
                                       latency);
 }
@@ -203,10 +208,9 @@ void ProxyService::CompleteMultipartUpload(google::protobuf::RpcController* cntl
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start upload={} parts={} trace_id={}", request->upload_id(), request->parts_size(),
-           request->trace_id());
+  LOG_INFO(rid, "start upload={} parts={}", request->upload_id(), request->parts_size());
 
   std::vector<CompleteMultipartUploadRequest_PartInfo> client_parts;
   client_parts.reserve(request->parts_size());
@@ -220,7 +224,7 @@ void ProxyService::CompleteMultipartUpload(google::protobuf::RpcController* cntl
 
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
-    LOG_WARN(rid, "failed code={} trace_id={}", ret, request->trace_id());
+    LOG_WARN(rid, "failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "complete failed: %s", msg);
@@ -232,8 +236,7 @@ void ProxyService::CompleteMultipartUpload(google::protobuf::RpcController* cntl
   response->set_object_id(out.object_id);
   response->set_etag(out.etag);
   response->set_object_size(out.object_size);
-  LOG_INFO(rid, "success object_id={} size={} etag={} trace_id={}", out.object_id, out.object_size, out.etag,
-           request->trace_id());
+  LOG_INFO(rid, "success object_id={} size={} etag={}", out.object_id, out.object_size, out.etag);
   AccessLogger::Instance().LogRequest("CompleteMultipartUpload", rid, kDash, kDash, 0,
                                       out.object_size, latency);
 }
@@ -245,14 +248,14 @@ void ProxyService::AbortMultipartUpload(google::protobuf::RpcController* cntl_ba
   brpc::ClosureGuard done_guard(done);
   (void)static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start upload={} trace_id={}", request->upload_id(), request->trace_id());
+  LOG_INFO(rid, "start upload={}", request->upload_id());
 
   (void)multipart_->AbortUpload(rid, request->upload_id());  // 幂等
   response->set_ok(true);
   const auto latency = utils::ElapsedMs(start);
-  LOG_INFO(rid, "done upload={} trace_id={}", request->upload_id(), request->trace_id());
+  LOG_INFO(rid, "done upload={}", request->upload_id());
   AccessLogger::Instance().LogRequest("AbortMultipartUpload", rid, kDash, kDash, 0, 0, latency);
 }
 
@@ -264,10 +267,9 @@ void ProxyService::StatObject(google::protobuf::RpcController* cntl_base,
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
-  const std::string trace_id = utils::GenUuid();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start bucket={}/{} trace_id={}", request->bucket(), request->key(), trace_id);
+  LOG_INFO(rid, "start bucket={}/{}", request->bucket(), request->key());
 
   StatObjectOutput out;
   int ret = get_object_->StatObject(*request, out);
@@ -275,7 +277,7 @@ void ProxyService::StatObject(google::protobuf::RpcController* cntl_base,
 
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
-    LOG_WARN(rid, "failed code={} trace_id={}", ret, trace_id);
+    LOG_WARN(rid, "failed code={}", ret);
     response->set_ok(false);
     response->set_error_message(msg);
     cntl->SetFailed(ret, "%s", msg);
@@ -287,8 +289,7 @@ void ProxyService::StatObject(google::protobuf::RpcController* cntl_base,
   response->set_object_size(out.object_size);
   response->set_block_size(out.block_size);
   response->set_hash(out.hash);
-  response->set_trace_id(trace_id);
-  LOG_INFO(rid, "success size={} block_size={} trace_id={}", out.object_size, out.block_size, trace_id);
+  LOG_INFO(rid, "success size={} block_size={}", out.object_size, out.block_size);
   AccessLogger::Instance().LogRequest("StatObject", rid, request->bucket(), request->key(), 0,
                                       out.object_size, latency);
 }
@@ -299,10 +300,10 @@ void ProxyService::GdsGet(google::protobuf::RpcController* cntl_base,
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start bucket={}/{} size={} trace_id={}", request->bucket(), request->key(),
-           request->object_size(), request->trace_id());
+  LOG_INFO(rid, "start bucket={}/{} size={}", request->bucket(), request->key(),
+           request->object_size());
 
   GetOutput out;
   int ret = get_object_->GetGds(*request, out);
@@ -310,7 +311,7 @@ void ProxyService::GdsGet(google::protobuf::RpcController* cntl_base,
 
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
-    LOG_WARN(rid, "failed code={} trace_id={}", ret, request->trace_id());
+    LOG_WARN(rid, "failed code={}", ret);
     response->set_ok(false);
     response->set_error_code(ret);
     response->set_error_message(msg);
@@ -323,7 +324,7 @@ void ProxyService::GdsGet(google::protobuf::RpcController* cntl_base,
   response->set_crc32c(out.crc32c);
   response->set_bytes_read(out.bytes_read);
   response->set_hash(out.hash);
-  LOG_INFO(rid, "success bytes={} hash={} trace_id={}", out.bytes_read, out.hash, request->trace_id());
+  LOG_INFO(rid, "success bytes={} hash={}", out.bytes_read, out.hash);
   AccessLogger::Instance().LogRequest("GdsGet", rid, request->bucket(), request->key(), 0,
                                       out.bytes_read, latency);
 }
@@ -334,10 +335,10 @@ void ProxyService::RdmaGet(google::protobuf::RpcController* cntl_base,
   brpc::ClosureGuard done_guard(done);
   auto* cntl = static_cast<brpc::Controller*>(cntl_base);
 
-  const std::string& rid = request->request_id();
+  TRACE_INIT();
   const auto start = std::chrono::steady_clock::now();
-  LOG_INFO(rid, "start bucket={}/{} size={} trace_id={}", request->bucket(), request->key(),
-           request->object_size(), request->trace_id());
+  LOG_INFO(rid, "start bucket={}/{} size={}", request->bucket(), request->key(),
+           request->object_size());
 
   GetOutput out;
   int ret = get_object_->GetRdma(*request, out);
@@ -345,7 +346,7 @@ void ProxyService::RdmaGet(google::protobuf::RpcController* cntl_base,
 
   if (ret != 0) {
     const char* msg = ProxyErrorMessage(ret);
-    LOG_WARN(rid, "failed code={} trace_id={}", ret, request->trace_id());
+    LOG_WARN(rid, "failed code={}", ret);
     response->set_ok(false);
     response->set_error_code(ret);
     response->set_error_message(msg);
@@ -358,7 +359,7 @@ void ProxyService::RdmaGet(google::protobuf::RpcController* cntl_base,
   response->set_crc32c(out.crc32c);
   response->set_bytes_read(out.bytes_read);
   response->set_hash(out.hash);
-  LOG_INFO(rid, "success bytes={} hash={} trace_id={}", out.bytes_read, out.hash, request->trace_id());
+  LOG_INFO(rid, "success bytes={} hash={}", out.bytes_read, out.hash);
   AccessLogger::Instance().LogRequest("RdmaGet", rid, request->bucket(), request->key(), 0,
                                       out.bytes_read, latency);
 }

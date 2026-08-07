@@ -21,7 +21,8 @@ namespace detail {
 
 using clk = std::chrono::steady_clock;
 
-/** @brief 生成新 req_id,用于跨端日志关联(每次重试都新生成)。*/
+/** @brief 生成新 req_id,client 侧本地日志句柄(不发往 proxy,非跨层 trace_id;
+ * 跨层关联用 RPC 响应里的 proxy snowflake trace_id,经 res.trace_id 取)。*/
 [[nodiscard]] inline std::string MakeReqId() {
   static thread_local std::mt19937_64 rng{
       static_cast<std::uint64_t>(std::random_device{}()) ^
@@ -37,23 +38,28 @@ struct LatencyStage {
   clk::time_point timestamp;
 };
 
-/** @brief 打印相邻阶段耗时 + 首→末总耗时(latency_trace 开启时调用)。*/
-inline void TraceLatency(const std::string& req_id, std::string_view operation_name,
+/** @brief 打印相邻阶段耗时 + 首→末总耗时(latency_trace 开启时调用)。
+ *
+ * 输出统一规范:[perf/client] req=<id> op=<op> <stage>_us=<n> ... total_us=<n> bytes=<n>
+ * µs 粒度、key=val、与 proxy [perf/proxy] / backend [rdma-*] 同风格,可 grep+python 聚合。
+ * stages[i].name 标注的是"到该阶段为止"的相邻段耗时(stages[i-1]→stages[i])。*/
+inline void TraceLatency(std::uint64_t trace_id, std::string_view operation_name,
                          std::span<const LatencyStage> stages, std::size_t bytes) {
-  const auto ms = [](clk::time_point a, clk::time_point b) {
-    return std::chrono::duration<double, std::milli>(b - a).count();
+  const auto us = [](clk::time_point a, clk::time_point b) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count();
   };
 
   std::string parts;
   for (std::size_t i = 1; i < stages.size(); ++i) {
-    parts += fmt::format("{}={:.3f}ms ", stages[i].name,
-                         ms(stages[i - 1].timestamp, stages[i].timestamp));
+    parts += fmt::format("{}_us={} ", stages[i].name,
+                         us(stages[i - 1].timestamp, stages[i].timestamp));
   }
-  const double total =
-      stages.size() >= 2 ? ms(stages.front().timestamp, stages.back().timestamp) : 0.0;
+  const auto total_us = stages.size() >= 2
+                            ? us(stages.front().timestamp, stages.back().timestamp)
+                            : std::int64_t{0};
 
-  spdlog::info("{} trace (req={}): {}total={:.3f}ms bytes={}", operation_name, req_id, parts, total,
-               bytes);
+  spdlog::info("[perf/client] req={} op={} {}total_us={} bytes={}", trace_id,
+               operation_name, parts, total_us, bytes);
 }
 
 }  // namespace detail

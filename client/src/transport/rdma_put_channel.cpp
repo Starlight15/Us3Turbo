@@ -96,7 +96,7 @@ bool RdmaPutChannel::PutOnce(const ClientProxyPutRequest& req, ConstBufferView b
 
   if (trace) {
     const LatencyStage stages[] = {{"start", t0}, {"desc", t_desc}, {"put", t_put}};
-    TraceLatency(req_id, "RdmaPut", stages, buffer.size);
+    TraceLatency(res.trace_id, "RdmaPut", stages, buffer.size);
   }
 
   return true;

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "proxy/src/common/errors.h"
+#include "proxy/src/common/snowflake.h"
 #include "proxy/src/common/utils.h"
 #include "proxy/src/index/upload_index.h"
 #include "proxy/src/storage/ufile_ac_client.h"
@@ -15,7 +16,7 @@
 namespace us3_turbo::proxy {
 
 int GetObject::StatObject(const StatObjectRequest& req, StatObjectOutput& out) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
   if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
@@ -36,7 +37,7 @@ int GetObject::StatObject(const StatObjectRequest& req, StatObjectOutput& out) {
 }
 
 int GetObject::ValidateGdsRequest(const ClientProxyGetRequest& req) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
   if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
@@ -57,7 +58,7 @@ int GetObject::ValidateGdsRequest(const ClientProxyGetRequest& req) {
 }
 
 int GetObject::ValidateRdmaRequest(const ClientProxyGetRequest& req) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
   if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
@@ -79,7 +80,7 @@ int GetObject::ValidateRdmaRequest(const ClientProxyGetRequest& req) {
 
 
 int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
 
   int ret = ValidateGdsRequest(req);
   if (ret != 0) return ret;
@@ -139,7 +140,7 @@ int GetObject::GetGds(const ClientProxyGetRequest& req, GetOutput& out) {
 }
 
 int GetObject::GetRdma(const ClientProxyGetRequest& req, GetOutput& out) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
 
   int ret = ValidateRdmaRequest(req);
   if (ret != 0) return ret;

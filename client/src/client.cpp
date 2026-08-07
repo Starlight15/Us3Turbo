@@ -274,7 +274,7 @@ bool Client::UploadPartGds(const std::string& upload_id, std::string_view trace_
 
   if (trace) {
     const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
-    detail::TraceLatency(req_id, "UploadPartGds", stages, buffer.size);
+    detail::TraceLatency(res.trace_id, "UploadPartGds", stages, buffer.size);
   }
 
   out_etag = res.etag;
@@ -335,7 +335,7 @@ bool Client::UploadPartRdma(const std::string& upload_id, std::string_view trace
 
   if (trace) {
     const detail::LatencyStage stages[] = {{"start", t0}, {"acquire", t_acquire}, {"rpc", t_rpc}};
-    detail::TraceLatency(req_id, "UploadPartRdma", stages, buffer.size);
+    detail::TraceLatency(res.trace_id, "UploadPartRdma", stages, buffer.size);
   }
 
   out_etag = res.etag;

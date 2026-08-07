@@ -4,6 +4,7 @@
 
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
+#include "proxy/src/common/snowflake.h"
 #include "proxy/src/common/utils.h"
 #include "proxy/src/index/upload_index.h"
 #include "proxy/src/storage/ufile_ac_client.h"
@@ -12,7 +13,7 @@
 namespace us3_turbo::proxy {
 
 int SinglePut::ValidateGdsRequest(const ClientProxyPutRequest& req) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
   if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
@@ -40,7 +41,7 @@ int SinglePut::ValidateGdsRequest(const ClientProxyPutRequest& req) {
 
 
 int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
 
   /* 校验 */
   int ret = ValidateGdsRequest(req);
@@ -67,7 +68,7 @@ int SinglePut::PutGds(const ClientProxyPutRequest& req, PutOutput& out) {
 
 
 int SinglePut::ValidateRdmaRequest(const ClientProxyPutRequest& req) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
   if (req.bucket().empty() || req.key().empty()) {
     LOG_WARN(rid, "bucket/key empty bucket={} key={}", req.bucket(), req.key());
     return PROXY_ERR_INVALID_PARAM;
@@ -95,7 +96,7 @@ int SinglePut::ValidateRdmaRequest(const ClientProxyPutRequest& req) {
 
 
 int SinglePut::PutRdma(const ClientProxyPutRequest& req, PutOutput& out) {
-  const std::string& rid = req.request_id();
+  const std::string rid = std::to_string(CurrentTraceId());  // proxy snowflake trace_id(由 proxy_service handler set)
 
   /* 校验 */
   int ret = ValidateRdmaRequest(req);

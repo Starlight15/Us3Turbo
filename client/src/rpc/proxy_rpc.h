@@ -106,6 +106,7 @@ class ProxyRpc {
     std::string etag;
     std::uint64_t object_size{0};
     std::string error;
+    std::uint64_t trace_id{0};  // proxy snowflake trace_id(从 RPC 响应取)
   };
   [[nodiscard]] bool CompleteMultipartUpload(
       std::string_view req_id, std::string_view trace_id,

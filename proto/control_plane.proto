@@ -14,7 +14,15 @@ option cc_generic_services = true;
 //   proxy : GdsPut/RdmaPut 校验后同步转发 backend
 //
 // 各链路第一版不做任何共同逻辑抽象，各自独立实现。
-// request_id 保留作跨端日志关联。wire 内部协同重编，无外部兼容承诺。
+//
+// 会话/关联 id 设计（与 s3proxy 对齐，两个 id 两个作用域）：
+//   - upload_id (string, proxy 生成 GenUuid)：multipart 会话句柄，mongo minit
+//     selector，client 回传。等同 s3proxy UploadId。
+//   - trace_id (uint64, proxy 生成 snowflake)：每 RPC 一个，写进每条下行
+//     (dbgate UMessage session_no / ufile-ac 协议 sessionId / minit.fileid /
+//     backend [rdma-*] 日志)，并在响应里回 client 供其日志。等同 s3proxy TraceId。
+//   client 不生成 id（同 s3proxy 外部 S3 SDK），只从响应读 trace_id。
+// wire 内部协同重编，无外部兼容承诺；字段已顺序编号，不留空位。
 
 // PUT 通路选择。普通枚举（非 bitflag）：v1 仅支持单路（PATH_GDS / PATH_RDMA）；
 // PATH_NONE=0 作无效默认（client 校验拒绝）；PATH_ALL 保留，未启用
@@ -22,8 +30,8 @@ option cc_generic_services = true;
 enum PutDataPath {
   PATH_NONE = 0;
   PATH_GDS  = 1;
-  PATH_RDMA = 3;
-  PATH_ALL  = 4;
+  PATH_RDMA = 2;
+  PATH_ALL  = 3;
 }
 
 // GDS 通路数据源：cuObj RDMA token（client 显存地址 + remote key 的自描述串）。
@@ -40,13 +48,12 @@ message RdmaDataSource {
 // client → proxy 统一 PUT 请求。path 必填；对应通路的 source 按需填充
 //（PATH_GDS→gds_source，PATH_RDMA→rdma_source）。optional 未设则不序列化。
 message ClientProxyPutRequest {
-  string                     request_id  = 1;
-  string                     bucket      = 2;
-  string                     key         = 3;
-  uint64                     object_size = 4;
-  PutDataPath                path        = 5;
-  optional GdsDataSource     gds_source  = 10;
-  optional RdmaDataSource    rdma_source = 12;
+  string                  bucket       = 1;
+  string                  key          = 2;
+  uint64                  object_size  = 3;
+  PutDataPath             path         = 4;
+  optional GdsDataSource  gds_source   = 5;
+  optional RdmaDataSource rdma_source  = 6;
 }
 
 // 单条通路的执行结果。PUT 失败由 proxy 经 brpc controller.SetFailed 上报
@@ -59,51 +66,47 @@ message PutPathResult {
   string etag          = 4;
   uint32 crc32c        = 5;
   uint64 bytes_written = 6;
+  uint64 trace_id      = 7;  // proxy 生成 snowflake，回 client 做日志关联
 }
 
 // ========== 分段上传控制面消息 ==========
 // 设计：client 只与 proxy 的 Control 服务交互（CreateMultipartUpload /
 // UploadPart{Gds,Rdma} / CompleteMultipartUpload）；proxy 内存态会话。
 // 单步 GdsPut/RdmaPut 保留不变，分段路径与之完全隔离。part_number 从 1 开始、
-// 客户端分配；block_no 从 0 开始、proxy 分配。request_id 贯穿三层做日志关联。
+// 客户端分配；block_no 从 0 开始、proxy 分配。trace_id 贯穿三层做日志关联。
 
 // 初始化分段上传。path 锁定整条会话的通路（PATH_GDS / PATH_RDMA），后续
 // UploadPart 必须与会话 path 匹配，否则 proxy 拒绝。
 message CreateMultipartUploadRequest {
-  string      request_id = 1;
-  string      bucket     = 2;
-  string      key        = 3;
-  PutDataPath path       = 4;
+  string      bucket = 1;
+  string      key    = 2;
+  PutDataPath path   = 3;
 }
 
 message CreateMultipartUploadResponse {
   bool   ok            = 1;
-  string upload_id     = 2;  // UUID，proxy 生成
+  string upload_id     = 2;  // UUID，proxy 生成，multipart 会话句柄
   string error_message = 3;
-  string trace_id      = 4;  // proxy 生成，供后续 UploadPart/Complete/Abort 透传做日志关联
+  uint64 trace_id      = 4;  // proxy 生成 snowflake，回 client；并冻结为 minit.fileid
 }
 
 // 上传单个 part — GDS 路径。rdma_token 为本 part 独立注册的 cuObj RDMA
 // token（"hexaddr:rkey"），proxy 切分后把 source_offset 透传给 backend。
 message UploadPartGdsRequest {
-  string request_id  = 1;
-  string upload_id   = 2;
-  uint32 part_number = 3;  // 从 1 开始，客户端分配
-  uint64 part_size   = 4;  // 本 part 总大小
-  string rdma_token  = 5;
-  string trace_id    = 6;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
+  string upload_id   = 1;
+  uint32 part_number = 2;  // 从 1 开始，客户端分配
+  uint64 part_size   = 3;  // 本 part 总大小
+  string rdma_token  = 4;
 }
 
 // 上传单个 part — RDMA (libibverbs) 路径。rdma_token 编码了 client listener
 // 地址 + rkey + addr + size，backend 解码后反向 RDMA CM connect →
 // ibv_post_send(RDMA_READ)。单 part 直接作为单 block 写入，不再切分。
 message UploadPartRdmaRequest {
-  string request_id  = 1;
-  string upload_id   = 2;
-  uint32 part_number = 3;  // 从 1 开始，客户端分配
-  uint64 part_size   = 4;  // 本 part 总大小
-  string rdma_token  = 5;
-  string trace_id    = 6;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
+  string upload_id   = 1;
+  uint32 part_number = 2;  // 从 1 开始，客户端分配
+  uint64 part_size   = 3;  // 本 part 总大小
+  string rdma_token  = 4;
 }
 
 // UploadPart 响应（GDS/RDMA 共用）。etag 为本 part 的 ETag（proxy 汇总 block
@@ -114,14 +117,13 @@ message UploadPartResponse {
   optional uint32  crc32c        = 3;
   uint64           bytes_written = 4;
   string           error_message = 5;
+  uint64           trace_id      = 6;  // proxy 生成 snowflake，回 client 做日志关联
 }
 
 // 完成分段上传。parts 可选（客户端用以校验已传 part 的 etag）。
 message CompleteMultipartUploadRequest {
-  string request_id = 1;
-  string upload_id  = 2;
-  repeated PartInfo parts = 3;
-  string trace_id   = 4;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
+  string upload_id  = 1;
+  repeated PartInfo parts = 2;
 
   message PartInfo {
     uint32 part_number = 1;
@@ -135,18 +137,18 @@ message CompleteMultipartUploadResponse {
   string etag          = 3;  // 最终对象 ETag
   uint64 object_size   = 4;
   string error_message = 5;
+  uint64 trace_id      = 6;  // proxy 生成 snowflake，回 client 做日志关联
 }
 
 // 终止分段上传：proxy 清理会话（幂等，不存在也 ok）。client 释放未完成上传
 // 的 proxy 内存态资源；之后再 UploadPart/Complete 该 upload_id → not found。
 message AbortMultipartUploadRequest {
-  string request_id = 1;
-  string upload_id  = 2;
-  string trace_id   = 3;  // 由 CreateMultipartUpload 响应带回，透传做日志关联
+  string upload_id = 1;
 }
 message AbortMultipartUploadResponse {
   bool   ok            = 1;
   string error_message = 2;
+  uint64 trace_id      = 3;  // proxy 生成 snowflake，回 client 做日志关联
 }
 
 // ========== GET（GDS）控制面消息 ==========
@@ -156,9 +158,8 @@ message AbortMultipartUploadResponse {
 
 // 查对象布局（client GetObject 第一步，用于分配显存 buffer）。
 message StatObjectRequest {
-  string request_id  = 1;
-  string bucket      = 2;
-  string key         = 3;
+  string bucket = 1;
+  string key    = 2;
 }
 
 message StatObjectResponse {
@@ -167,19 +168,17 @@ message StatObjectResponse {
   uint64 object_size   = 3;  // filesize，client 据此 cudaMalloc
   uint64 block_size    = 4;  // 仅日志/调试用
   string hash          = 5;  // fileidx 存的 hash，client 可选比对
-  string trace_id      = 6;  // proxy 生成，供后续 GetObject 透传做日志关联
+  uint64 trace_id      = 6;  // proxy 生成 snowflake，回 client 做日志关联
 }
 
 // client → proxy GET 请求。object_size 须与 StatObject 返回一致
 // （proxy 据此校验，防止 client 拿旧布局注册了错误大小的 buffer）。
 message ClientProxyGetRequest {
-  string        request_id     = 1;
-  string        bucket         = 2;
-  string        key            = 3;
-  uint64        object_size    = 4;
-  string        trace_id       = 5;  // 由 StatObject 响应带回，透传做日志关联
-  optional GdsDataSource  gds_source  = 10;
-  optional RdmaDataSource rdma_source = 12;
+  string        bucket         = 1;
+  string        key            = 2;
+  uint64        object_size    = 3;
+  optional GdsDataSource  gds_source  = 4;
+  optional RdmaDataSource rdma_source = 5;
 }
 
 // GET 执行结果。crc32c/hash 为 proxy 按块重组后的校验值，与 fileidx.hash
@@ -191,6 +190,7 @@ message GetPathResult {
   uint32 crc32c        = 4;  // 仅单块对象填整对象 crc32c；多块为 0，完整性以 hash 为准
   uint64 bytes_read    = 5;
   string hash          = 6;
+  uint64 trace_id      = 7;  // proxy 生成 snowflake，回 client 做日志关联
 }
 
 // 单一 service，proxy 实现（client → proxy 控制面）。GdsPut / RdmaPut 两个独立

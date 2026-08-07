@@ -9,6 +9,7 @@
 
 #include "proxy/src/api/proxy_service.h"
 #include "proxy/src/common/flags.h"
+#include "proxy/src/common/snowflake.h"
 #include "proxy/src/index/dbgate_client.h"
 #include "proxy/src/index/mongo_upload_index.h"
 #include "proxy/src/logging/access_logger.h"
@@ -32,6 +33,8 @@ void InitLogging() {
   us3_turbo::common::Logger::Init(level, "proxy", static_cast<std::size_t>(FLAGS_log_max_size_mb),
                                   static_cast<std::size_t>(FLAGS_log_max_files));
   us3_turbo::proxy::AccessLogger::Instance();
+  us3_turbo::proxy::Snowflake::Instance().SetNode(
+      static_cast<std::uint64_t>(FLAGS_snowflake_node_id));
 }
 
 /* 依赖注入装配，自底向上：存储层最长命，接口层最上 */

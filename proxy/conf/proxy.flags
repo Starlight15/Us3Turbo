@@ -12,3 +12,4 @@
 --dbgate_timeout_ms=5000
 --dbgate_conn_pool_size=4
 --bucket_id=1
+--enable_perf_stats=false

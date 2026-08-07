@@ -50,4 +50,17 @@ namespace us3_turbo::proxy::utils {
                                                                start);
 }
 
+/* 计算从 start 到现在的耗时（微秒）。
+ * perf 打点用：proxy/backend 段常 <1ms，ms 会丢精度。 */
+[[nodiscard]] inline std::chrono::microseconds ElapsedUs(
+    std::chrono::steady_clock::time_point start) {
+  return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() -
+                                                               start);
+}
+
+/* 同 ElapsedUs，但直接返回 int64 微秒数，便于 fmt::format 直接填 <stage>_us= 字段。 */
+[[nodiscard]] inline std::int64_t UsSince(std::chrono::steady_clock::time_point start) {
+  return ElapsedUs(start).count();
+}
+
 }  // namespace us3_turbo::proxy::utils

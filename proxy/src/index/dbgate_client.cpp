@@ -3,11 +3,13 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <random>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
 #include "proxy/src/common/errors.h"
 #include "proxy/src/common/flags.h"
+#include "proxy/src/common/snowflake.h"
 #include "proxy/src/index/mongo_schema.h"
 #include "ucloud.pb.h"
 #include "umgogate.pb.h"
@@ -150,7 +152,7 @@ int DBGateClient::ExecuteMgo(const ucloud::umgogate::ExecuteMgoRequest& mgo_req,
   head->set_random_num(dist(gen));
   head->set_flow_no(
       static_cast<::google::protobuf::uint32>(flow_no_.fetch_add(1, std::memory_order_relaxed)));
-  head->set_session_no("0");
+  head->set_session_no(std::to_string(CurrentTraceId()));  // = 本 RPC snowflake trace_id(对齐 s3proxy UMessage 头 UuidLow/High)
   head->set_message_type(kExecuteMgoReqType);  // EXECUTE_MGO_REQUEST
   head->set_worker_index(0);
   head->set_source_entity(dist(gen));
@@ -286,6 +288,7 @@ int DBGateClient::InsertMinit(const std::string& upload_id, std::uint32_t bucket
 
   nlohmann::json doc = {
       {mgo::f::kUploadId, upload_id},
+      {mgo::f::kFileid, std::to_string(CurrentTraceId())},  // proxy snowflake trace_id,Create 时冻结(对齐 s3proxy Fileid)
       {mgo::f::kBucketId, bucket_id},
       {mgo::f::kKey, key},
       {mgo::f::kFirstObject, first_object},
