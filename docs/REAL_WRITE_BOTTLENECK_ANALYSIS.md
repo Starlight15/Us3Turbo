@@ -126,11 +126,32 @@ SLC 速(<2500µs):15.8% / TLC 直写(>4000µs):80.3%。min 1970µs(~4 GB/s SLC �
 ## 7. 下一步优化方向(用户指导后,修正版)
 
 1. **NVMe 写带宽(根本 cap)**:~2700 是 TLC 直写上限。要复现/超 3743 需 SLC 可用(盘空闲/trim)或更快盘;`fio` 直测裸盘写带宽+队列深度曲线对照。**最高优先**。
-2. **GDS 提交节流(新增,针对 GDS 2× per-AIO 退化)**:减 `gds worker_threads` 8→4/2,或给 GDS AIO 在途深度设上限,看 per-AIO 延迟是否从 11.2 回落、聚合吞吐是否升。假设:GDS 过提交使 NVMe 队列越过最优区。**可低成本验证**。
+2. **GDS 提交节流(已验证,见效)**:减 `[gds] worker_threads` 8→4,GDS 吞吐 **1775–1894 → 2300–2368 MiB/s(+21–33%)**,aio_write p50 11.4ms→6.0ms,>10ms 尾部 60%→7%。机理:GDS 8 worker 过提交→NVMe 在途队列深度越过最优区→单流 AIO 延迟 2× + 聚合反降。wt=4 与 RDMA(wt=4)在途数一致→per-AIO 趋同(6.0 vs 5.3ms)。**见 §8 扫描数据**。wt=4 为最优点(非单调曲线:wt=2 worker-bound 1594、wt=6 已回升争抢 1828)。剩余 GDS<RDSA 16% 差距=cuobj 读(2.7 vs 2.2ms)+ aio 略高。**建议把 `[gds] worker_threads` 默认 8→4(零代码改动,可立即落地)**。
 3. **memcpy 零拷贝(降级,次优先)**:RDMA memcpy 1.7ms 现非 cap(4700>2727),但若 NVMe 回到 SLC 速(~4000),memcpy 将成新 cap。改 `SubmitWrite` 直接从 RDMA MR buffer 写(跳 data_ 中转)。架构改动,谨慎。
 4. ~~主 loop 并行化~~(一稿建议,降级):AIO 已异步、主 loop 不被盘写阻塞、post backlog 仅 ~1 part → 主 loop 有余力,**并行化收益不如一稿估计**。仅在 NVMe 提速后 memcpy 成 cap 时才有意义。
 5. **GDS cuobj 读路径**:2748 vs 2186,token 路径结构慢;长期可改直连,但收益小(+25% 读段,非主因)。
 6. **补打点**:proxy 层仍缺 per-RPC 计时(见 [proxy-lacks-per-RPC-timing](../../));backend 侧 [gds-timing]/[rdma-dispatch]/[rdma-read] 已够定位。
+
+---
+
+## 8. GDS worker_threads 扫描(已验证,2026-08-08)
+
+承接 §1 结论 4/5(GDS 过提交假设),扫 `[gds] worker_threads ∈ {2,4,6,8}`,各重启后端带 `US3_GDS_PUT_TIMING=1`,GDS multipart 8M conc32 reps3 warmup1,解析 aio_write p50 + 双峰 + 吞吐:
+
+| gds wt | 吞吐 (MiB/s) | aio_write p50 (µs) | aio >10ms 尾部 | SLC% | 机理 |
+|---|---|---|---|---|---|
+| 2 | 1594 | 4166 | 0% | 49% | 2 在途无争抢(per-AIO 最优),但 2 worker 喂不饱→worker-bound |
+| **4(峰)** | **2300–2368** | **6008–6100** | ~7% | 25% | 在途≈RDMA(wt=4),per-AIO 趋同(6.0 vs RDMA 5.3);sweet spot |
+| 6 | 1828 | 10710 | 高 | 16% | 争抢回升,per-AIO 翻倍 |
+| 8(默认) | 1775–1894 | 11224–11399 | 60% | 4–? | 8 worker 过提交→NVMe 队列越过最优区→聚合反降 |
+
+**关键证据**:
+- **非单调曲线**(wt=4 处峰,wt=6/8 反降):wt=8 把更多并行度推给同一 NVMe,队列深度越过最优区→单流 AIO 延迟 2×(11.4 vs 6.0ms)+ 尾部爆(60% vs 7%)→聚合带宽反降 21–33%。"过提交适得其反"。
+- **争抢效应独立于 SLC 态**:wt=4 fresh(25% SLC)与 wt=8 fresh(4% SLC)对比,wt=4 SLC 占比更高(本应更快)但其 per-AIO 6.0ms 仍远低于 wt=8 11.4ms;同 TLC 桶 wt=4 ~6ms vs wt=8 ~11ms,2× 来自队列深度而非盘态。
+- **wt=4 = RDMA 同在途数**:RDMA `worker_threads=4`→aio 5.27ms/吞吐 2727;GDS wt=4→aio 6.0ms/吞吐 2300。GDS 仍低 16%(cuobj 读 2.7 vs 2.2ms + aio 略高),非在途数差异。
+- **wt=2 worker-bound**:per-AIO 4.2ms(最佳,无争抢)但 2 worker × 8M/~13ms ≈ 1600,worker 数成 cap。
+
+**结论**:`[gds] worker_threads` 默认 8→4,GDS 真写吞吐 +21–33%(~1894→~2300),per-AIO 延迟 -47%(11.4→6.0ms),争抢尾部 -53pp。零代码改动(仅配置),可立即落地。
 
 ---
 
