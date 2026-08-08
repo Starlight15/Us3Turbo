@@ -6,6 +6,21 @@
 
 ---
 
+## 0. 2026-08-07 复测校验(结论不变,数值在会话方差内)
+
+同条件复测(`mock_aio_write=1` 纯搬运,binary 含 MR-pool commit 4fdd47a;reps 3 warmup 1,client 32):
+
+| cp | GDS(原→复测) | RDMA(原→复测) |
+|---|---|---|
+| 4 | 2132 → 2233 | 6029 → 6757 |
+| 8 | 2802 → 3080 | 6369 → 6283 |
+| 16 | 3564 → 3985 | 6533 → 6786 |
+| 32 | 3664 → 3756 | 6614 → 6697 |
+
+全部落在 ±12% 会话方差内(最大偏差 RDMA cp4 +12%、GDS cp16 +12%;GDS cp4→cp16 涨 67% 的趋势、cp16→32 仅 +2.8% 的饱和拐点、RDMA 钝感均复现)。**所有结论不变**:cp<nt 跌 GDS、cp=nt=16 甜点、cp>nt 边际、RDMA 钝感。§3 原表(含 per-part rpc 的 13.2ms conn-pool 等待反推)保留为 08-06 历史 --trace 值;本次 cp 扫描未带 --trace,只有聚合吞吐 + per-round data-plane,故不重证 13.2ms 那一具体数,但 cp4<cp8<cp16≈cp32 的 GDS 趋势与该机制一致。RDMA mock 路径跳 memcpy 的变化见 [PART_SIZE §0](PART_SIZE_DEEP_ANALYSIS.md#0-2026-08-07-复测校验必读rdma-16m-结论已反转),对 cp 扫描无实质影响。
+
+---
+
 ## 1. 结论(先讲)
 
 1. **cp 的拐点在 cp = num_threads**:cp<nt 时 GDS 吞吐随 cp 线性下跌(rpc 涨);cp≥nt 后**饱和**,再大只压低尾部时延、不涨吞吐。
