@@ -17,7 +17,7 @@
 
 ### 1.1 结论
 
-分段上传 part=4M / nt=8 / cp=32,真写 ≈ 3.30 GiB/s,真读 ≈ 4.3 GiB/s(4M 对象,conc=32)。读 > 写(NVMe 读快、无写放大)。真写最优 part∈{2M,4M}(噪声内等效,选 4M:part 数减半、对齐 `max_single_put_bytes=4M`)——与 mock(8M)相反。
+分段上传 part=4M / nt=8 / cp=32,真写 ≈ 3.30 GiB/s,真读 ≈ 5.3 GiB/s(4M 对象,conc=16)。读 > 写(NVMe 读快、无写放大)。真写最优 part∈{2M,4M}(噪声内等效,选 4M:part 数减半、对齐 `max_single_put_bytes=4M`)——与 mock(8M)相反。
 
 ### 1.2 写性能扫描
 
@@ -67,16 +67,15 @@ conn_pool 4–48 扁平(3213–3374,±2.5%):cp=4 略低、cp≥8 均在 ~3300。
 
 ### 1.3 读性能
 
-**测试条件**: 扫描 concurrency ∈ {16,32,48,64};固定 part_size=4M(对象大小)、num_threads=8、conn_pool=32;count=128、warmup=1。
+**测试条件**: 扫描 concurrency ∈ {4,8,16};固定 part_size=4M(对象大小)、num_threads=8、conn_pool=32;count=128、warmup=1。
 
 | concurrency | 吞吐 (MiB/s) | ops/s | p95 (ms) |
 |---|---|---|---|
-| 16 | 4668 | 1167 | 20.7 |
-| 32 | 4310 | 1093 | 40.3 |
-| 48 | 4816 | 1204 | 59.8 |
-| 64 | 4226 | 1057 | 111.8 |
+| 4 | 4376 | 1094 | 6.5 |
+| 8 | 5143 | 1286 | 9.2 |
+| 16 | 5287 | 1322 | 17.8 |
 
-conc 16–48 均在 4.3–4.8 GiB/s;**conc=32 为推荐工作点**,conc≥48 p95 升至 60–112ms。读带宽 > 写带宽(NVMe 读无写放大,RDMA WRITE 一次推完)。
+conc 4–16 单调升(4.4→5.3 GiB/s),conc=16 近峰;**conc≥16 p95 升至 18ms**。读带宽 > 写带宽(NVMe 读无写放大,RDMA WRITE 一次推完)。
 
 ### 1.4 推荐配置
 
@@ -86,7 +85,7 @@ conc 16–48 均在 4.3–4.8 GiB/s;**conc=32 为推荐工作点**,conc≥48 p95
 | `--num_threads` | 8 |
 | `--backend_conn_pool_size` | 32 |
 | `[gds] worker_threads` | 4 |
-| 稳态吞吐 | 真写 ~3.30G / 真读 ~4.3G |
+| 稳态吞吐 | 真写 ~3.30G / 真读 ~5.3G |
 
 ### 1.5 瓶颈分析
 
