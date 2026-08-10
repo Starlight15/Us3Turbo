@@ -91,3 +91,33 @@ conc 16–48 吞吐均在 4.3–4.8 GiB/s;**conc=32 为推荐工作点**(吞吐 
 | 稳态吞吐 | **真写 ~3.30G / 真读 ~4.3G** |
 
 > 注:绝对值随盘态(SLC/TLC 混态)与 governor 变化;本次为 SLC 已耗后的 TLC 稳态值(预填充后)。
+
+---
+
+## 6. 瓶颈分析(GDS PUT 路径)
+
+分段计时(4M part,32 并发;mock 搬运排除落盘,真 RDMA READ)。单 part-put 端到端 ~6.9 ms:
+
+**proxy 视角**
+
+| 段 | avg (µs) | 占比 |
+|---|---|---|
+| validate | 341 | 5% |
+| 等 backend(recv) | 5556 | 80% |
+| WritePartIndex | 1031 | 15% |
+
+连接池无争抢(acquire_conn 1µs)、TCP 发 7µs;recv 的 5.6ms 纯粹等 backend。
+
+**backend 内(total_recv_to_response ~4.06ms)**
+
+| 段 | avg (µs) | p95 (µs) | 说明 |
+|---|---|---|---|
+| worker queue_wait | 988 | 3202 | 4 线程池排队长尾(max 15.5ms) |
+| rdma_read | 940 | 1662 | 真 RDMA READ 4M,单流 ~4.4G,不慢 |
+| done_to_response | 510 | 1454 | 完成到响应发出 |
+| 其他(main/memcpy/crc) | ~1630 | — | |
+
+proxy recv 5556 − backend 4064 ≈ **1500µs = proxy↔backend 往返+框架开销**。
+
+**瓶颈**:不在数据搬运(RDMA READ 0.94ms 健康),而在 ① proxy↔backend 往返+框架开销 ~1.5ms/part ② backend 4 线程 worker 池队列等待长尾(p95 3.2ms)——均属调度/串行化开销,非 NVMe 非带宽。落盘(真写)额外 +20%(真写 3298 vs mock 搬运 3941),即 worker 串行 NVMe AIO 之上再压一段盘延迟,亦为 worker_threads=4 为峰、8 过提交反降之因。
+
