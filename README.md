@@ -231,7 +231,7 @@ GET bench 同构，默认 `--size 4M`、`--key-prefix bench-get`；GET bench 内
 全部对象再并发 GET 测读吞吐，故 count 即播种+读取对象数。
 
 > 注意：`--mock-aio-write=1` 下 GET 不可用（数据未落盘），GET bench 必须在关 mock 后跑。
-> bench warmup 统计已修复（见 `docs/BENCH_FIX.md`），`--warmup` 不再虚高吞吐。
+> bench warmup 统计已修复，`--warmup` 不再虚高吞吐（warmup 字节不计入吞吐分子）。
 
 ### 4.3 时延 trace（用于调参分析）
 
@@ -291,7 +291,7 @@ GDS ≈ 3864 MiB/s、RDMA ≈ 6527–6700 MiB/s。完整数据与参数影响分
 ## 6.1 真实读写端到端（mock 关闭）
 
 关 mock 后 PUT 真落盘、GET 可用，覆盖单步 PUT / 分段上传 / 下载 GET。完整数据见
-`docs/REAL_READWRITE_REPORT.md`，bench 修复说明见 `docs/BENCH_FIX.md`。
+`docs/REAL_READWRITE_REPORT.md`。
 
 ```bash
 # 1. 后端真实读写（去掉 --mock-aio-write=1）

@@ -61,8 +61,9 @@ nohup ./build/proxy/us3_turbo_proxy --flagfile=proxy/conf/proxy.flags \
 
 ### 1.4 bench 工具修复(本轮前)
 
-测试前修复了 bench 两个 warmup 统计 bug,详见 `docs/BENCH_FIX.md`(见下节)。修复前
-单步 PUT/GET 的 warmup 会污染吞吐分子;multipart bench 不受影响。**本轮所有数值均来自
+测试前修复了 bench 两个 warmup 统计 bug:warmup 字节曾计入吞吐分子致虚高、GET
+warmup 命中假 key 产假 fail;拆 `put_one`/`get_one` 后 warmup 不记账/不计时。
+multipart bench 不受影响(warmup round 本就不进 stats)。**本轮所有数值均来自
 修复后的二进制。**
 
 ---
