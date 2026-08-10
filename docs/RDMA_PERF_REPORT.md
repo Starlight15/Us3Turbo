@@ -28,6 +28,18 @@
 | 1–8 | 3501 / 3509 / 3627 / 3601 / 3447 / 3583 / 3619 / 3583 |
 | **均值** | **~3559**(区间 3447–3627,±3%) |
 
+#### 1.2.1 num_threads 扫描
+
+**测试条件**: 扫描 num_threads ∈ {4,8,16};固定 part_size=4M、conn_pool=32、concurrency=32、reps=3、warmup=1。
+
+| num_threads | 吞吐 (MiB/s) |
+|---|---|
+| 4 | 3674 |
+| 8 | 3524 |
+| 16 | 3529 |
+
+num_threads 4–16 钝感(±2%,瓶颈在 NVMe 落盘,与 GDS 同;mock 下瓶颈在 RNIC 硬件)。**选 num_threads=8**(省线程)。
+
 ### 1.3 读性能
 
 **测试条件**: 扫描 concurrency ∈ {16,32,48,64};固定 size=4M(对象大小)、num_threads=8、conn_pool=32、count=128、warmup=1。

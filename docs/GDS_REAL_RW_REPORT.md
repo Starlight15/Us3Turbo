@@ -37,16 +37,15 @@
 
 #### 1.2.2 num_threads
 
-**测试条件**: 扫描 num_threads ∈ {4,8,16,32};固定 part_size=4M、conn_pool=32;total=64M、concurrency=32、reps=3、warmup=1。
+**测试条件**: 扫描 num_threads ∈ {4,8,16};固定 part_size=4M、conn_pool=32;total=64M、concurrency=32、reps=3、warmup=1。
 
 | num_threads | 吞吐 (MiB/s) |
 |---|---|
-| 4 | 3260 |
-| 8 | 3299 |
-| 16 | 3295 |
-| 32 | 3311 |
+| 4 | 3449 |
+| 8 | 3478 |
+| 16 | 3604 |
 
-num_threads 4–32 全程扁平(±1.5%,nt=32 略高但差异 <1%)。真写瓶颈在 NVMe 不在 proxy 调度。**选 num_threads=8**(省线程,够用有余量)。
+num_threads 4–16 扁平(±2%,nt=16 略高)。真写瓶颈在 NVMe 不在 proxy 调度。**选 num_threads=8**(省线程,差异 <4%)。
 
 #### 1.2.3 backend_conn_pool_size
 
