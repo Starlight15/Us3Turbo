@@ -5,7 +5,7 @@
 --backend_timeout_ms=30000
 --backend_setid=1
 --max_single_put_bytes=4194304
---multipart_part_size=2097152
+--multipart_part_size=4194304
 --log_level=warn
 --backend_conn_pool_size=32
 --dbgate_endpoint=192.168.1.198:20165
