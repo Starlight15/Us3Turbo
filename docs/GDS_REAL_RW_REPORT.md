@@ -1,54 +1,80 @@
 # GDS 性能报告
 
-**测试日期**:2026-08-10  **环境**:governor=performance;client=backend 同机 192.168.1.198(mlx5_2,100Gb);NVMe `/dev/nvme1n1`;backend `[gds] worker_threads=4`;client 32 线程
+**测试日期**:2026-08-10
+
+**环境**:governor=performance;client=backend 同机 192.168.1.198(mlx5_2,100Gb);NVMe `/dev/nvme1n1`;backend `[gds] worker_threads=4`;client 32 线程
+
 **工具**:`us3_turbo_bench_gds_multipart`(写)、`us3_turbo_bench_gds_get`(读)
 
-两个场景:
-- **A. 实际读写**:backend `[gds] mock_aio_write=0`、`mock_rdma_read=0` —— 真 RDMA READ 搬运 + NVMe 落盘;GET 真 RDMA WRITE 回 client。
-- **B. mock 仅搬运**:backend `[gds] mock_aio_write=1` —— 跳过落盘,只测 client→proxy→backend RDMA READ 数据搬运。
+**两个场景**
+
+- **实际读写**:backend `[gds] mock_aio_write=0`、`mock_rdma_read=0` —— 真 RDMA READ 搬运 + NVMe 落盘;GET 真 RDMA WRITE 回 client。
+- **mock 仅搬运**:backend `[gds] mock_aio_write=1` —— 跳过落盘,只测 client→proxy→backend RDMA READ 数据搬运。
 
 ---
 
-## A. 实际读写
+## 1 实际读写
 
-### A.1 结论
+### 1.1 结论
 
-**分段上传 part=4M / nt=8 / cp=32,真写 ≈ 3.30 GiB/s,真读 ≈ 4.3 GiB/s(4M 对象/conc=32)。读 > 写(NVMe 读快、无写放大)。真写最优 part∈{2M,4M}(噪声内等效,选 4M:part 数减半、对齐 `max_single_put_bytes=4M`)——与 mock(8M)相反。**
+分段上传 part=4M / nt=8 / cp=32,真写 ≈ 3.30 GiB/s,真读 ≈ 4.3 GiB/s(4M 对象/conc=32)。读 > 写(NVMe 读快、无写放大)。真写最优 part∈{2M,4M}(噪声内等效,选 4M:part 数减半、对齐 `max_single_put_bytes=4M`)——与 mock(8M)相反。
 
-### A.2 写三轴扫描
+### 1.2 写三轴扫描
 
-**part_size(nt=16/cp=16 固定)**
+#### 1.2.1 part_size(nt=16/cp=16 固定)
 
 | part | 吞吐 (MiB/s) | data-plane avg (ms) |
 |---|---|---|
 | 1M | 3030 | 647 |
 | 2M | 3635 | 537 |
-| **4M** | **3398** ★ | 558 |
+| **4M** | **3398** | 558 |
 | 8M | 2373 | 775 |
 | 16M | 1629 | 1030 |
 
 小 part 并行度高、≥8M 输给 NVMe 写延迟/排队。2M 与 4M 相差 ~6%(单轮噪声内,实测等效)。真写瓶颈是 NVMe,小 part 更优。**选 part=4M**:与 2M 同效但 part 数减半、对齐 `max_single_put_bytes=4M`。
 
-**num_threads(part=2M,cp=32 固定)**:nt 4–16 扁平(±1.5%),nt=32 反降 -10%。真写瓶颈在 NVMe 不在 proxy 调度。**选 nt=8**。
+#### 1.2.2 num_threads(part=2M,cp=32 固定)
 
-**backend_conn_pool_size(part=2M,nt=8 固定)**:cp≥nt 单调升,32–48 饱和,64 过配反降 -13%。**选 cp=32**。
+| nt | 吞吐 (MiB/s) |
+|---|---|
+| 4 | 3666 |
+| 8 | 3619 |
+| 16 | 3612 |
+| 32 | 3272 |
 
-**综合最优**:**part=4M / nt=8 / cp=32 → ≈ 3.30 GiB/s**。
+nt 4–16 扁平(±1.5%),nt=32 反降 -10%。真写瓶颈在 NVMe 不在 proxy 调度。**选 nt=8**。
 
-### A.3 读 GDS GET(真读)
+#### 1.2.3 backend_conn_pool_size(part=2M,nt=8 固定)
+
+| cp | 吞吐 (MiB/s) |
+|---|---|
+| 4 | 3497 |
+| 8 | 3601 |
+| 16 | 3684 |
+| 32 | 3736 |
+| 48 | 3740 |
+| 64 | 3255 |
+
+cp≥nt 单调升,32–48 饱和,64 过配反降 -13%。**选 cp=32**。
+
+#### 1.2.4 综合最优
+
+**part=4M / nt=8 / cp=32 → ≈ 3.30 GiB/s**。
+
+### 1.3 读 GDS GET(真读)
 
 4M 对象,nt=8/cp=32,count=128,warmup=1:
 
 | conc | 吞吐 (MiB/s) | ops/s | p95 (ms) |
 |---|---|---|---|
 | 16 | 4668 | 1167 | 20.7 |
-| **32** | **4310** ★ | 1093 | 40.3 |
+| **32** | **4310** | 1093 | 40.3 |
 | 48 | 4816 | 1204 | 59.8 |
 | 64 | 4226 | 1057 | 111.8 |
 
 conc 16–48 均在 4.3–4.8 GiB/s;**conc=32 为推荐工作点**,conc≥48 p95 升至 60–112ms。读带宽 > 写带宽(NVMe 读无写放大,RDMA WRITE 一次推完)。
 
-### A.4 推荐配置(实际读写)
+### 1.4 推荐配置
 
 | 项 | 值 |
 |---|---|
@@ -58,9 +84,9 @@ conc 16–48 均在 4.3–4.8 GiB/s;**conc=32 为推荐工作点**,conc≥48 p95
 | `[gds] worker_threads` | 4 |
 | 稳态吞吐 | **真写 ~3.30G / 真读 ~4.3G** |
 
-### A.5 瓶颈分析(实际读写,4M part,32 并发)
+### 1.5 瓶颈分析(4M part,32 并发)
 
-单 part-put 端到端 ~8.7 ms:
+单 part-put 端到端 ~8.7 ms。
 
 **proxy 视角**
 
@@ -78,25 +104,25 @@ conc 16–48 均在 4.3–4.8 GiB/s;**conc=32 为推荐工作点**,conc≥48 p95
 |---|---|---|---|
 | worker queue_wait | 2432 | 5218 | 4 线程池排队 |
 | rdma_read | 963 | 1323 | RDMA READ 4M |
-| **aio_write** | **2159** | 3915 | **NVMe 落盘** |
+| aio_write | 2159 | 3915 | NVMe 落盘 |
 | main_to_done | 2904 | 4679 | 含 aio 完成等待 |
 | 其他(memcpy/crc) | ~700 | — | |
 
-proxy recv 7347 − backend 7351 ≈ 0(无框架往返 gap,backend 处理占满)。
+proxy recv 7347 − backend 7351 ≈ 0(backend 处理占满,无框架往返 gap)。
 
-**瓶颈**:**NVMe 落盘(aio_write 2.16ms + main_to_done 2.9ms 等完成)+ worker 4 线程池排队(p95 5.2ms)**。数据搬运(rdma_read 0.96ms)非瓶颈;proxy 仅占 ~16%。真写受 NVMe 写延迟 + worker 串行化双重约束,故 worker_threads=4 为峰、8 过提交反降。
+**瓶颈**:NVMe 落盘(aio_write 2.16ms + main_to_done 2.9ms 等完成)+ worker 4 线程池排队(p95 5.2ms)。数据搬运(rdma_read 0.96ms)非瓶颈;proxy 仅占 ~16%。真写受 NVMe 写延迟 + worker 串行化双重约束,故 worker_threads=4 为峰、8 过提交反降。
 
 ---
 
-## B. mock 仅搬运(跳过落盘)
+## 2 mock 仅搬运(跳过落盘)
 
-### B.1 吞吐
+### 2.1 吞吐
 
 part=4M / nt=8 / cp=32 / conc=32,8 轮:3947 / 3649 / 3727 / 4121 / 4134 / 4187 / 3974 / 3789 MiB/s → **均值 ~3941 MiB/s**(区间 3649–4187,±7%)。比实际读写(3298)+20% —— 即 NVMe 落盘约占端到端 20%。
 
-### B.2 瓶颈分析(仅搬运,4M part,32 并发)
+### 2.2 瓶颈分析(4M part,32 并发)
 
-单 part-put 端到端 ~6.9 ms:
+单 part-put 端到端 ~6.9 ms。
 
 **proxy 视角**
 
@@ -121,7 +147,7 @@ proxy recv 5556 − backend 4064 ≈ **1500µs = proxy↔backend 往返+框架�
 
 ---
 
-## C. 两场景对比
+## 3 两场景对比
 
 | | 实际读写 | mock 仅搬运 | 差 |
 |---|---|---|---|
