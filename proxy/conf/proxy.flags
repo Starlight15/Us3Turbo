@@ -7,7 +7,7 @@
 --max_single_put_bytes=4194304
 --multipart_part_size=4194304
 --log_level=warn
---backend_conn_pool_size=32
+--backend_conn_pool_size=16
 --dbgate_endpoint=192.168.1.198:20165
 --dbgate_timeout_ms=5000
 --dbgate_conn_pool_size=4
