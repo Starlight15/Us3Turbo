@@ -286,7 +286,7 @@ nohup ./build/proxy/us3_turbo_proxy --flagfile=proxy/conf/proxy.flags > /tmp/pro
 
 最优配置（mock-on，client 32 线程，64M）实测：part=8M / nt=16 / cp=16 →
 GDS ≈ 3864 MiB/s、RDMA ≈ 6527–6700 MiB/s。完整数据与参数影响分析见
-`docs/PERF_BENCH_REPORT.md` 与 `docs/{PART_SIZE,NUM_THREADS,CONN_POOL}_DEEP_ANALYSIS.md`。
+`docs/{PART_SIZE,NUM_THREADS,CONN_POOL}_DEEP_ANALYSIS.md`。
 
 ## 6.1 真实读写端到端（mock 关闭）
 

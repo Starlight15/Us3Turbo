@@ -5,7 +5,7 @@
 ## 背景
 
 跑真实读写单步测试时发现 bench 工具两个 warmup 相关统计 bug。这两个 bug **不影响
-multipart bench**(即 `docs/PERF_BENCH_REPORT.md`、三个 `*_DEEP_ANALYSIS.md` 用的
+multipart bench**(即三个 `*_DEEP_ANALYSIS.md` 用的
 bench),其 warmup round 返回值被丢弃、不进 stats;只影响单步 PUT/GET bench。
 
 ## Bug 1:单步 PUT warmup 污染吞吐

@@ -2,7 +2,7 @@
 
 **测试日期**:2026-08-06(初测)/ 2026-08-08(复测,见 §0)
 **测试目标**:在最优配置(`part=8M / num_threads=16 / backend_conn_pool_size=16`,见
-`docs/PERF_BENCH_REPORT.md` 与三个 `*_DEEP_ANALYSIS.md`)下,关闭 backend mock,
+三个 `*_DEEP_ANALYSIS.md`)下,关闭 backend mock,
 测含 NVMe 持久化的真实吞吐;覆盖单步 PUT、分段上传、下载 GET 三类操作;并与
 `--mock-aio-write=1`(纯数据搬运,无落盘)对照。
 
