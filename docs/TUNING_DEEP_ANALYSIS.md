@@ -2,7 +2,7 @@
 
 **最近校验**:2026-08-10(mock,`mock_aio_write=1` 两路 GDS+RDMA,governor=performance,client 32,64M,reps≥3 warmup1)
 
-三轴调参(part_size / num_threads / backend_conn_pool_size)在 mock 纯搬运 regime 下的系统化扫描。每个轴给出结论、数据、原因、规则与历史勘误。跨轴统一规律见末节。
+三轴调参(part_size / num_threads / backend_conn_pool_size)在 mock 纯搬运 regime 下的系统化扫描。每个轴给出结论、数据、原因、规则。跨轴统一规律见末节。
 
 > 注:绝对值随 governor(performance≈2× powersave,因 mock 是 CPU-bound)、nt/cp 变化;**结论在两 regime 下均成立**,绝对值不可跨 regime 直接比。
 
@@ -29,10 +29,6 @@ GDS 16M 灾难性崩(1759 < 4M 3096),RDMA 16M 仅略低于 8M(扁平)。
 - **4M 偏低**:每 part 固定开销 ~20ms(brpc 序列化 + proxy 调度 + 网络 + backend 建链回填)是常量;part 越小,这笔开销摊到 payload 比例越高 → 净带宽低。
 - **8M 甜点**:固定开销摊薄到可接受;backend 干活(rdma_read + crc)随 size 亚线性(16M rdma_read 仅 8M 的 1.79×);排队尚未起量 → 单 part 净带宽最高。
 - **16M 崩**:32 并发 × 16M = 512MB 在途,单 part 占槽位 ~4× 于 8M → 队列深度×4。GDS 主 EventLoop 串行 backlog 爆涨 → 16M 崩;RDMA 因 mock 跳 memcpy(commit 4fdd47a)免了主 loop memcpy 罚项,故只略降(~9%)而非崩。
-
-### 1.4 历史勘误
-
-08-07 复测曾记 RDMA 16M=7761 > 8M=6516("16M 反转为最优")。那是**低吞吐 regime**(governor=powersave,~6500 量级)下的结论:mock memcpy skip 消除 16M 主 loop 罚项后,大 part 摊薄占优。08-10 在 governor=performance(~10000 量级)下,32 并发 16M 在途撞 RNIC/在途上限,16M 反而略低于 8M。**8M 为峰更稳健**(两 regime 下 8M 均不输,16M 仅在低吞吐 regime 占优)。
 
 ---
 
@@ -68,10 +64,6 @@ GDS 16M 灾难性崩(1759 < 4M 3096),RDMA 16M 仅略低于 8M(扁平)。
 - RDMA:任意 nt 到硬件天花板,选小省资源。
 - 高吞吐下不必纠结 nt 精确值(cp 固定时 nt 4–32 差 <5%);**只别让 nt>cp**。
 
-### 2.5 历史勘误
-
-08-07 复测记 GDS cp=8 下 U 形(nt=8 峰 2800、nt=32 跌到 2771,-17%)。08-10 同点扁平(~3760,nt32 仅 -4%):低吞吐 regime 的 U 形被高吞吐抹平。**nt=cp=16 最优与 nt≤cp 规则两 regime 下均成立**,仅"nt 敏感度"的强声明需弱化。
-
 ---
 
 ## 3. backend_conn_pool_size 调参:cp≥nt,饱和点随吞吐上移
@@ -103,10 +95,6 @@ GDS 16M 灾难性崩(1759 < 4M 3096),RDMA 16M 仅略低于 8M(扁平)。
 - **cp ≥ nt,且 cp ≥ 16**(GDS 高吞吐下 cp32 仍略优,但 cp16 已进 95% 区,选 16 够用且省连接)。
 - RDMA:任意 cp 到硬件天花板,选小省资源。
 - 高吞吐下 cp 精确值边际小(cp16 vs cp32 差 +5%);**只别让 cp<nt 严重 under-provision**。
-
-### 3.5 历史勘误
-
-08-07 复测记 GDS cp4=2233 << cp8=3080 << cp16≈cp32(3985/3756,"cp<nt 跌、cp=16 饱和")。08-10 同点:cp4≈cp8(~3600,不再大跌)、cp32(4418)略 > cp16(4197,饱和点上移)。低吞吐 regime 的"cp<nt 剧烈劣化 + cp=16 拐点"被高吞吐抹平/上移。**cp≥nt 规则两 regime 下均成立**,仅拐点位置与劣化强度需弱化。
 
 ---
 
