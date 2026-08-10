@@ -1,13 +1,13 @@
 --proxy_port=9100
 --bind_host=192.168.1.198
---num_threads=16
+--num_threads=8
 --backend_endpoint=192.168.1.198:24000
 --backend_timeout_ms=30000
 --backend_setid=1
 --max_single_put_bytes=4194304
---multipart_part_size=8388608
+--multipart_part_size=2097152
 --log_level=warn
---backend_conn_pool_size=16
+--backend_conn_pool_size=32
 --dbgate_endpoint=192.168.1.198:20165
 --dbgate_timeout_ms=5000
 --dbgate_conn_pool_size=4
