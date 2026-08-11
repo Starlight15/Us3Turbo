@@ -2,9 +2,6 @@
 
 > 面向高性能场景的 GDS + RDMA 双通路对象存储。
 
-**测试日期**：2026-08-11
-**文档定位**：项目级总览。逐层数据与复测方法见 `GDS_REAL_RW_REPORT.md`、`RDMA_PERF_REPORT.md`、`TUNING_DEEP_ANALYSIS.md`；冷层接入场景见 `MOONCAKE_OFFLOAD_SOLUTION.md`。
-
 ---
 
 ## 1 项目简介
@@ -79,11 +76,11 @@ flowchart LR
 
 ### 2.2 控制面：proto + brpc
 
-控制面全部由 `proto/control_plane.proto` 定义，基于 brpc。核心设计是**统一 PutObject 接口 + 通路枚举**：请求携带 `path`（PATH_GDS / PATH_RDMA）选择通路，并按通路附带对应数据源——GDS 通路附带 cuObj RDMA token（自描述 GPU 显存地址与 remote key），RDMA 通路附带 hex 编码的 listener 地址、rkey、addr、size。
+控制面由 `control_plane.proto` 定义，基于 brpc。核心设计是**统一 PutObject 接口 + 通路枚举**：请求携带 `path`（PATH_GDS / PATH_RDMA）选择通路，并按通路附带对应数据源——GDS 通路附带 cuObj RDMA token（自描述 GPU 显存地址与 remote key），RDMA 通路附带 hex 编码的 listener 地址、rkey、addr、size。
 
-- **每条链路一个独立 RPC**（`GdsPut` / `RdmaPut` / `UploadPartGds` / `UploadPartRdma` …），代码与测试隔离，v1 不做跨通路抽象。
-- **Mode B**：所有控制面经 proxy，client 只与 proxy 交互；proxy 同步转发 backend。这是与"client 直连 backend"相对的集中调度模型，便于鉴权/限流/索引统一。
-- **trace_id 贯穿三层**：proxy 生成 → 写进 dbgate session / ufile-ac 协议 sessionId / backend `[rdma-*]` 日志 → 响应回 client。定位任一对象的全链路只需 grep 一个 id。
+- **集中转发**：client 只与 proxy 交互，proxy 同步转发 backend；数据面则由 client 与 backend 直连。鉴权、限流、part 索引统一在 proxy 完成。
+- **每条通路一组独立 RPC**（单步 PutObject、分段 UploadPart、GET 各一套 GDS / RDMA 接口），通路之间互不影响。
+- **trace_id 贯穿全链路**：proxy 为每个请求生成唯一 trace_id，写入索引、后端协议与日志，并随响应回传；排查任一对象只需按该 id 检索。
 
 ### 2.3 数据面：GDS 与 RDMA 双通路
 
@@ -94,38 +91,36 @@ flowchart LR
 | **数据源 buffer** | GPU 显存（device memory）| 主机内存（host memory）|
 | **token 载体** | cuObj RDMA token（显存地址 + remote key 自描述串）| hex 串，含 listener ip:port + rkey + addr + size |
 | **连接建立** | cuObj 链路（:18666）| RDMA CM（client 起 listener，backend 反向连接）|
-| **搬运原语** | GDS RDMA READ backend 拉 GPU 显存 → NVMe | `ibv_post_send(RDMA_READ)` RC QP，backend 拉主机内存 → NVMe |
+| **搬运原语** | GDS RDMA READ，backend 拉 GPU 显存 → NVMe | RDMA READ（RC QP），backend 拉主机内存 → NVMe |
 | **GET** | RDMA WRITE 回 client 显存 | RDMA WRITE 回 client 主机内存 |
 | 省去的开销 | 连 `cudaMemcpy(host)` 都省，GPU 张量直接读写、无中转拷贝 | 省内核 TCP/`send`/`recv` 拷贝，host buffer 零拷贝 |
 | **适用** | 训练 checkpoint 落盘 / KV cache 直接读取，GPU 侧零额外拷贝 | 主机侧大对象、非 CUDA 数据、跨进程共享内存 |
 
-> 采用 pull（RDMA READ）而非 push（RDMA WRITE）模型的原因：client 的 buffer 地址/钥匙由 client 自描述发布，backend 解码后主动拉取，client 无需预先 `post_recv` 大缓冲，也无需向对端暴露自身内存布局——契合对象存储"client 多变、backend 固定"的不对称关系。
+> 采用 pull（RDMA READ）而非 push（RDMA WRITE）模型的原因：client 的 buffer 地址/钥匙由 client 自描述发布，backend 解码后主动拉取，client 无需预先开辟接收缓冲，也无需向对端暴露自身内存布局——契合对象存储"client 多变、backend 固定"的不对称关系。
 
-### 2.4 proxy 内部分层（依赖注入装配）
+### 2.4 proxy 内部分层
 
 ```
-ProxyService (brpc Control 实现,只做 ClosureGuard + proto↔域对象转换 + Access 日志)
-   ├── SinglePut     — 单步 GdsPut / RdmaPut
-   ├── Multipart      — Create/UploadPart/Complete/Abort 会话(内存态,Mongo TTL 管 session 生命周期)
-   └── GetObject      — Stat / GdsGet / RdmaGet
-        │
-        ├── UfileAcClient   — proxy→backend 二进制协议(ufile_ac_protocol),连接池 + SendAndRecv
-        │     └── TcpConnection (连接池,backend_conn_pool_size)
-        └── UploadIndex     — part 索引持久化(MongoUploadIndex,经 dbgate),GET 装配靠它
+ProxyService（brpc 服务入口：鉴权 / 转发 / 访问日志）
+   ├── SinglePut     单步上传
+   ├── Multipart      分段上传会话（内存态，过期由 TTL 索引回收）
+   └── GetObject      下载
+         ├── 连接池    proxy→backend TCP 连接复用
+         └── 索引模块  part 元数据持久化（GET 装配靠它）
 ```
 
-- **proxy 是无状态转发 + 会话持有**：multipart 会话在内存，MongoDB TTL 索引管过期，无后台线程；handler 并发安全。
-- **连接池是关键调参点**：`backend_conn_pool_size` 决定 proxy→backend 的并发度，须与 `num_threads`（brpc worker）匹配，否则并发不足以充分利用 backend（实测 GDS 对该参数敏感，RDMA 钝感）。
-- **`multipart_part_size` 是硬上限**：proxy 在 `multipart.cpp` 校验 part_size ≤ 该值；bench `--part-size` 须对齐，否则被拒。
+- proxy 本身无状态：分段会话驻留内存，过期由索引层 TTL 回收，无需后台线程。
+- 连接池大小决定 proxy→backend 并发度，需与 brpc 工作线程数匹配；实测 GDS 对其敏感、RDMA 不敏感。
+- 分段 part 大小是硬上限，client 须与配置一致，否则被拒。
 
 ### 2.5 backend（ufile-ac）数据路径
 
-backend 是独立仓 `ggds-compile-env/ufile-ac`，本仓不构建它，只通过 `ufile_ac_protocol.h`（从 backend `message.h` 拷贝对齐）与之通信。关键设计：
+backend 是独立部署的 ufile-ac 进程，proxy 通过自定义二进制协议与之通信。关键设计：
 
-- **裸盘直写**：`/dev/nvme1n1` 整盘裸用（经 `osd/set01-m00-d00` 软链），**不经任何文件系统**，libaio 直接提交 NVMe 队列，避免 page cache / inode 开销。
-- **worker 线程池**：`[gds]` / `[rdma] worker_threads` 各 4，接 RDMA READ 完成后串行落盘；主 EventLoop 串行 dispatch。
-- **MR pool**：每请求 `ibv_reg_mr` 7 ms 的瓶颈已用 MR pool（commit 4fdd47a，共享 PD）降至 ~0，避免 per-req 注册开销。
-- **mock 开关**：`mock_aio_write=1` 跳过落盘，只测数据搬运段（定位搬运瓶颈，排除 NVMe 干扰）；`mock_rdma_read` / `mock_mode` 控 RDMA 侧 mock。性能调参常用 mock-on 隔离变量。
+- **裸盘直写**：NVMe 整盘裸用，**不经任何文件系统**，libaio 直接提交 NVMe 队列，避开 page cache 与 inode 开销。
+- **worker 线程池**：每通路 4 线程，接 RDMA READ 完成后串行落盘；主循环串行调度。
+- **内存注册池**：RDMA 每次注册内存原为 ~7 ms 瓶颈，已用注册池摊销到接近 0。
+- **搬运与落盘可分离**：可跳过落盘单独测数据搬运能力（§3 中 mock 数值即搬运-only）。
 
 ### 2.6 完整 PUT 数据流（分段上传）
 
@@ -151,7 +146,7 @@ sequenceDiagram
   P->>P: 装配 part 索引 → 对象元数据
 ```
 
-> `block_key = obj_id + "_" + (part_number-1)`，GET 装配靠它定位落盘 block。`trace_id` 贯穿 C→P→B→DB 四列日志，任一对象定位只需 grep 一个 id。
+> 每个 part 落盘后以唯一 key 索引，GET 时按 key 装配还原对象；trace_id 贯穿全链路日志，排查任一对象只需按 id 检索。
 
 ---
 
@@ -164,43 +159,35 @@ sequenceDiagram
 | CPU | Xeon 8358P，128 核 |
 | 内存 | 2.0 TiB |
 | GPU | 8× A800-SXM4-80GB（GDS 用 GPU0）|
-| RNIC | mlx5_2 → ens13f0np0，100Gb ConnectX-6 Dx |
-| NVMe | `/dev/nvme1n1`，7.15 TiB 裸盘，TLC 稳态（smart-log Data Units Written 82.06 TB）|
-| 部署 | client = proxy = backend 同机 192.168.1.198 |
-| governor | performance |
-| 最优配置 | part=4M / num_threads=8 / backend_conn_pool_size=16 / worker_threads=4 / client concurrency=16 |
+| RNIC | 100Gb ConnectX-6 Dx |
+| NVMe | 7.15 TiB 裸盘，TLC 稳态（累计写入 82 TB）|
+| 部署 | 同机（client = proxy = backend）|
 
-> **重要前提**：重启 backend 后须充分预热 NVMe + RDMA-CM，否则冷态写吞吐跌至 ~1.7G，预热数轮后回到稳态值。所有数据为 SLC 缓存耗尽后的 TLC 稳态值。
+> 以下为预热后的稳态值：重启后冷态写吞吐会暂时降至 ~1.7G，需预热数轮方回到稳态；数据取自 TLC 稳态（SLC 缓存已耗尽）。
 
 ### 3.2 GDS 通路性能
 
-| 指标 | 值 | 说明 |
-|---|---|---|
-| **真写吞吐** | **~3.30 GiB/s** | 8 轮稳态均值 3290 MiB/s，±6% |
-| **真读吞吐** | **~4.6 GiB/s** | conc=16，单调升（4171→4713）|
-| **mock 仅搬运** | ~3.73 GiB/s | 跳过落盘，+13% vs 真写 |
-| 单 part 端到端（真写）| ~12.3 ms | backend total ~8.42 ms |
-| RDMA READ 4M | ~0.92 ms | 数据搬运段，非瓶颈 |
-| aio_write（落盘）| ~2.3 ms | NVMe 写，真写瓶颈 |
-| backend CPU（真写）| ~110%（≈1 核/128）| 富余 |
-| NVMe util（真写）| 84%（3.3 GB/s 写）| 真写硬件瓶颈 |
+| 指标 | 值 |
+|---|---|
+| 真写吞吐 | ~3.30 GiB/s（8 轮稳态均值，±6%）|
+| 真读吞吐 | ~4.6 GiB/s（并发 16）|
+| 仅搬运（跳过落盘）| ~3.73 GiB/s，比真写 +13% |
+| backend CPU | ~110%（≈1 核 / 128 核）|
+| NVMe 写利用率 | 84%（~3.3 GB/s）|
 
-**真写瓶颈** = NVMe 落盘（aio_write 2.3 ms + main_to_done 3.5 ms 等完成）+ worker 4 线程池排队（p95 9.2 ms）。数据搬运（RDMA READ 0.92 ms）开销可忽略，非瓶颈。
+真写瓶颈在 NVMe 落盘与 worker 线程池排队；数据搬运（RDMA READ）本身仅 ~0.9 ms，非瓶颈。
 
 ### 3.3 RDMA 通路性能
 
-| 指标 | 值 | 说明 |
-|---|---|---|
-| **真写吞吐** | **~3.7 GiB/s** | 8 轮稳态均值 3742 MiB/s，±4%；reps=20 稳态 3813 |
-| **真读吞吐** | **~4.7 GiB/s** | conc=16=4735，单调升 |
-| **mock 仅搬运** | ~9.8–10.4 GiB/s | 跳过落盘，+162% vs 真写 |
-| 单 part 端到端（真写）| ~11.4 ms | backend total ~4.85 ms |
-| RDMA READ 4M | ~0.88 ms | 数据搬运段 |
-| disk_wait（落盘）| ~3.4 ms（占 backend 70%）| NVMe 写，真写瓶颈 |
-| backend CPU（真写）| ~92%（≈0.9 核/128）| 富余 |
-| NVMe util（真写）| 99%（3.9 GB/s 写）| 近饱和 |
+| 指标 | 值 |
+|---|---|
+| 真写吞吐 | ~3.7 GiB/s（8 轮稳态均值，±4%）|
+| 真读吞吐 | ~4.7 GiB/s（并发 16）|
+| 仅搬运（跳过落盘）| ~9.8–10.4 GiB/s，比真写 +162% |
+| backend CPU | ~92%（≈0.9 核 / 128 核）|
+| NVMe 写利用率 | 99%（~3.9 GB/s）|
 
-**真写瓶颈** = NVMe 落盘（disk_wait 3.4 ms，占 70%）+ proxy↔backend 往返+框架 ~5.2 ms。RDMA 提交 AIO 队列更深，故 NVMe util 99% 高于 GDS 84%、吞吐也更高（~3.7G vs ~3.3G）。
+真写瓶颈在 NVMe 落盘（占后端 ~70%）与 proxy↔backend 往返；搬运能力被落盘掩盖，故 mock 下可达 ~10G。RDMA 提交队列更深，NVMe 利用率与吞吐均高于 GDS。
 
 ### 3.4 两通路对比与关键发现
 
@@ -216,7 +203,7 @@ sequenceDiagram
 
 1. **NVMe 写带宽是真写共同天花板**：GDS ~3.3G / RDMA ~3.7G，差异来自 AIO 队列深度而非搬运能力。mock 下两路搬运能力差距巨大（GDS ~3.7G / RDMA ~9.8G），但被 NVMe 落盘统一收敛到 ~3.3–3.7G。
 2. **数据搬运（RDMA READ）本身极快**（~0.9 ms），两端性能都消耗在搬运之外：真写受限于 NVMe 落盘，纯搬运受限于调度/框架往返与 worker 池长尾。
-3. **同机部署下 RNIC 物理口 phy 计数全程 ≈0**：数据搬运走 mlx5 网卡内部 loopback/host 路径，**不经 100Gb 物理链路**。故 mock ~10G 非 RNIC 带宽上限，而是 host 侧搬运 dispatch 串行 + 往返的上限（backend CPU ~69% 仍有裕量）。**跨机部署**才会经 RNIC 物理链路、受 100Gb 约束——跨机结论不可由同机数据外推。
+3. **同机部署下 RNIC 物理口流量全程 ≈0**：数据搬运走网卡内部 loopback 路径，**不经 100Gb 物理链路**。故 mock ~10G 非 RNIC 带宽上限，而是主机侧调度串行 + 往返的上限（backend CPU ~69% 仍有余量）。**跨机部署**才会经 RNIC 物理链路、受 100Gb 约束——跨机结论不可由同机数据外推。
 4. **真写与 mock 的最优 part 相反**：真写瓶颈在 NVMe 写延迟，小 part（2M/4M）并行度高更优；mock 瓶颈在固定开销摊薄，大 part（8M）更优。调参不可把 mock 结论直接套用到真写。
 5. **CPU / 内存 / RNIC 均非瓶颈**：CPU 富余 >120 核、内存 2 TiB；唯一硬件瓶颈是 NVMe 写带宽。
 
@@ -228,17 +215,16 @@ sequenceDiagram
 | backend RSS | ~1174 MiB | ~1119 MiB | ~601 MiB | ~1003 MiB |
 | NVMe util | 84%（3.3G 写）| 99%（3.9G 写）| 0.05%（跳过）| 0.05%（跳过）|
 | GPU0 显存 | ~1.45 GB（RDMA READ 源）| N/A（host 内存面）| ~1.45 GB | N/A |
-| RNIC phy | ≈0 | ≈0 | ≈0 | ≈0 |
+| RNIC 物理口 | ≈0 | ≈0 | ≈0 | ≈0 |
 
 ### 3.6 已知瓶颈与优化方向
 
-| 瓶颈 | 状态 | 证据 |
-|---|---|---|
-| `ibv_reg_mr` per-req 7 ms | **已根除**（MR pool，commit 4fdd47a）| regmr→0，稳态吞吐未变（7 ms 仅冷启动可见）|
-| NVMe 写带宽 | 硬件天花板，真写主瓶颈 | GDS 84% / RDMA 99% util |
-| worker 4 线程池排队 | 真写次要瓶颈，p95 9.2 ms | queue_wait avg 2.7ms / p95 9.2ms |
-| host dispatch 串行 | mock 瓶颈（同机 loopback）| backend CPU ~69% 仍有裕量 |
-| proxy↔backend 往返+框架 | 真写下 ~5 ms（mock ~0.7 ms）| recv − backend total 差值 |
+| 瓶颈 | 状态 |
+|---|---|
+| 内存注册开销 | 已用注册池消除（原 ~7 ms/请求）|
+| NVMe 写带宽 | 硬件上限，真写主瓶颈 |
+| worker 线程池排队 | 真写次要瓶颈 |
+| 主循环调度串行 | 仅搬运（同机）瓶颈 |
 
 **下一优化方向**（见 `MOONCAKE_OFFLOAD_SOLUTION.md`）：在跨机部署下，RNIC 物理链路将成为约束，需评估 100Gb 带宽是否够用、是否需要 Mooncake 风格的 P2P/RDMA 直连 offload 进一步减少中间跳数。
 
