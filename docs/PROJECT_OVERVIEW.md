@@ -9,11 +9,11 @@
 
 ## 1 项目简介
 
-### 1.1 它是什么
+### 1.1 系统定位
 
 Us3Turbo 是一个把 **GPUDirect Storage (GDS)** 与 **RDMA (RoCE/InfiniBand)** 两条高速数据通路集成进对象存储语义的系统。它对外提供单步 PUT / 分段上传 / GET 三类对象存储接口,对内把数据搬运下沉到 GPU 显存直通(GDS cuObj)或主机内存 RDMA(libibverbs RC + RDMA CM),控制面统一走 brpc proxy。
 
-一句话定位:**让 GPU / 主机内存与远端 NVMe 之间不再经过内核 TCP 协议栈和多次内存拷贝,把"对象存储的易用接口"接到"RDMA/GDS 的裸带宽"上**。
+**定位**:让 GPU / 主机内存与远端 NVMe 之间不再经过内核 TCP 协议栈和多次内存拷贝,把对象存储的易用接口接到 RDMA/GDS 的裸带宽上。
 
 ### 1.2 传统对象存储 vs 高性能对象存储
 
@@ -35,7 +35,7 @@ Us3Turbo 是一个把 **GPUDirect Storage (GDS)** 与 **RDMA (RoCE/InfiniBand)**
 - 传统链路里,一次对象写要穿过"应用 buffer → 内核 send buffer → 网卡 → 交换 → 网卡 → 内核 recv buffer → 用户态 server → 再 write 到 NVMe"。每一跳是一次内存拷贝或上下文切换,且 TCP/IP 协议栈本身吃 CPU。
 - Us3Turbo 里,GPU 显存的数据由 backend 用 **RDMA READ** 直接拉走并落盘——GPU 上的训练张量不必先 `cudaMemcpy` 到主机内存再 `send`;主机内存的 buffer 也由 backend 用 RDMA READ 直读、用 RDMA WRITE 直写(GET)。中间没有 `read`/`write` 系统调用的数据拷贝,RDMA 旁路内核,TCP 协议栈不参与数据搬运(同机部署甚至走网卡内部 loopback,不经物理链路)。
 
-**适合谁**:任何"数据生产者/消费者已在 GPU 或主机内存中、单对象 GB 级、对单流带宽和 per-object 延迟敏感"的高性能负载。定位是**通用高性能对象存储底座**,不限具体业务:
+**适用场景**:数据生产者/消费者已在 GPU 或主机内存中、单对象 GB 级、对单流带宽和 per-object 延迟敏感的高性能负载。定位为**通用高性能对象存储底座**,不限具体业务:
 
 - **AI 训练 / 推理**:checkpoint 落盘、KV cache offload(见 `MOONCAKE_OFFLOAD_SOLUTION.md`)、模型权重分发、GPU 显存大数据集直取——数据天然在显存,GDS 通路连 `cudaMemcpy` 都省。
 - **HPC / 科学计算**:大规模模拟输出、气象/地质/基因组数据的中间产物在节点间流动,RDMA 通路打满 RNIC 带宽,避免 TCP 协议栈吃 CPU。
@@ -43,7 +43,7 @@ Us3Turbo 是一个把 **GPUDirect Storage (GDS)** 与 **RDMA (RoCE/InfiniBand)**
 - **分布式存储 / 缓存层**:作为持久、跨集群、可扩容的远端冷层或共享数据层,补足"快但节点本地"介质的持久性与跨节点共享能力。
 - **视频 / 媒体处理**:高码率素材的高速 ingest 与分发,单流吞吐不再是瓶颈。
 
-凡是对"单流带宽、per-object 延迟、CPU 旁路、GPU 显存直通"中任一项有诉求的场景,都是 Us3Turbo 的目标负载。
+综上,对上述任一项有诉求的场景,均属于 Us3Turbo 的目标负载。
 
 ---
 
@@ -92,17 +92,17 @@ message ClientProxyPutRequest {
 
 两条通路**数据源不同、协议不同、互不共享逻辑**,但都遵循"client 发布自描述 token → backend 反向连接并 RDMA READ"的 pull 模型:
 
-| | **GDS 通路** | **RDMA 通路** |
+| 维度 | **GDS 通路** | **RDMA 通路** |
 |---|---|---|
 | **数据源 buffer** | GPU 显存(device memory) | 主机内存(host memory) |
 | **token 载体** | cuObj RDMA token(显存地址 + remote key 自描述串) | hex 串,含 listener ip:port + rkey + addr + size |
 | **连接建立** | cuObj 链路(:18666) | RDMA CM(client 起 listener,backend 反向连接) |
 | **搬运原语** | GDS RDMA READ backend 拉 GPU 显存 → NVMe | `ibv_post_send(RDMA_READ)` RC QP,backend 拉主机内存 → NVMe |
 | **GET** | RDMA WRITE 回 client 显存 | RDMA WRITE 回 client 主机内存 |
-| **省了什么** | 连 `cudaMemcpy(host)` 都省,GPU 张量直出直入 | 省内核 TCP/`send`/`recv` 拷贝,host buffer 零拷贝 |
+| 省去的开销 | 连 `cudaMemcpy(host)` 都省,GPU 张量直出直入 | 省内核 TCP/`send`/`recv` 拷贝,host buffer 零拷贝 |
 | **适用** | 训练 checkpoint 落盘 / KV cache 直取,GPU 侧零额外拷贝 | 主机侧大对象、非 CUDA 数据、跨进程共享内存 |
 
-> 为什么是 pull(RDMA READ)而不是 push(RDMA WRITE)?因为 client 的 buffer 地址/钥匙由 client 自描述发布、backend 解码后主动拉,client 不需要预先 `post_recv` 大缓冲、不需要对端知道自己的布局——更契合"对象存储 client 多变、backend 固定"的不对称关系。
+> 采用 pull(RDMA READ)而非 push(RDMA WRITE)模型的原因:client 的 buffer 地址/钥匙由 client 自描述发布,backend 解码后主动拉取,client 无需预先 `post_recv` 大缓冲,也无需向对端暴露自身内存布局——契合对象存储"client 多变、backend 固定"的不对称关系。
 
 ### 2.4 proxy 内部分层(依赖注入装配)
 
@@ -118,7 +118,7 @@ ProxyService (brpc Control 实现,只做 ClosureGuard + proto↔域对象转换 
 ```
 
 - **proxy 是无状态转发 + 会话持有**:multipart 会话在内存,MongoDB TTL 索引管过期,无后台线程;handler 并发安全。
-- **连接池是关键调参点**:`backend_conn_pool_size` 决定 proxy→backend 的并发度,须与 `num_threads`(brpc worker)匹配,否则喂不饱 backend(实测 GDS 对该参数敏感,RDMA 钝感)。
+- **连接池是关键调参点**:`backend_conn_pool_size` 决定 proxy→backend 的并发度,须与 `num_threads`(brpc worker)匹配,否则并发不足以打满 backend(实测 GDS 对该参数敏感,RDMA 钝感)。
 - **`multipart_part_size` 是硬上限**:proxy 在 `multipart.cpp` 校验 part_size ≤ 该值;bench `--part-size` 须对齐,否则被拒。
 
 ### 2.5 backend (ufile-ac) 数据路径
@@ -243,7 +243,7 @@ client                                   proxy (:9100)                          
 
 ---
 
-## 附:文档地图
+## 附录:文档地图
 
 | 文档 | 内容 |
 |---|---|
