@@ -51,17 +51,34 @@ Us3Turbo 是一个把 **GPUDirect Storage (GDS)** 与 **RDMA (RoCE/InfiniBand)**
 
 ### 2.1 三层拓扑
 
+系统分三层,**控制面(brpc / TCP 协议)** 与 **数据面(RDMA / GDS)** 严格分离:控制面经 proxy 转发,数据面 client 与 backend 直连旁路 proxy。
+
+```mermaid
+flowchart LR
+  subgraph CL["Client SDK + bench（本仓）"]
+    CMEM["GPU 显存 / 主机内存 buffer<br/>RDMA CM listener：发布自描述 token"]
+  end
+  subgraph PX["us3_turbo_proxy（本仓，:9100 brpc）"]
+    PSVC["ProxyService → SinglePut / Multipart / GetObject"]
+    UAC["UfileAcClient（连接池 backend_conn_pool_size）"]
+    IDX["UploadIndex（Mongo via dbgate）"]
+    PSVC --> UAC
+    PSVC --> IDX
+  end
+  subgraph BK["ufile-ac backend（独立仓 ggds-compile-env）"]
+    DISP["RDMA READ dispatch（worker_threads 池）"]
+    NVME["NVMe 裸盘直写 /dev/nvme1n1（无文件系统）"]
+    DISP --> NVME
+  end
+
+  CMEM ==>|"控制面 brpc：PutObject / Multipart / Get"| PSVC
+  PSVC ==>|"控制面 ufile_ac_protocol（TCP :24000）"| DISP
+  CMEM -.->|"数据面 GDS cuObj（:18666）"| DISP
+  DISP -.->|"RDMA READ（backend pull client buffer）"| CMEM
+  DISP -.->|"GET：RDMA WRITE 回 client"| CMEM
 ```
-                控制面 (brpc, protobuf)                       数据面 (RDMA / GDS)
-┌──────────────┐  ──────────────────────►  ┌──────────────────┐  ──────────────────────►  ┌─────────────────┐
-│  Client SDK  │   Control service:        │  us3_turbo_proxy │   ufile_ac_protocol       │   ufile-ac       │
-│  + bench     │   PutObject / Multipart   │   (brpc :9100)   │   (TCP :24000)            │   backend         │
-│  (本仓)       │   / Get / Stat           │   (本仓)          │   GDS cuObj (:18666)      │  (独立仓)         │
-└──────────────┘  ◄──────────────────────  └──────────────────┘  ◄──────────────────────  └─────────────────┘
-   GDS: cuObj token                                   put/get block                    RDMA READ client 显存/内存 → NVMe
-   RDMA: libibverbs                                   by block_key                       GET: RDMA WRITE 回 client
-   ↑ 反向 listener 供 backend RDMA CM 连回
-```
+
+> 图例:**粗实线 ⇒** = 控制面(经 proxy 转发);**虚线 ⇢** = 数据面(client↔backend 直连,旁路 proxy)。
 
 | 层 | 进程 | 端口 | 仓 | 职责 |
 |---|---|---|---|---|
@@ -130,27 +147,31 @@ backend 是独立仓 `ggds-compile-env/ufile-ac`,本仓不构建它,只通过 `u
 - **MR pool**:每请求 `ibv_reg_mr` 7 ms 的瓶颈已用 MR pool(commit 4fdd47a,共享 PD)根治到 ~0,避免 per-req 注册开销。
 - **mock 开关**:`mock_aio_write=1` 跳过落盘,只测数据搬运段(定位搬运瓶颈,排除 NVMe 干扰);`mock_rdma_read` / `mock_mode` 控 RDMA 侧 mock。性能调参常用 mock-on 隔离变量。
 
-### 2.6 完整 PUT 数据流(分段上传)
+### 2.6 完整 PUT 数据流（分段上传）
 
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant P as Proxy (:9100)
+  participant B as Backend (:24000 / :18666)
+  participant DB as Mongo / dbgate
+
+  C->>P: CreateMultipartUpload（brpc）
+  P-->>C: upload_id + trace_id
+  C->>C: AcquireToken(device) / AcquireDescriptor<br/>起 RDMA CM listener，发布 token
+  C->>P: UploadPart{Gds,Rdma}(token)（brpc）
+  P->>P: Validate(path / size / key)
+  P->>B: PutBlock{Gds,Rdma}(block_key, token)（TCP）
+  B->>C: RDMA CM 反连 + RDMA READ（pull client buffer）
+  B->>B: NVMe 裸盘落盘
+  B-->>P: rsp（crc32c / etag）
+  P->>DB: WritePartIndex
+  P-->>C: trace_id + result
+  C->>P: CompleteMultipartUpload（brpc）
+  P->>P: 装配 part 索引 → 对象元数据
 ```
-client                                   proxy (:9100)                          backend (:24000 / :18666)
-  │ CreateMultipartUpload ──brpc──►        │
-  │ ◄── upload_id + trace_id ───────────── │
-  │                                          │
-  │ AcquireToken(device) / AcquireDescriptor │
-  │ 起 RDMA CM listener, 发布 token         │
-  │ UploadPart{Gds,Rdma}(token) ──brpc──►   │
-  │                                          │ Validate(path/size/key)
-  │                                          │ PutBlock{Gds,Rdma}(block_key, token)
-  │                                          │ ──ufile_ac_protocol(TCP)──►  解码 token
-  │                                          │                                RDMA CM 反连 client
-  │ ◄════════════ RDMA READ (backend 拉 client buffer) ════════════════════
-  │                                          │                                NVMe 裸盘落盘
-  │                                          │ ◄── rsp(crc32c/etag)──────────
-  │                                          │ WritePartIndex(Mongo) ──► dbgate
-  │ ◄── trace_id + result ────────────────── │
-  │ CompleteMultipartUpload ──brpc──►        │ 装配 part 索引 → 对象元数据
-```
+
+> `block_key = obj_id + "_" + (part_number-1)`，GET 装配靠它定位落盘 block。`trace_id` 贯穿 C→P→B→DB 四列日志，任一对象定位只需 grep 一个 id。
 
 ---
 
