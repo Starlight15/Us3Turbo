@@ -1,175 +1,106 @@
 # Mooncake 冷层接入 Us3Turbo 方案
 
-> 2026-08-11。Mooncake 是 kvcache-ai 的 KVCache 存储引擎；Us3Turbo 是 GDS+RDMA 双通路
-> 对象存储。本文说明把 Us3Turbo 作为 Mooncake offload 冷层的背景、痛点、方案、接入方式、优劣。
+> 一篇介绍：为什么把 Us3Turbo 对象存储接进 Mooncake KVCache 引擎，以及接进去做什么。
+> 面向没读过源码的读者；实现与构建细节见文末指针。
 
-## 1. 背景
+## 1. 背景：Mooncake 与 KV cache
 
-Mooncake 是 LLM serving 的分布式 KVCache 存储（FAST'25 Best Paper），核心是**分层存储 + Transfer Engine**：
+Mooncake 是为 LLM 服务设计的分布式 KVCache 存储引擎（FAST'25 Best Paper）。它要解决的问题是：大模型生成每个词时，都要回看前面所有词的"注意力记忆"——这部分张量叫 **KV cache**。
 
-```
-GPU/DRAM(热, segment)  ──offload_on_evict──►  本地 NVMe(冷, L2)  ──promotion_on_hit──► 回 DRAM
-```
+打个比方：一场接力会议，每个发言人留下两叠笔记卡——一叠"标签卡"（K）让人按主题找到他，一叠"内容卡"（V）是他发言的实质。下一个发言人拿自己的"提问卡"（Q）去翻所有历史标签卡、按相关度混合对应的内容卡，从而决定下一句怎么说。每来一个新发言人，都要用到**之前所有人的卡**——所以这些卡不能丢，丢了就得从头重开会议。
 
-- **热层**：client 挂 DRAM/GPU segment，存热 KV。驱逐时不丢，下沉到 L2。
-- **L2 冷层**：`StorageBackendInterface`（现成实现 FilePerKey / Bucket / OffsetAllocator / SPDK / HF3FS，**全是本地盘或集群内 FS**）。
-- 驱逐后 `promotion_on_hit`（Get 命中盘上 key）异步 SSD-read + RDMA-write 回 DRAM。
+在大模型里，"从头重开会议"就是**重算 prefill**：把 prompt 里所有 token 重新过一遍神经网络，重新算出它们的 K/V 卡。这吃 GPU 算力、还要几秒，期间 GPU 没法干别的。所以 KV cache 本质是 **prefill 阶段 GPU 算力的凝结产物**——保留它就是省算力，丢掉它就要重花算力。
 
-"KV cache" = prefill 阶段对每个 token 算出的 K/V 张量，后续每步 decode 都要 attend 回它——**是 GPU 算力的凝结产物，丢了要重跑 prefill**。单 token KV = `2 × 层数 × KV头数 × 头维度 × 字节数`（8B≈128KiB、70B≈320KiB）；一段长上下文(8k~32k token)的 KV 累积到 1~10 GiB，正是它"贵重但占地"的来源。
+单张卡很小：一个 token 的 KV = `2 × 层数 × KV头数 × 头维度 × 字节数`，8B 模型约 128 KiB/token、70B 约 320 KiB/token。但一段长上下文有几千到几万个 token，每人留一叠、整摞堆起来，一个 prefix 的 KV 就到 1~10 GB——这正是它"贵重但占地"的来源：丢了心疼（重算贵），全留 GPU/内存又留不下（占地大）。
 
-## 2. 痛点
+Mooncake 的解法是**分层存储**：热数据放 GPU/内存（叫 segment），满了就**下沉**到更便宜的冷层（offload）；下次用到再**回填**热层（promotion）。这套"空间换时间"机制让有限的高速介质只装最热的，温冷数据流到便宜介质，用时再拉回——既不丢、又不挤占热层。
 
-1. **冷层是节点本地 NVMe**：节点被回收/崩溃/维护 → offload 的 KV 跟着丢；autoscaler 一回收，idle 用户的昂贵 prefix 全没。
-2. **idle 大 prefix 被驱逐后只能重算 prefill**：70B×32k ≈ 10GB 的 prefix，重算 ~3s 且**独占 GPU**；serve 吞吐受损。
-3. **不跨集群**：A 集群算的 prefix 无法给 B 集群复用（global prefix cache / 跨区调度做不到）。
-4. **容量受单盘限**：长上下文 × 多用户，本地盘 TB 级很快爆；HBM/DRAM 更小。
-5. **数据与进程强耦合**：本地盘/KV 生命周期绑死节点，用户跨天续会话做不到。
+## 2. 痛点：冷层是本地盘，不够用
 
-> 一句话：Mooncake 有 offload→回填的"空间换时间"机制，但冷层缺一层 **durable + 跨集群 + 可扩容**的远端存储。
+Mooncake 现在的冷层是**节点本地 NVMe**（几种文件/块后端）。机制是对的，但介质选错了规模：
 
-## 3. 方案
+- **节点没了数据就没了**：本地盘和节点同生共死。autoscaler 缩容、硬件维护、节点崩溃，盘上的 KV 跟着丢——而这些都是云上常态。idle 用户的昂贵 prefix 一回收就全没。
+- **idle 的大 prefix 被驱逐后只能重算**：一个 70B×32k 约 10GB 的 prefix，重算 prefill 要几秒、且**独占 GPU**。服务正在跑别的请求，GPU 被这次重算抢走，吞吐直接受损。
+- **不跨集群**：A 集群算好的 prefix，B 集群用不上。做不到全局 prefix 缓存、跨区调度、follow-the-sun 容量——而这些正是规模化服务的诉求。
+- **容量受单盘限制**：长上下文 × 多用户，单机 NVMe 的 TB 级很快就满；HBM/内存更小。满了就只能丢，丢又回到上一条重算。
+- **数据和进程绑死**：用户隔天回来续会话，本地盘的 KV 早就随节点没了——"跨天续跑"做不到。
 
-在 `StorageBackendInterface` 加一个 Us3Turbo 实现 `Us3TurboStorageBackend`，作为**最外层 durable 冷层**接在本地 NVMe 之外：
+一句话：Mooncake 有"下沉→回填"的空间换时间机制，但冷层缺一层 **持久、跨集群、可扩容**的远端存储。本地 NVMe 是"快但节点本地"的介质，缺的是"慢一点但跨集群存活、容量近乎无限"的那一层。
 
-```
-GPU/DRAM(segment,热)  ──offload──►  本地 NVMe(L2,快但节点本地)  ──溢出/镜像──►  Us3Turbo 对象存储(durable 冷层)
-        ▲                                                                                    │
-        └────────────────────── Get / RDMA 回填（不占 GPU）──────────────────────────────────┘
-```
+## 3. 方案与接入：用 Us3Turbo 补一层 durable 冷层
 
-- **CPU 产物（host slice）走 RDMA**：`ibv_reg_mr` → backend 拉，host ptr 直送。
-- **GPU 产物（device slice）走 GDS**：cuObj token → backend 拉 GPU 显存。
-- 数据**不跨 PCIe 停 host、不经本地文件**；小对象(≤4M 单 slice)单步 PUT 零拷贝，大对象 multipart 把 slices coalesce 进 part_size 暂存（同介质拷贝：DRAM→DRAM 或 D2D）。
-- 落到 Us3Turbo = 落到 ufile-ac durable NVMe+索引（proxy:9100 / backend:24000），跨节点/跨集群存活。
+### 3.1 为什么是对象存储，为什么是 Us3Turbo
 
-## 4. 如何接入 Us3Turbo
+对象存储恰好补上缺失的那层：数据落到后端对象存储就**跨节点、跨集群、跨重启存活**，容量近乎无限（PB 级）、单价远低于本地 NVMe。它不快，但冷层数据本来就不要求快——要求的是"别丢、用时能拉回"。
 
-接入思路：**不改 Us3Turbo、不改 Mooncake 核心逻辑，只在两者之间加一个适配器** `Us3TurboStorageBackend : StorageBackendInterface`，复用 Us3Turbo 现成的 `libus3_turbo_client.a`（client 原样、零改动），把 Mooncake 的 offload 冷层接口翻译成 Us3Turbo client 的对象存储调用。
+为什么选 Us3Turbo 而不是普通 S3：Us3Turbo 是 **GDS+RDMA 双通路**对象存储，能让数据**不绕道主机**直达后端：
+
+- **CPU 上的产物走 RDMA**：内存里的 KV，后端直接 RDMA 拉走。
+- **GPU 显存上的产物走 GDS**：显存里的 KV，后端直接拉 GPU 显存。
+
+传统持久化链路是 `GPU → 主机内存 → 本地文件 → 再上传对象存储`，三跳、还留个临时本地文件。Us3Turbo 的双通路把它砍成一步：数据一次到位进对象存储，**不经过主机内存中转、不落本地文件**。对 GPU 上的 KV 尤其值钱——省掉 GPU↔host 的 PCIe 来回和中间落盘。
+
+### 3.2 整体数据流
+
+Us3Turbo 接成 Mooncake 冷层的一个新后端，挂在本地 NVMe 之外作**最外层 durable 冷层**：
 
 ```
-Mooncake Slice{ptr,size}
-   │  ptr = host(DRAM) 或 device(GPU)
-   ▼
-Us3TurboStorageBackend : StorageBackendInterface
-   │  BatchOffload(key, slices)  →  ≤4M 单slice: PutObject{Gds,Rdma}(ptr)        [零拷贝]
-   │                               大/多slice:   CreateMultipart → UploadPart{Gds,Rdma} ×N → Complete
-   │  BatchLoad(key, slice)      →  StatObject → GetObject{Gds,Rdma} 直写 slice.ptr
-   │  IsExist(key)               →  StatObject
-   ▼ (brpc 控制面，元数据+token，零字节)
-us3_turbo_proxy :9100  ──►  ufile-ac :24000 (durable)
+GPU/内存(热, segment) ──下沉──► 本地 NVMe(快但节点本地) ──溢出/镜像──► Us3Turbo 对象存储(持久冷层)
+   ▲                                                                          │
+   └────────────── 回填（网络拉取，不占 GPU）────────────────────────────────┘
 ```
 
-### 4.1 角色定位：最外层 durable 冷层
+下沉（offload）：Mooncake 从热层驱逐一个对象时，不丢，落到 Us3Turbo。
+回填（promotion）：Mooncake 下次要用到这个对象，从 Us3Turbo 拉回热层——拉取是网络密集、**不占 GPU**，期间 GPU 还能服务别的请求。
 
-Mooncake 已有 `offload_on_evict`（DRAM 驱逐时落 L2）+ `promotion_on_hit`（Get 命中 L2 时回填 DRAM）机制；`StorageBackendInterface` 就是这层 L2 冷层的可插拔接口。Us3Turbo 接成其中一个实现，挂法两种（待档2 选定）：
+### 3.3 怎么接：一个适配器把两套系统连起来
 
-- **三级级联**：DRAM → 本地 NVMe → Us3Turbo。本地盘也满才溢出到 Us3Turbo，Us3Turbo 作最冷层。
-- **durable 镜像**：offload 到本地盘的同时异步 write-through 一份到 Us3Turbo。本地盘快路径不变，但节点死了 Us3Turbo 还在，重启可重建。
+不需要改 Mooncake 的核心，也不需要改 Us3Turbo——在两者之间加一个**适配器**：它实现 Mooncake 的冷层抽象接口（Mooncake 内部叫 `StorageBackendInterface`），内部调用 Us3Turbo 的对象存储客户端。三件事：
 
-> 两种都不动 Mooncake 的 offload/promotion 主链，只是换/补 L2 后端。
+- **下沉一个对象** → 适配器把它写成 Us3Turbo 的一个对象（PUT）。
+- **回填一个对象** → 适配器从 Us3Turbo 读回（GET），数据直接落到 Mooncake 预先分配好的缓冲区。
+- **查对象在不在** → 适配器问一下 Us3Turbo。
 
-### 4.2 接口映射详解
+### 3.4 粒度：一个 prefix = 一个对象
 
-`StorageBackendInterface` 核心方法 → Us3Turbo client 调用：
+一个 Mooncake 对象（通常是一段 prefix 的 KV cache）对应**一个 Us3Turbo 对象**；大对象用分段上传（multipart）拼成。
 
-| Mooncake 接口 | Us3Turbo client 调用 | 说明 |
-|---|---|---|
-| `Init()` | `Client(opts).Initialize()` | 建 brpc channel + GDS/RDMA manager 单例 |
-| `BatchOffload(key, vector<Slice>)` | `≤4M 单slice`：`PutObject{Gds,Rdma}`；否则 `CreateMultipartUpload → UploadPart×N → Complete` | 1 个 Mooncake 对象 → 1 个 Us3Turbo 对象 |
-| `BatchLoad(key, Slice)` | `StatObject → GetObject{Gds,Rdma}` | Us3Turbo 直写 Mooncake 预分配的 restore buffer（`slice.ptr`） |
-| `IsExist(key)` | `StatObject` | 存在性检查 |
-| `RemoveAll()` / `ScanMeta()` | —（no-op / 未实现） | 见 4.5 gap |
+为什么不按 KV cache 内部更小的分片（slice）切？因为那样会产生海量小对象，每个小对象都要一次控制面 RPC + 建链开销，控制面成本爆炸、还违对象存储"别太小"的本性。所以选 1:1 聚合——slice 是 Mooncake 内部的分片细节，对 Us3Turbo 透明；一个逻辑 prefix 对外就是一个对象、一个 key。
 
-**粒度设计**：1 个 Mooncake `ObjectKey` → 1 个 Us3Turbo 对象。Mooncake 对象内部由多个 `Slice`（各 ≤4MB，cachelib slab）组成，适配器用 multipart 把这些 slice **聚合**进一个 Us3Turbo 对象（**非每 slice 一个对象**）。理由：Us3Turbo 单步 PUT ≤4M、multipart part 须固定 `part_size`；若每 slice 一个对象 → 海量小对象、控制面 RPC 开销爆、且违 part_size 约束。故选 1:1 聚合，slice 是 Mooncake 内部分片细节，对 Us3Turbo 透明。
+### 3.5 挂在哪一层：级联 or 镜像
 
-### 4.3 双数据通路：CPU 走 RDMA、GPU 走 GDS
+Us3Turbo 挂在本地 NVMe 之外，两种可选（待下一阶段选定）：
 
-适配器按 Mooncake slice 的指针类型选 Us3Turbo 通路：
+- **三级级联**：本地盘也满了，才溢出到 Us3Turbo。Us3Turbo 作最冷层，本地盘仍是快路径。
+- **持久镜像**：offload 到本地盘的同时，异步镜像一份到 Us3Turbo。本地盘快路径不变，但节点死了 Us3Turbo 还在，重启可从镜像重建。
 
-| 产物 | slice.ptr | 通路 | 注册机制 | 直送 |
-|---|---|---|---|---|
-| CPU/DRAM | host ptr | RDMA (`kRdma`) | `ibv_reg_mr(REMOTE_READ)` | ✅ host ptr 直送，backend RDMA_READ 拉 |
-| GPU/VRAM | device ptr | GDS (`kGds`) | cuObj token | ✅ device ptr 直送，backend 拉 GPU 显存 |
+两种都不动 Mooncake 既有的"下沉/回填"主链——只是换/补冷层后端。
 
-**直写原理**：Us3Turbo client 的 `PutObject{Gds,Rdma}(req, ConstBufferView{ptr,size})` 接受任意 ptr——只要能被对应机制注册（host→`ibv_reg_mr`、device→cuObj）。注册后 backend 反连 client 主动 RDMA 拉取，client 全程被动。**数据不跨 PCIe 停 host、不经本地文件**。
-
-**part_size 对齐**：Us3Turbo multipart 要求非末 part 恰为 `part_size`（须 == proxy `multipart_part_size` flag）。Mooncake slice ≤4MB，单个当不成 part，故需 coalesce：
-- 小对象（单 slice ≤4M）→ 单步 PUT，**真零拷贝**。
-- 大对象/多 slice → coalesce 进 `part_size` 暂存 buffer 再 `UploadPart`：
-  - RDMA：host 暂存 + `memcpy`（DRAM→DRAM）。
-  - GDS：device 暂存 + `cudaMemcpy D2D`（GPU→GPU，**不能用 host memcpy 读 GPU ptr，否则 segfault**）。
-- coalesce 是同介质拷贝，非跨 PCIe；只是为对齐 part_size。
-
-**已验证**：RDMA（host buffer 直送）+ GDS（cudaMalloc buffer 直送）两路，均由 Us3Turbo 现有 bench/example 实测过；mock 测试两路各 3/3 字节一致。
-
-### 4.4 构建接线分析
-
-**代码**（Mooncake 仓）：
-- `mooncake-store/include/storage/us3turbo/us3_turbo_storage_backend.{h,cpp}` — 适配器
-- `mooncake-store/src/storage/us3turbo/us3turbo_backend_mock_test.cpp` — 档1 mock
-- `mooncake-store/src/storage/us3turbo/BUILD.md` — 接线+踩坑
-
-**复用而非重写**：Us3Turbo `client` 是 ALIAS target（仅自家 build 树可见，非导出 package）。故用 `add_subdirectory(Us3Turbo)` 把它拉进 Mooncake 构建，复用其 CMake 与自带依赖（brpc/protobuf/abseil/cuobjclient/cudart/ucp/ibverbs），Mooncake 只需 `target_link_libraries(mooncake_store PRIVATE Us3Turbo::client)`。Mooncake 自身不链 protobuf/abseil/brpc，**无符号冲突**（除下文 glog）。接线点两处：Mooncake 顶层 `option(USE_US3TURBO)`；`mooncake-store/src/CMakeLists` uring 块后加 `add_subdirectory` + 源追加，主 `target_link_libraries` 后加 link + mock test target。
-
-**glog/brpc 双 'v' 冲突**：Us3Turbo 的 brpc 默认 `WITH_GLOG=OFF`，`butil/logging.cc` 自带 'v' gflag，与 Mooncake 的 glog（`vlog_is_on.cc` 'v'）在 gflags 同 registry 双注册 → 进程启动即 abort。解法：在独立 `third_party/install-glog/` 用 `WITH_GLOG=ON` 重编 brpc（brpc 改用 glog 的 'v'，不自带），symlink 复用 protobuf/spdlog，configure 时 `-DFUSION_ACCESS_DEPS_ROOT` + `-DBRPC_STATIC_LIBRARY` 指向它。**不动共享 brpc**，不影响 Us3Turbo standalone 与 FusionAccess。
-
-**include 补给**：`us3_turbo/client/client.h` 内部 `#include "client/src/common/request.h"`（Us3Turbo 根）+ `proxy_rpc.h` 引 `control_plane.pb.h`（generated），这些是 Us3Turbo client 的 PRIVATE include、不透传给消费者。故给 mooncake_store 与 mock test target 显式补 include：Us3Turbo 根 / client/src / `${CMAKE_BINARY_DIR}/generated` / cuobj / cufile。
-
-**USE_CUDA 门控**：GDS 路径的 `cudaMalloc/cudaMemcpy` 由 `#ifdef USE_CUDA` 门控；Mooncake 既有 `find_package(CUDAToolkit)` 块自动开 `USE_CUDA`（本机 CUDA13.1 探测到）。mock test target 需额外 `target_compile_definitions(... PRIVATE USE_CUDA)`，否则 GDS 测试里 `HAVE_CUDA=0`、不 cudaMalloc、拿到 host ptr → cuObj 注册失败。
-
-**part_size 须匹配 proxy flag**：本机 proxy `multipart_part_size=4194304`(4M)；适配器从 `US3TURBO_PART_SIZE` env 读，与 proxy 对齐，否则报 "invalid part size" code 10001。
-
-**构建/运行**（本机 192.168.1.198，已验证）：
-```bash
-cd Mooncake
-PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOPROXY=https://goproxy.cn,direct \
-cmake -S . -B build -DUSE_US3TURBO=ON \
-  -DFUSION_ACCESS_DEPS_ROOT=.../Us3Turbo/third_party/install-glog \
-  -DBRPC_STATIC_LIBRARY=.../install-glog/brpc-1.11.0-static/lib/libbrpc.a \
-  -DWITH_STORE_RUST=OFF -DWITH_RUST_EXAMPLE=OFF -DWITH_P2P_STORE=OFF -DWITH_STORE_GO=OFF
-cmake --build build -j$(nproc) --target us3turbo_backend_mock_test
-US3TURBO_ENDPOINT=192.168.1.198:9100 US3TURBO_BUCKET=mooncake-offload \
-US3TURBO_USE_GDS=0 US3TURBO_RDMA_BIND_IP=192.168.1.198 US3TURBO_PART_SIZE=4194304 \
-LD_LIBRARY_PATH=/usr/local/cuda/lib64 ./build/mooncake-store/src/us3turbo_backend_mock_test
-# US3TURBO_USE_GDS=1 走 GPU/device 通路
-```
-
-### 4.5 已知 gap（待补 Us3Turbo client/proxy）
-
-| Mooncake 接口 | 现状 | 影响 | 补法 |
-|---|---|---|---|
-| `RemoveAll()` | no-op | 对象不清理、占盘 | Us3Turbo client/proxy 增 Delete |
-| `ScanMeta()` | 返回 INTERNAL_ERROR | 无法枚举已存对象 | Us3Turbo client/proxy 增 List |
-
-不影响 offload/load 主链；档2/3 接真实 eviction 前需补，否则 offload 的对象无法主动清理。
-
-## 5. 优势与不足
+## 4. 优势与不足
 
 ### 优势
 
-| 优势 | 说明 |
-|---|---|
-| **续命 idle 会话** | idle KV 下沉 durable 介质，下次按需回填，不重算 prefill——空间换 GPU 时间 |
-| **节点/集群回收不丢** | 数据跨节点/跨重启/跨集群存活，autoscaler/维护/崩溃都不影响 |
-| **跨集群共享** | A 集群算的 prefix，B 集群直接拉（global prefix cache / 跨区调度） |
-| **容量可扩** | 本地盘 TB 级，对象存储 PB 级便宜冷池，满了就溢 |
-| **省 GPU** | restore 是网络密集，不占 GPU；重算独占 GPU。即便 wall-clock 相当，吞吐净赚 |
-| **GPU 直送 durable** | GDS 通路让 GPU 上 KV 一次落定对象存储，省 `GPU→host→本地文件→再上传` |
-| **成本** | HBM > DRAM > NVMe > 对象存储 $/GB；贵重算出来的低频数据放最便宜介质 |
+- **续命 idle 会话**：KV 下沉到持久介质，下次按需回填，不重算 prefill——空间换 GPU 时间，正是"1-10G 闲置结果被丢、下次续服务"那个场景的解。
+- **节点/集群回收不丢**：数据跨节点、跨重启、跨集群存活，autoscaler、维护、崩溃都不影响。
+- **跨集群共享**：A 集群算的 prefix，B 集群直接拉，支持全局 prefix 缓存与跨区调度。
+- **容量可扩**：本地盘 TB 级，对象存储 PB 级便宜冷池，满了就溢、不丢。
+- **省 GPU（吞吐净赚）**：回填是网络密集、不占 GPU；重算独占 GPU。即便耗时相当，回填期间 GPU 能服务别的请求，吞吐上净赚。
+- **GPU 直送持久**：GDS 通路让 GPU 上的 KV 一次落定对象存储，省掉 `GPU→host→本地文件→再上传` 的中转。
+- **成本**：显存 > 内存 > NVMe > 对象存储（$/GB），贵重但低频的数据放最便宜的介质，经济上正合。
 
 ### 不足 / 边界
 
-| 不足 | 说明 |
-|---|---|
-| **延迟地板高** | 只适合**冷层**（驱逐后续用），热 KV 必须留 DRAM；ms~s 级，不能抢热层 |
-| **restore 经济学要量化** | 仅当"重算 > restore"才赚：长 prefix(1-10G+) 赚，短 prefix 重算更快不该存 |
-| **无 Delete/List** | Us3Turbo client 现无 Delete/List → `RemoveAll` no-op、`ScanMeta` 未实现（需补 client/proxy 接口） |
-| **接入摩擦** | 需重编 glog-brpc 避双 'v'；part_size 须匹配 proxy flag；GDS 路径需 USE_CUDA 门控 |
-| **粒度依赖 allocator** | Mooncake 大对象按 slice 数取决于 cachelib(≤4M slab)/offset_allocator；适配器 1 对象=1 Us3Turbo 对象（multipart 聚合） |
+- **延迟地板高，只适合冷层**：对象存储是 ms~s 级，热 KV 必须留内存；它不抢热层，是热层装不下时的下沉去处。
+- **回填要算经济账**：只有"重算 > 回填"才赚。长 prefix（1-10G、重算几秒）赚；短 prefix 重算比回填还快，不该存。
+- **缺删除/枚举**：Us3Turbo 客户端暂无 Delete/List，对应接口现为空操作——接真实驱逐、要清理对象前需补。
+- **接入有摩擦**：两个项目的日志库冲突、参数对齐等工程细节（已踩平，详见实现文档）。
 
-## 当前状态
+## 5. 现状
 
-- ✅ 适配器 + mock 编译/链接通过（Mooncake 全量 build + Us3Turbo client 接入）
-- ✅ **RDMA/host 通路 mock 3/3**（2M 单步×2 + 20M multipart，offload→load→memcmp 字节一致）
-- ✅ **GDS/device 通路 mock 3/3**（同上，GPU 显存直送 durable）
-- ⏳ 待续：档2 接 Mooncake master+client，开 `offload_on_evict`+`promotion_on_hit` 触发真实 eviction→Us3Turbo 回填，并量化"10GB 回填 vs 重算 prefill"经济学
+- 适配器与 mock 测试已编译通过；两通路（RDMA 主机 / GDS 显存）各跑通 3 个对象（2MB 小对象 ×2 + 20MB 大对象分段上传 ×1），写入对象存储再读回，**字节级校验一致（3/3）**。
+- 下一步：接 Mooncake 的 master + client，打开"下沉/回填"开关触发真实驱逐→Us3Turbo 回填，并量化"10GB 回填 vs 重算 prefill"的经济账。
+
+---
+
+> 实现与构建细节（适配器代码、CMake 接线、glog/brpc 冲突处理、构建运行命令、踩坑记录）见
+> Mooncake 仓 `mooncake-store/src/storage/us3turbo/` 下的源码与 `BUILD.md`。
