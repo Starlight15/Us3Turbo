@@ -51,7 +51,7 @@ Us3Turbo 是一个把 **GPUDirect Storage（GDS）** 与 **RDMA（RoCE/InfiniBan
 系统分三层，**控制面（brpc / TCP 协议）** 与 **数据面（RDMA / GDS）** 严格分离：控制面经 proxy 转发，数据面 client 与 backend 直连旁路 proxy。
 
 ```mermaid
-flowchart LR
+flowchart TB
   CL["Client SDK + bench<br/>GPU 显存 / 主机内存 buffer<br/>RDMA CM listener → 发布 token"]
   PX["us3_turbo_proxy (brpc :9100)<br/>SinglePut · Multipart · GetObject<br/>UfileAcClient 连接池 · UploadIndex (dbgate)"]
   DISP["ufile-ac backend<br/>RDMA READ dispatch (worker_threads 池)"]
