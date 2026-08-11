@@ -15,7 +15,7 @@ GPU/DRAM(热, segment)  ──offload_on_evict──►  本地 NVMe(冷, L2)  �
 - **L2 冷层**：`StorageBackendInterface`（现成实现 FilePerKey / Bucket / OffsetAllocator / SPDK / HF3FS，**全是本地盘或集群内 FS**）。
 - 驱逐后 `promotion_on_hit`（Get 命中盘上 key）异步 SSD-read + RDMA-write 回 DRAM。
 
-"KV cache" = prefill 阶段对每个 token 算出的 K/V 张量，后续每步 decode 都要 attend 回它——**是 GPU 算力的凝结产物，丢了要重跑 prefill**。
+"KV cache" = prefill 阶段对每个 token 算出的 K/V 张量，后续每步 decode 都要 attend 回它——**是 GPU 算力的凝结产物，丢了要重跑 prefill**。单 token KV = `2 × 层数 × KV头数 × 头维度 × 字节数`（8B≈128KiB、70B≈320KiB）；一段长上下文(8k~32k token)的 KV 累积到 1~10 GiB，正是它"贵重但占地"的来源。
 
 ## 2. 痛点
 
@@ -44,11 +44,11 @@ GPU/DRAM(segment,热)  ──offload──►  本地 NVMe(L2,快但节点本地
 
 ## 4. 如何接入 Us3Turbo
 
-适配器把 Mooncake 接口映射到 Us3Turbo client（原样复用 `libus3_turbo_client.a`，零 Us3Turbo 改动）：
+接入思路：**不改 Us3Turbo、不改 Mooncake 核心逻辑，只在两者之间加一个适配器** `Us3TurboStorageBackend : StorageBackendInterface`，复用 Us3Turbo 现成的 `libus3_turbo_client.a`（client 原样、零改动），把 Mooncake 的 offload 冷层接口翻译成 Us3Turbo client 的对象存储调用。
 
 ```
 Mooncake Slice{ptr,size}
-   │
+   │  ptr = host(DRAM) 或 device(GPU)
    ▼
 Us3TurboStorageBackend : StorageBackendInterface
    │  BatchOffload(key, slices)  →  ≤4M 单slice: PutObject{Gds,Rdma}(ptr)        [零拷贝]
@@ -59,12 +59,65 @@ Us3TurboStorageBackend : StorageBackendInterface
 us3_turbo_proxy :9100  ──►  ufile-ac :24000 (durable)
 ```
 
+### 4.1 角色定位：最外层 durable 冷层
+
+Mooncake 已有 `offload_on_evict`（DRAM 驱逐时落 L2）+ `promotion_on_hit`（Get 命中 L2 时回填 DRAM）机制；`StorageBackendInterface` 就是这层 L2 冷层的可插拔接口。Us3Turbo 接成其中一个实现，挂法两种（待档2 选定）：
+
+- **三级级联**：DRAM → 本地 NVMe → Us3Turbo。本地盘也满才溢出到 Us3Turbo，Us3Turbo 作最冷层。
+- **durable 镜像**：offload 到本地盘的同时异步 write-through 一份到 Us3Turbo。本地盘快路径不变，但节点死了 Us3Turbo 还在，重启可重建。
+
+> 两种都不动 Mooncake 的 offload/promotion 主链，只是换/补 L2 后端。
+
+### 4.2 接口映射详解
+
+`StorageBackendInterface` 核心方法 → Us3Turbo client 调用：
+
+| Mooncake 接口 | Us3Turbo client 调用 | 说明 |
+|---|---|---|
+| `Init()` | `Client(opts).Initialize()` | 建 brpc channel + GDS/RDMA manager 单例 |
+| `BatchOffload(key, vector<Slice>)` | `≤4M 单slice`：`PutObject{Gds,Rdma}`；否则 `CreateMultipartUpload → UploadPart×N → Complete` | 1 个 Mooncake 对象 → 1 个 Us3Turbo 对象 |
+| `BatchLoad(key, Slice)` | `StatObject → GetObject{Gds,Rdma}` | Us3Turbo 直写 Mooncake 预分配的 restore buffer（`slice.ptr`） |
+| `IsExist(key)` | `StatObject` | 存在性检查 |
+| `RemoveAll()` / `ScanMeta()` | —（no-op / 未实现） | 见 4.5 gap |
+
+**粒度设计**：1 个 Mooncake `ObjectKey` → 1 个 Us3Turbo 对象。Mooncake 对象内部由多个 `Slice`（各 ≤4MB，cachelib slab）组成，适配器用 multipart 把这些 slice **聚合**进一个 Us3Turbo 对象（**非每 slice 一个对象**）。理由：Us3Turbo 单步 PUT ≤4M、multipart part 须固定 `part_size`；若每 slice 一个对象 → 海量小对象、控制面 RPC 开销爆、且违 part_size 约束。故选 1:1 聚合，slice 是 Mooncake 内部分片细节，对 Us3Turbo 透明。
+
+### 4.3 双数据通路：CPU 走 RDMA、GPU 走 GDS
+
+适配器按 Mooncake slice 的指针类型选 Us3Turbo 通路：
+
+| 产物 | slice.ptr | 通路 | 注册机制 | 直送 |
+|---|---|---|---|---|
+| CPU/DRAM | host ptr | RDMA (`kRdma`) | `ibv_reg_mr(REMOTE_READ)` | ✅ host ptr 直送，backend RDMA_READ 拉 |
+| GPU/VRAM | device ptr | GDS (`kGds`) | cuObj token | ✅ device ptr 直送，backend 拉 GPU 显存 |
+
+**直写原理**：Us3Turbo client 的 `PutObject{Gds,Rdma}(req, ConstBufferView{ptr,size})` 接受任意 ptr——只要能被对应机制注册（host→`ibv_reg_mr`、device→cuObj）。注册后 backend 反连 client 主动 RDMA 拉取，client 全程被动。**数据不跨 PCIe 停 host、不经本地文件**。
+
+**part_size 对齐**：Us3Turbo multipart 要求非末 part 恰为 `part_size`（须 == proxy `multipart_part_size` flag）。Mooncake slice ≤4MB，单个当不成 part，故需 coalesce：
+- 小对象（单 slice ≤4M）→ 单步 PUT，**真零拷贝**。
+- 大对象/多 slice → coalesce 进 `part_size` 暂存 buffer 再 `UploadPart`：
+  - RDMA：host 暂存 + `memcpy`（DRAM→DRAM）。
+  - GDS：device 暂存 + `cudaMemcpy D2D`（GPU→GPU，**不能用 host memcpy 读 GPU ptr，否则 segfault**）。
+- coalesce 是同介质拷贝，非跨 PCIe；只是为对齐 part_size。
+
+**已验证**：RDMA（host buffer 直送）+ GDS（cudaMalloc buffer 直送）两路，均由 Us3Turbo 现有 bench/example 实测过；mock 测试两路各 3/3 字节一致。
+
+### 4.4 构建接线分析
+
 **代码**（Mooncake 仓）：
 - `mooncake-store/include/storage/us3turbo/us3_turbo_storage_backend.{h,cpp}` — 适配器
 - `mooncake-store/src/storage/us3turbo/us3turbo_backend_mock_test.cpp` — 档1 mock
 - `mooncake-store/src/storage/us3turbo/BUILD.md` — 接线+踩坑
 
-**CMake 接线**：Mooncake 顶层 `option(USE_US3TURBO)`；`mooncake-store/src/CMakeLists` 两处插入——`add_subdirectory(Us3Turbo)` 复用其 CMake 与自带依赖（brpc/protobuf/abseil/cuobjclient/cudart），link `Us3Turbo::client`，加 mock test target。
+**复用而非重写**：Us3Turbo `client` 是 ALIAS target（仅自家 build 树可见，非导出 package）。故用 `add_subdirectory(Us3Turbo)` 把它拉进 Mooncake 构建，复用其 CMake 与自带依赖（brpc/protobuf/abseil/cuobjclient/cudart/ucp/ibverbs），Mooncake 只需 `target_link_libraries(mooncake_store PRIVATE Us3Turbo::client)`。Mooncake 自身不链 protobuf/abseil/brpc，**无符号冲突**（除下文 glog）。接线点两处：Mooncake 顶层 `option(USE_US3TURBO)`；`mooncake-store/src/CMakeLists` uring 块后加 `add_subdirectory` + 源追加，主 `target_link_libraries` 后加 link + mock test target。
+
+**glog/brpc 双 'v' 冲突**：Us3Turbo 的 brpc 默认 `WITH_GLOG=OFF`，`butil/logging.cc` 自带 'v' gflag，与 Mooncake 的 glog（`vlog_is_on.cc` 'v'）在 gflags 同 registry 双注册 → 进程启动即 abort。解法：在独立 `third_party/install-glog/` 用 `WITH_GLOG=ON` 重编 brpc（brpc 改用 glog 的 'v'，不自带），symlink 复用 protobuf/spdlog，configure 时 `-DFUSION_ACCESS_DEPS_ROOT` + `-DBRPC_STATIC_LIBRARY` 指向它。**不动共享 brpc**，不影响 Us3Turbo standalone 与 FusionAccess。
+
+**include 补给**：`us3_turbo/client/client.h` 内部 `#include "client/src/common/request.h"`（Us3Turbo 根）+ `proxy_rpc.h` 引 `control_plane.pb.h`（generated），这些是 Us3Turbo client 的 PRIVATE include、不透传给消费者。故给 mooncake_store 与 mock test target 显式补 include：Us3Turbo 根 / client/src / `${CMAKE_BINARY_DIR}/generated` / cuobj / cufile。
+
+**USE_CUDA 门控**：GDS 路径的 `cudaMalloc/cudaMemcpy` 由 `#ifdef USE_CUDA` 门控；Mooncake 既有 `find_package(CUDAToolkit)` 块自动开 `USE_CUDA`（本机 CUDA13.1 探测到）。mock test target 需额外 `target_compile_definitions(... PRIVATE USE_CUDA)`，否则 GDS 测试里 `HAVE_CUDA=0`、不 cudaMalloc、拿到 host ptr → cuObj 注册失败。
+
+**part_size 须匹配 proxy flag**：本机 proxy `multipart_part_size=4194304`(4M)；适配器从 `US3TURBO_PART_SIZE` env 读，与 proxy 对齐，否则报 "invalid part size" code 10001。
 
 **构建/运行**（本机 192.168.1.198，已验证）：
 ```bash
@@ -81,7 +134,14 @@ LD_LIBRARY_PATH=/usr/local/cuda/lib64 ./build/mooncake-store/src/us3turbo_backen
 # US3TURBO_USE_GDS=1 走 GPU/device 通路
 ```
 
-> Us3Turbo 的 brpc 默认 `WITH_GLOG=OFF`，与 Mooncake 的 glog 双 'v' gflags 冲突 → 需在独立 `install-glog/` 用 `WITH_GLOG=ON` 重编 brpc（不动共享 brpc）。
+### 4.5 已知 gap（待补 Us3Turbo client/proxy）
+
+| Mooncake 接口 | 现状 | 影响 | 补法 |
+|---|---|---|---|
+| `RemoveAll()` | no-op | 对象不清理、占盘 | Us3Turbo client/proxy 增 Delete |
+| `ScanMeta()` | 返回 INTERNAL_ERROR | 无法枚举已存对象 | Us3Turbo client/proxy 增 List |
+
+不影响 offload/load 主链；档2/3 接真实 eviction 前需补，否则 offload 的对象无法主动清理。
 
 ## 5. 优势与不足
 
