@@ -210,6 +210,6 @@ proxy recv 6965 − backend 4844 ≈ **2120µs = proxy↔backend 往返+框架�
 | 最优 part | {2M,4M} | 8M | 相反 |
 | RNIC phy | ≈0 | ≈0 | 同机 loopback,不经物理链路 |
 
-**一句话**: 数据搬运(RDMA READ)本身很快(~0.93ms),两端性能都耗在搬运之外——实际读写卡在 NVMe 落盘(占 ~13%),仅搬运卡在调度/框架往返与 worker 池长尾。CPU/内存/RNIC 均非瓶颈(CPU 富余 >120 核、内存 2TiB、RNIC 同机 loopback 不经物理口);唯一硬件瓶颈是 NVMe 写带宽(真写 84% util)。
+ 数据搬运(RDMA READ)本身很快(~0.93ms),两端性能都耗在搬运之外——实际读写卡在 NVMe 落盘(占 ~13%),仅搬运卡在调度/框架往返与 worker 池长尾。CPU/内存/RNIC 均非瓶颈(CPU 富余 >120 核、内存 2TiB、RNIC 同机 loopback 不经物理口);唯一硬件瓶颈是 NVMe 写带宽(真写 84% util)。
 
 > 注: 绝对值随盘态(SLC/TLC 混态)与 governor 变化;本次为 SLC 已耗后的 TLC 稳态值(预填充后)。所有扫描/concurrency 均 ≤16。**重启 backend 后须充分预热 NVMe**(冷态写吞吐跌至 ~1.7G,预热数轮后回到 ~3.3G 稳态)。

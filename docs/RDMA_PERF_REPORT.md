@@ -180,6 +180,6 @@ proxy recv 2221 − backend 1505 ≈ **716µs = proxy↔backend 往返+框架开
 | 主要瓶颈 | NVMe 落盘(70%,util 99%) | host 搬运 dispatch 串行 | — |
 | RNIC phy | ≈0 | ≈0 | 同机 loopback,不经物理链路 |
 
-**一句话**: RDMA 数据面搬运能力极强(mock ~9.8G),真写被 NVMe 落盘拉到 ~3.7G(与 GDS 真写 3.3G 接近 —— NVMe 写带宽是两者共同天花板;RDMA 提交 AIO 队列更深故 NVMe util 99% 高于 GDS 84%,吞吐也更高)。**关键修正:同机部署下 RNIC 物理口 phy 计数全程 ≈0 —— 数据搬运走网卡内部 loopback,不经 100Gb 物理链路;故 mock ~10G 非 RNIC 带宽上限,而是 host 侧搬运上限。跨机部署才会经 RNIC 物理链路、受 100Gb 带宽约束。** proxy↔backend 往返在真写下 ~5.2ms(含 backend 内等待放大),mock 下 backend 快则往返降至 0.7ms。
+ RDMA 数据面搬运能力极强(mock ~9.8G),真写被 NVMe 落盘拉到 ~3.7G(与 GDS 真写 3.3G 接近 —— NVMe 写带宽是两者共同天花板;RDMA 提交 AIO 队列更深故 NVMe util 99% 高于 GDS 84%,吞吐也更高)。**关键修正:同机部署下 RNIC 物理口 phy 计数全程 ≈0 —— 数据搬运走网卡内部 loopback,不经 100Gb 物理链路;故 mock ~10G 非 RNIC 带宽上限,而是 host 侧搬运上限。跨机部署才会经 RNIC 物理链路、受 100Gb 带宽约束。** proxy↔backend 往返在真写下 ~5.2ms(含 backend 内等待放大),mock 下 backend 快则往返降至 0.7ms。
 
 > 注: 绝对值随盘态(SLC/TLC 混态)与 governor 变化;本次为 SLC 已耗后的 TLC 稳态值(预填充后)。所有扫描/concurrency 均 ≤16。**重启 backend 后须充分预热 NVMe + RDMA-CM**(冷态写吞吐跌至 ~1.7G,预热数轮后回到 ~3.7G 稳态)。RDMA 调参对 nt/cp/part 钝感(瓶颈在 NVMe/host 搬运),详见 `TUNING_DEEP_ANALYSIS.md`。
