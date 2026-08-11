@@ -52,10 +52,10 @@ Us3Turbo 是一个把 **GPUDirect Storage（GDS）** 与 **RDMA（RoCE/InfiniBan
 
 ```mermaid
 flowchart TB
-  CL["Client SDK + bench<br/>GPU 显存 / 主机内存 buffer<br/>RDMA CM listener → 发布 token"]
-  PX["us3_turbo_proxy<br/>brpc 控制面：鉴权 / 转发 / 索引"]
+  CL["Client<br/>GPU 显存 / 主机内存"]
+  PX["us3_turbo_proxy<br/>brpc 控制面"]
   DISP["ufile-ac backend<br/>RDMA 搬运 + NVMe 落盘"]
-  NVMe[("NVMe 裸盘<br/>无文件系统")]
+  NVMe[("NVMe 裸盘")]
 
   CL ==>|"控制面 brpc<br/>PutObject / Multipart / Get"| PX
   PX ==>|"控制面协议<br/>（TCP）"| DISP
