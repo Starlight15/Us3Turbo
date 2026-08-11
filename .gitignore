@@ -29,3 +29,6 @@ compile_commands.json
 
 # Review notes (local-only planning docs, not part of source)
 review/
+
+# glog-brpc rebuild (Mooncake 集成时为避 brpc/glog 双 v 冲突重编；BUILD.md 有重编步骤)
+third_party/install-glog/
