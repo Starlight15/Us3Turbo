@@ -74,17 +74,9 @@ flowchart LR
 
 图例：**粗实线** 控制面（client → proxy → backend，经 proxy 转发）；**虚线** 数据面（client ↔ backend 直连，旁路 proxy）。
 
-### 2.2 控制面：proto + brpc
+### 2.2 Client
 
-控制面由 `control_plane.proto` 定义，基于 brpc。核心设计是**统一 PutObject 接口 + 通路枚举**：请求携带 `path`（PATH_GDS / PATH_RDMA）选择通路，并按通路附带对应数据源——GDS 通路附带 cuObj RDMA token（自描述 GPU 显存地址与 remote key），RDMA 通路附带 hex 编码的 listener 地址、rkey、addr、size。
-
-- **集中转发**：client 只与 proxy 交互，proxy 同步转发 backend；数据面则由 client 与 backend 直连。鉴权、限流、part 索引统一在 proxy 完成。
-- **每条通路一组独立 RPC**（单步 PutObject、分段 UploadPart、GET 各一套 GDS / RDMA 接口），通路之间互不影响。
-- **trace_id 贯穿全链路**：proxy 为每个请求生成唯一 trace_id，写入索引、后端协议与日志，并随响应回传；排查任一对象只需按该 id 检索。
-
-### 2.3 数据面：GDS 与 RDMA 双通路
-
-两条通路**数据源不同、协议不同、互不共享逻辑**，但都遵循"client 发布自描述 token → backend 反向连接并 RDMA READ"的 pull 模型：
+Client 提供 SDK：管理数据 buffer（GPU 显存或主机内存），为每个对象发布自描述 token 供 backend 反向连接并 RDMA 搬运，控制面 RPC 经 brpc 发往 proxy。两条通路在请求时选择：
 
 | 维度 | **GDS 通路** | **RDMA 通路** |
 |---|---|---|
@@ -96,9 +88,17 @@ flowchart LR
 | 省去的开销 | 连 `cudaMemcpy(host)` 都省，GPU 张量直接读写、无中转拷贝 | 省内核 TCP/`send`/`recv` 拷贝，host buffer 零拷贝 |
 | **适用** | 训练 checkpoint 落盘 / KV cache 直接读取，GPU 侧零额外拷贝 | 主机侧大对象、非 CUDA 数据、跨进程共享内存 |
 
-> 采用 pull（RDMA READ）而非 push（RDMA WRITE）模型的原因：client 的 buffer 地址/钥匙由 client 自描述发布，backend 解码后主动拉取，client 无需预先开辟接收缓冲，也无需向对端暴露自身内存布局——契合对象存储"client 多变、backend 固定"的不对称关系。
+> 采用 pull（RDMA READ）而非 push（RDMA WRITE）模型：client 的 buffer 地址/钥匙由 client 自描述发布，backend 解码后主动拉取，client 无需预先开辟接收缓冲，也无需向对端暴露自身内存布局——契合对象存储"client 多变、backend 固定"的不对称关系。
 
-### 2.4 proxy 内部分层
+### 2.3 Proxy（us3_turbo_proxy）
+
+proxy 是控制面枢纽：基于 `control_plane.proto` 与 brpc，接收 client RPC，校验并同步转发 backend，持有分段会话，写 part 索引。核心设计是**统一 PutObject 接口 + 通路枚举**——请求携带 `path`（PATH_GDS / PATH_RDMA）选择通路，并按通路附带对应数据源（GDS → cuObj token，RDMA → listener 地址 / rkey / addr / size）。
+
+- **集中转发**：client 只与 proxy 交互，proxy 同步转发 backend；数据面则由 client 与 backend 直连。鉴权、限流、part 索引统一在 proxy 完成。
+- **每条通路一组独立 RPC**（单步 PutObject、分段 UploadPart、GET 各一套 GDS / RDMA 接口），通路之间互不影响。
+- **trace_id 贯穿全链路**：proxy 为每个请求生成唯一 trace_id，写入索引、后端协议与日志，并随响应回传；排查任一对象只需按该 id 检索。
+
+**内部分层**：
 
 ```
 ProxyService（brpc 服务入口：鉴权 / 转发 / 访问日志）
@@ -113,7 +113,7 @@ ProxyService（brpc 服务入口：鉴权 / 转发 / 访问日志）
 - 连接池大小决定 proxy→backend 并发度，需与 brpc 工作线程数匹配；实测 GDS 对其敏感、RDMA 不敏感。
 - 分段 part 大小是硬上限，client 须与配置一致，否则被拒。
 
-### 2.5 backend（ufile-ac）数据路径
+### 2.4 ufile-ac（backend）
 
 backend 是独立部署的 ufile-ac 进程，proxy 通过自定义二进制协议与之通信。关键设计：
 
@@ -122,7 +122,11 @@ backend 是独立部署的 ufile-ac 进程，proxy 通过自定义二进制协�
 - **内存注册池**：RDMA 每次注册内存原为 ~7 ms 瓶颈，已用注册池摊销到接近 0。
 - **搬运与落盘可分离**：可跳过落盘单独测数据搬运能力（§3 中 mock 数值即搬运-only）。
 
-### 2.6 完整 PUT 数据流（分段上传）
+### 2.5 数据流时序
+
+两条主流程的端到端时序：控制面（实线）经 proxy 转发，数据面（RDMA READ/WRITE）由 client 与 backend 直连。
+
+**分段上传（PUT）**
 
 ```mermaid
 sequenceDiagram
@@ -146,7 +150,26 @@ sequenceDiagram
   P->>P: 装配 part 索引 → 对象元数据
 ```
 
-> 每个 part 落盘后以唯一 key 索引，GET 时按 key 装配还原对象；trace_id 贯穿全链路日志，排查任一对象只需按 id 检索。
+**下载（GET）**
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant P as Proxy (:9100)
+  participant B as Backend (:24000 / :18666)
+  participant DB as Mongo / dbgate
+
+  C->>C: 发布目标 buffer token（显存 cuObj / 主机内存 listener）
+  C->>P: GdsGet / RdmaGet（key, dest_token）（brpc）
+  P->>DB: 查 part 索引 → block_key 列表
+  P->>B: GetBlock（block_key, dest_token）（TCP，逐 block）
+  B->>B: 从 NVMe 读 block
+  B->>C: RDMA CM 反连 + RDMA WRITE（推入 client 目标 buffer）
+  B-->>P: rsp（bytes / crc32c）
+  P-->>C: result（trace_id / bytes / crc）
+```
+
+> PUT 与 GET 的数据面方向相反：PUT 由 backend RDMA READ 拉 client buffer 落盘，GET 由 backend 从 NVMe 读出后 RDMA WRITE 推入 client 目标 buffer；控制面路径一致（client → proxy → backend）。每个 part 以唯一 key 索引，GET 时按 key 装配还原对象；trace_id 贯穿全链路日志，排查任一对象只需按 id 检索。
 
 ---
 
