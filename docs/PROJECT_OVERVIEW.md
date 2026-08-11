@@ -80,12 +80,6 @@ flowchart LR
 
 > 图例:**粗实线 ⇒** = 控制面(经 proxy 转发);**虚线 ⇢** = 数据面(client↔backend 直连,旁路 proxy)。
 
-| 层 | 进程 | 端口 | 仓 | 职责 |
-|---|---|---|---|---|
-| **控制面 + 转发** | `us3_turbo_proxy` | 9100 (brpc) | 本仓 | 接收 client RPC、校验、生成 `upload_id`/`trace_id`、转发 backend、写 part 索引、组装 GET |
-| **数据面 backend** | `ufile-ac` | 24000 (TCP 协议)、18666 (GDS cuObj) | `ggds-compile-env`(独立仓) | RDMA READ 搬运 + NVMe 落盘(裸盘直写,无文件系统)、GET 回 RDMA WRITE |
-| **客户端** | bench / SDK | 本机 | 本仓 | 管理 GPU 显存/主机内存 buffer、发布 RDMA token、收发对象 |
-
 > **架构一致性约束**:proxy 的控制面设计与 s3proxy 对齐——`upload_id`(multipart 会话句柄,等同 s3proxy UploadId)、`trace_id`(每 RPC 一个 snowflake,贯穿三层日志关联,等同 s3proxy TraceId)两个 id 两个作用域,client 不生成 id,只从响应读 `trace_id`。
 
 ### 2.2 控制面:proto + brpc
