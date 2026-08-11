@@ -53,13 +53,13 @@ Us3Turbo 是一个把 **GPUDirect Storage（GDS）** 与 **RDMA（RoCE/InfiniBan
 ```mermaid
 flowchart TB
   CL["Client SDK + bench<br/>GPU 显存 / 主机内存 buffer<br/>RDMA CM listener → 发布 token"]
-  PX["us3_turbo_proxy (brpc :9100)<br/>SinglePut · Multipart · GetObject<br/>UfileAcClient 连接池 · UploadIndex (dbgate)"]
-  DISP["ufile-ac backend<br/>RDMA READ dispatch (worker_threads 池)"]
-  NVMe[("NVMe 裸盘 /dev/nvme1n1<br/>无文件系统")]
+  PX["us3_turbo_proxy<br/>brpc 控制面：鉴权 / 转发 / 索引"]
+  DISP["ufile-ac backend<br/>RDMA 搬运 + NVMe 落盘"]
+  NVMe[("NVMe 裸盘<br/>无文件系统")]
 
   CL ==>|"控制面 brpc<br/>PutObject / Multipart / Get"| PX
-  PX ==>|"控制面 ufile_ac_protocol<br/>(TCP :24000)"| DISP
-  CL -.->|"数据面 GDS (:18666) / RDMA READ·WRITE<br/>旁路 proxy"| DISP
+  PX ==>|"控制面协议<br/>（TCP）"| DISP
+  CL -.->|"数据面 GDS / RDMA READ·WRITE<br/>旁路 proxy"| DISP
   DISP --> NVMe
 
   classDef client fill:#e8f0fe,stroke:#1a73e8,stroke-width:1.5px
@@ -81,8 +81,8 @@ Client 提供 SDK：管理数据 buffer（GPU 显存或主机内存），为每�
 | 维度 | **GDS 通路** | **RDMA 通路** |
 |---|---|---|
 | **数据源 buffer** | GPU 显存（device memory）| 主机内存（host memory）|
-| **token 载体** | cuObj RDMA token（显存地址 + remote key 自描述串）| hex 串，含 listener ip:port + rkey + addr + size |
-| **连接建立** | cuObj 链路（:18666）| RDMA CM（client 起 listener，backend 反向连接）|
+| **token 载体** | cuObj RDMA token（显存地址 + remote key 自描述串）| hex 串，含 listener 地址 + rkey + addr + size |
+| **连接建立** | cuObj 链路 | RDMA CM（client 起 listener，backend 反向连接）|
 | **搬运原语** | GDS RDMA READ，backend 拉 GPU 显存 → NVMe | RDMA READ（RC QP），backend 拉主机内存 → NVMe |
 | **GET** | RDMA WRITE 回 client 显存 | RDMA WRITE 回 client 主机内存 |
 | 省去的开销 | 连 `cudaMemcpy(host)` 都省，GPU 张量直接读写、无中转拷贝 | 省内核 TCP/`send`/`recv` 拷贝，host buffer 零拷贝 |
@@ -131,8 +131,8 @@ backend 是独立部署的 ufile-ac 进程，proxy 通过自定义二进制协�
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant P as Proxy (:9100)
-  participant B as Backend (:24000 / :18666)
+  participant P as Proxy
+  participant B as Backend
   participant DB as Mongo / dbgate
 
   C->>P: CreateMultipartUpload（brpc）
@@ -155,8 +155,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant P as Proxy (:9100)
-  participant B as Backend (:24000 / :18666)
+  participant P as Proxy
+  participant B as Backend
   participant DB as Mongo / dbgate
 
   C->>C: 发布目标 buffer token（显存 cuObj / 主机内存 listener）
