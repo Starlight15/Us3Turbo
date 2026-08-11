@@ -55,32 +55,27 @@ Us3Turbo 是一个把 **GPUDirect Storage（GDS）** 与 **RDMA（RoCE/InfiniBan
 
 ```mermaid
 flowchart LR
-  subgraph CL["Client SDK + bench（本仓）"]
-    CMEM["GPU 显存 / 主机内存 buffer<br/>RDMA CM listener：发布自描述 token"]
-  end
-  subgraph PX["us3_turbo_proxy（本仓，:9100 brpc）"]
-    PSVC["ProxyService → SinglePut / Multipart / GetObject"]
-    UAC["UfileAcClient（连接池 backend_conn_pool_size）"]
-    IDX["UploadIndex（Mongo via dbgate）"]
-    PSVC --> UAC
-    PSVC --> IDX
-  end
-  subgraph BK["ufile-ac backend（独立仓 ggds-compile-env）"]
-    DISP["RDMA READ dispatch（worker_threads 池）"]
-    NVME["NVMe 裸盘直写 /dev/nvme1n1（无文件系统）"]
-    DISP --> NVME
-  end
+  CL["Client SDK + bench<br/>GPU 显存 / 主机内存 buffer<br/>RDMA CM listener → 发布 token"]
+  PX["us3_turbo_proxy (brpc :9100)<br/>SinglePut · Multipart · GetObject<br/>UfileAcClient 连接池 · UploadIndex (dbgate)"]
+  DISP["ufile-ac backend<br/>RDMA READ dispatch (worker_threads 池)"]
+  NVMe[("NVMe 裸盘 /dev/nvme1n1<br/>无文件系统")]
 
-  CMEM ==>|"控制面 brpc：PutObject / Multipart / Get"| PSVC
-  PSVC ==>|"控制面 ufile_ac_protocol（TCP :24000）"| DISP
-  CMEM -.->|"数据面 GDS cuObj（:18666）"| DISP
-  DISP -.->|"RDMA READ（backend pull client buffer）"| CMEM
-  DISP -.->|"GET：RDMA WRITE 回 client"| CMEM
+  CL ==>|"控制面 brpc<br/>PutObject / Multipart / Get"| PX
+  PX ==>|"控制面 ufile_ac_protocol<br/>(TCP :24000)"| DISP
+  CL -.->|"数据面 GDS (:18666) / RDMA READ·WRITE<br/>旁路 proxy"| DISP
+  DISP --> NVMe
+
+  classDef client fill:#e8f0fe,stroke:#1a73e8,stroke-width:1.5px
+  classDef proxy  fill:#fef7e0,stroke:#f9ab00,stroke-width:1.5px
+  classDef back   fill:#e6f4ea,stroke:#1e8e3e,stroke-width:1.5px
+  classDef disk   fill:#fce8e6,stroke:#c5221f,stroke-width:1.5px
+  class CL client
+  class PX proxy
+  class DISP back
+  class NVMe disk
 ```
 
-> 图例：**粗实线 ⇒** = 控制面（经 proxy 转发）；**虚线 ⇢** = 数据面（client↔backend 直连，旁路 proxy）。
-
-> **架构一致性约束**：proxy 的控制面设计与 s3proxy 对齐——`upload_id`（multipart 会话句柄，等同 s3proxy UploadId）、`trace_id`（每 RPC 一个 snowflake，贯穿三层日志关联，等同 s3proxy TraceId）两个 id 两个作用域，client 不生成 id，只从响应读 `trace_id`。
+图例：**粗实线** 控制面（client → proxy → backend，经 proxy 转发）；**虚线** 数据面（client ↔ backend 直连，旁路 proxy）。
 
 ### 2.2 控制面：proto + brpc
 
