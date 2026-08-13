@@ -13,16 +13,18 @@
 #include "client/src/common/crc32c.h"
 #include "client/src/common/request.h"
 #include "client/src/common/trace.h"
-#include "client/src/memory_manager/gds_memory_manager.h"
 #include "client/src/memory_manager/rdma_memory_manager.h"
 #include "client/src/rpc/proxy_rpc.h"
-#include "client/src/transport/gds_get_channel.h"
-#include "client/src/transport/gds_put_channel.h"
 #include "client/src/transport/rdma_get_channel.h"
 #include "client/src/transport/rdma_put_channel.h"
 #include "us3_turbo/common/logger.h"
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
+#include "client/src/memory_manager/gds_memory_manager.h"
+#include "client/src/transport/gds_get_channel.h"
+#include "client/src/transport/gds_put_channel.h"
 #include <cuda_runtime.h>
+#endif
 
 namespace us3_turbo::client {
 
@@ -43,6 +45,7 @@ spdlog::level::level_enum ParseLogLevel(std::string_view s) {
                                     std::uint32_t remote_crc32c, bool is_device,
                                     const std::string& tag) {
   std::uint32_t local = 0;
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   if (is_device) {
     std::vector<std::byte> host(buffer.size);
     cudaError_t e = cudaMemcpy(host.data(), buffer.data, buffer.size, cudaMemcpyDeviceToHost);
@@ -51,7 +54,11 @@ spdlog::level::level_enum ParseLogLevel(std::string_view s) {
       return false;
     }
     local = Crc32c(std::span<const std::byte>(host.data(), host.size()));
-  } else {
+  } else
+#else
+  (void)is_device;
+#endif
+  {
     local =
         Crc32c(std::span<const std::byte>(static_cast<const std::byte*>(buffer.data), buffer.size));
   }
@@ -63,6 +70,7 @@ spdlog::level::level_enum ParseLogLevel(std::string_view s) {
   return false;
 }
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 /*
  * 判断指针是否位于 device 显存。失败按 host 处理。
  */
@@ -71,6 +79,7 @@ spdlog::level::level_enum ParseLogLevel(std::string_view s) {
   cudaError_t e = cudaPointerGetAttributes(&attr, ptr);
   return e == cudaSuccess && attr.type == cudaMemoryTypeDevice;
 }
+#endif
 
 }  // namespace
 
@@ -89,6 +98,7 @@ bool Client::Initialize() {
     return false;
   }
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   GdsMemoryManager* gds_mgr = nullptr;
   if (GdsMemoryManager::Instance(gds_mgr)) {
     gds_channel_ = std::make_unique<GdsPutChannel>(opts_, *proxy_, gds_mgr);
@@ -98,6 +108,7 @@ bool Client::Initialize() {
     gds_channel_.reset();
     gds_get_channel_.reset();
   }
+#endif
 
   RdmaMemoryManager* rdma_mgr = nullptr;
   if (RdmaMemoryManager::Instance(rdma_mgr, opts_.rdma_bind_ip)) {
@@ -116,8 +127,10 @@ bool Client::Initialize() {
 void Client::Shutdown() {
   rdma_get_channel_.reset();
   rdma_channel_.reset();
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   gds_get_channel_.reset();
   gds_channel_.reset();
+#endif
   proxy_.reset();
   initialized_ = false;
 }
@@ -127,6 +140,7 @@ bool Client::initialized() const { return initialized_; }
 /*
  * GDS 单步 PUT：校验 → 大小检查 → retry-once → 回填 gds_result。
  */
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 bool Client::PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buffer,
                            ClientProxyPutResponse& resp) const {
   if (!initialized_) {
@@ -155,6 +169,7 @@ bool Client::PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buff
   resp.gds_result = res;
   return res.ok;
 }
+#endif
 
 /*
  * RDMA 单步 PUT：校验 → 大小检查 → retry-once → 回填 rdma_result。
@@ -190,10 +205,12 @@ bool Client::PutObjectRdma(const ClientProxyPutRequest& req, ConstBufferView buf
 
 // ---- 分段上传 ----
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 GdsMemoryManager* Client::GdsManager() const {
   GdsMemoryManager* mgr = nullptr;
   return GdsMemoryManager::Instance(mgr) ? mgr : nullptr;
 }
+#endif
 
 RdmaMemoryManager* Client::RdmaManager() const {
   RdmaMemoryManager* mgr = nullptr;
@@ -224,6 +241,7 @@ bool Client::CreateMultipartUpload(const std::string& bucket, const std::string&
 /*
  * GDS 分段上传单个 part：注册 token → proxy.UploadPartGds → 可选 CRC。
  */
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 bool Client::UploadPartGds(const std::string& upload_id,
                            std::uint32_t part_number,
                            ConstBufferView buffer, std::string& out_etag,
@@ -282,6 +300,7 @@ bool Client::UploadPartGds(const std::string& upload_id,
            out_etag);
   return true;
 }
+#endif
 
 /*
  * RDMA 分段上传单个 part：注册 MR → proxy.UploadPartRdma → 可选 CRC。
@@ -385,13 +404,11 @@ bool Client::StatObject(const std::string& bucket, const std::string& key,
     out_error = "Client not initialized";
     return false;
   }
-  if (gds_get_channel_ == nullptr) {
-    out_error = "GDS get channel not initialized";
-    return false;
-  }
-  return gds_get_channel_->StatObject(bucket, key, out_object_size, out_trace_id, out_error);
+  const std::string req_id = detail::MakeReqId();
+  return proxy_->StatObject(req_id, bucket, key, out_object_size, out_trace_id, out_error);
 }
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
                           MutableBufferView buffer, GetPathResult& res) const {
   if (!initialized_) {
@@ -404,6 +421,7 @@ bool Client::GetObjectGds(const std::string& bucket, const std::string& key,
   }
   return gds_get_channel_->GetOnce(bucket, key, buffer, res);
 }
+#endif
 
 bool Client::GetObjectRdma(const std::string& bucket, const std::string& key,
                            MutableBufferView buffer, GetPathResult& res) const {

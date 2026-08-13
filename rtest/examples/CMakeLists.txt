@@ -8,5 +8,7 @@
 #   build/rtest/examples/rdma/us3_turbo_rdma_get_example      — RDMA (libibverbs) GET 读回验证
 #   build/rtest/examples/rdma/us3_turbo_rdma_multipart_example — RDMA (libibverbs) 分段上传端到端
 
-add_subdirectory(gds)
 add_subdirectory(rdma)
+if(US3_TURBO_ACCESS_ENABLE_GDS)
+  add_subdirectory(gds)
+endif()

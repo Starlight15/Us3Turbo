@@ -15,12 +15,14 @@
 
 namespace us3_turbo::client {
 
-class GdsPutChannel;
-class GdsGetChannel;
 class RdmaPutChannel;
 class RdmaGetChannel;
-class GdsMemoryManager;
 class RdmaMemoryManager;
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
+class GdsPutChannel;
+class GdsGetChannel;
+class GdsMemoryManager;
+#endif
 
 /*
  * 对象存储 client：GDS (CUDA cuObj) / RDMA (libibverbs) 双通路。
@@ -47,8 +49,10 @@ class Client {
   [[nodiscard]] bool Initialize();
 
   /** @brief GDS 单步 PUT：device 显存，走 cuObj RDMA 链路。*/
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   [[nodiscard]] bool PutObjectGds(const ClientProxyPutRequest& req, ConstBufferView buffer,
                                    ClientProxyPutResponse& resp) const;
+#endif
 
   /** @brief RDMA 单步 PUT：host 内存，走 libibverbs RDMA CM 链路。*/
   [[nodiscard]] bool PutObjectRdma(const ClientProxyPutRequest& req, ConstBufferView buffer,
@@ -74,10 +78,12 @@ class Client {
 
   /** @brief GDS 路径上传单个 part：为本 part 独立注册 RDMA token。
    * trace_id 由 proxy 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   [[nodiscard]] bool UploadPartGds(const std::string& upload_id,
                                    std::uint32_t part_number,
                                    ConstBufferView buffer, std::string& out_etag,
                                    std::string& out_error) const;
+#endif
 
   /** @brief RDMA (libibverbs) 路径上传单个 part：为本 part 独立注册 MR + 编码 token。
    * trace_id 由 proxy 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
@@ -108,8 +114,10 @@ class Client {
 
   /**  @brief GDS 通路 GET：buffer 须已按 StatObject 返回的 size 分配。
    * trace_id 由 proxy 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   [[nodiscard]] bool GetObjectGds(const std::string& bucket, const std::string& key,
                                   MutableBufferView buffer, GetPathResult& res) const;
+#endif
 
   /** @brief RDMA (libibverbs) 通路 GET：buffer 须已按 StatObject 返回的 size 分配。
    * backend 从 NVMe 读数据后 RDMA WRITE 推到 client host buffer。
@@ -120,14 +128,18 @@ class Client {
  private:
   ClientOptions opts_;
   std::unique_ptr<ProxyRpc> proxy_;
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   std::unique_ptr<GdsPutChannel> gds_channel_;
   std::unique_ptr<GdsGetChannel> gds_get_channel_;
+#endif
   std::unique_ptr<RdmaPutChannel> rdma_channel_;
   std::unique_ptr<RdmaGetChannel> rdma_get_channel_;
   bool initialized_{false};
 
   // 返回 client 进程内的 GDS/RDMA manager 单例（Initialize 时已确保可用）。
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   [[nodiscard]] GdsMemoryManager* GdsManager() const;
+#endif
 
   [[nodiscard]] RdmaMemoryManager* RdmaManager() const;
 };

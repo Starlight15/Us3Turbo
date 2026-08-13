@@ -46,9 +46,12 @@ cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
 | `--debug` / `--release` / `--relwithdebinfo` | 切换构建类型（默认 RelWithDebInfo） |
 | `-j, --jobs N` | 并行编译任务数 |
 | `--deps-root PATH` | 覆盖依赖根目录（默认 `third_party/install`） |
+| `--enable-gds` / `--disable-gds` | 开启/关闭 GDS（CUDA cuObj）通路编译（默认 OFF） |
 
 环境变量等价：`BUILD_TYPE`、`JOBS`、`BUILD_RTEST`（默认 ON，控制是否编译 rtest 例程/
-示例/bench；关掉可加速只出 proxy + client）。
+示例/bench；关掉可加速只出 proxy + client）、`US3_TURBO_ACCESS_ENABLE_GDS`（默认 OFF，
+=ON 等价 `--enable-gds`）。GDS 关闭时不查找/链接任何 CUDA/cuobj/cufile 依赖，只出
+RDMA（host 内存）通路；无 GPU 机器直接 `./do_make.sh` 即可。
 
 ## 3. 手动 CMake（等价于脚本）
 

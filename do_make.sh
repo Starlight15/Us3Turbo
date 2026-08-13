@@ -9,6 +9,8 @@ BUILD_TYPE="${BUILD_TYPE:-RelWithDebInfo}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 CLEAN_BUILD=0
 BUILD_RTEST="${BUILD_RTEST:-ON}"
+# GDS (CUDA cuObj) 通路编译开关，默认 OFF（无 GPU 机器零依赖可编）。
+ENABLE_GDS="${US3_TURBO_ACCESS_ENABLE_GDS:-OFF}"
 
 # FUSION_ACCESS_DEPS_ROOT：默认使用代码库内 third_party/install
 FUSION_ACCESS_DEPS_ROOT="${FUSION_ACCESS_DEPS_ROOT:-${PROJECT_ROOT}/third_party/install}"
@@ -44,6 +46,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --relwithdebinfo)
       BUILD_TYPE="RelWithDebInfo"
+      ;;
+    --enable-gds)
+      ENABLE_GDS="ON"
+      ;;
+    --disable-gds)
+      ENABLE_GDS="OFF"
       ;;
     -j|--jobs)
       shift
@@ -81,7 +89,8 @@ log "Configuring CMake (${BUILD_TYPE})"
 cmake -S "${PROJECT_ROOT}" -B "${BUILD_DIR}" \
   -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
   -DFUSION_ACCESS_DEPS_ROOT="${FUSION_ACCESS_DEPS_ROOT}" \
-  -DUS3_TURBO_ACCESS_BUILD_RTEST="${BUILD_RTEST}"
+  -DUS3_TURBO_ACCESS_BUILD_RTEST="${BUILD_RTEST}" \
+  -DUS3_TURBO_ACCESS_ENABLE_GDS="${ENABLE_GDS}"
 
 log "Building targets with ${JOBS} jobs"
 cmake --build "${BUILD_DIR}" -j"${JOBS}"

@@ -65,9 +65,11 @@ class ProxyRpc {
   [[nodiscard]] const std::string& init_error() const { return init_error_; }
 
   /** @brief GDS 通路:cuObj RDMA token 随 RPC 透传,backend 反向 RDMA-READ。 */
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   [[nodiscard]] bool GdsPut(std::string_view req_id, const std::string& bucket,
                             const std::string& key, std::uint64_t object_size,
                             const std::string& rdma_token, PutPathResult& res) const;
+#endif
 
   /** @brief RDMA (libibverbs) 通路:token 随 RPC 透传,backend RDMA CM 反向连接后
    * ibv_post_send(RDMA_READ)。 */
@@ -86,10 +88,12 @@ class ProxyRpc {
 
   /** @brief GDS 路径上传单个 part：rdma_token 随 RPC 透传。trace_id 由 proxy
    * 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   [[nodiscard]] bool UploadPartGds(std::string_view req_id,
                                    const std::string& upload_id,
                                    std::uint32_t part_number, std::uint64_t part_size,
                                    const std::string& rdma_token, PutPathResult& res) const;
+#endif
 
   /** @brief RDMA (libibverbs) 路径上传单个 part：rdma_token 随 RPC 透传。
    * trace_id 由 proxy 每请求生成、在响应里回 client(非入参,对齐 s3proxy)。 */
@@ -130,10 +134,12 @@ class ProxyRpc {
   /** @brief GDS 通路 GET：cuObj RDMA token(CUOBJ_GET) 随 RPC 透传，
    * backend RDMA_WRITE 推数据到 client。trace_id 由 proxy 每请求生成、在响应里
    * 回 client(非入参,对齐 s3proxy)。 */
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
   [[nodiscard]] bool GdsGet(std::string_view req_id,
                             const std::string& bucket,
                             const std::string& key, std::uint64_t object_size,
                             const std::string& rdma_token, GetPathResult& res) const;
+#endif
 
   /** @brief RDMA (libibverbs) 通路 GET：token 随 RPC 透传，
    * backend 从 NVMe 读数据后 RDMA WRITE 推数据到 client host buffer。

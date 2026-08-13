@@ -29,6 +29,7 @@ bool FailResult(PutPathResult& res, const brpc::Controller& cntl, std::string_vi
 
 }  // namespace
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 bool ProxyRpc::GdsPut(std::string_view req_id, const std::string& bucket, const std::string& key,
                       std::uint64_t object_size, const std::string& rdma_token,
                       PutPathResult& res) const {
@@ -66,6 +67,7 @@ bool ProxyRpc::GdsPut(std::string_view req_id, const std::string& bucket, const 
   res.trace_id = resp.trace_id();
   return resp.ok();
 }
+#endif
 
 bool ProxyRpc::RdmaPut(std::string_view req_id, const std::string& bucket, const std::string& key,
                        std::uint64_t object_size, const std::string& rdma_token,
@@ -149,6 +151,7 @@ bool ProxyRpc::CreateMultipartUpload(std::string_view req_id, const std::string&
   return true;
 }
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 bool ProxyRpc::UploadPartGds(std::string_view req_id,
                              const std::string& upload_id,
                              std::uint32_t part_number, std::uint64_t part_size,
@@ -181,6 +184,7 @@ bool ProxyRpc::UploadPartGds(std::string_view req_id,
   res.trace_id = resp.trace_id();
   return resp.ok();
 }
+#endif
 
 bool ProxyRpc::UploadPartRdma(std::string_view req_id,
                               const std::string& upload_id,
@@ -317,6 +321,7 @@ bool ProxyRpc::StatObject(std::string_view req_id, const std::string& bucket,
   return true;
 }
 
+#ifdef US3_TURBO_ACCESS_ENABLE_GDS
 bool ProxyRpc::GdsGet(std::string_view req_id,
                       const std::string& bucket, const std::string& key,
                       std::uint64_t object_size, const std::string& rdma_token,
@@ -360,6 +365,7 @@ bool ProxyRpc::GdsGet(std::string_view req_id,
   res.trace_id = resp.trace_id();
   return resp.ok();
 }
+#endif
 
 bool ProxyRpc::RdmaGet(std::string_view req_id,
                        const std::string& bucket, const std::string& key,

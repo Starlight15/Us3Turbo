@@ -9,18 +9,28 @@
 # proto 生成产物(control_plane.pb.*)由根 CMake 生成在
 # US3_TURBO_ACCESS_GENERATED_DIR,直接 include 即可。
 
-add_library(us3_turbo_client
+# GDS 通路源文件(含 <cuda.h>/<cuobjclient.h>),仅开关 ON 时编译。
+set(US3_TURBO_CLIENT_GDS_SRCS
+  src/memory_manager/gds_memory_manager.cpp
+  src/transport/gds_put_channel.cpp
+  src/transport/gds_get_channel.cpp)
+
+set(US3_TURBO_CLIENT_SRCS
   ${US3_TURBO_ACCESS_CONTROL_PROTO_SRCS}
   src/client.cpp
   src/rpc/proxy_rpc.cpp
   src/common/crc32c.cpp
-  src/memory_manager/gds_memory_manager.cpp
   src/memory_manager/rdma_memory_manager.cpp
   src/memory_manager/rdma_qp.cpp
-  src/transport/gds_put_channel.cpp
-  src/transport/gds_get_channel.cpp
   src/transport/rdma_put_channel.cpp
   src/transport/rdma_get_channel.cpp)
+
+if(US3_TURBO_ACCESS_ENABLE_GDS)
+  list(APPEND US3_TURBO_CLIENT_SRCS ${US3_TURBO_CLIENT_GDS_SRCS})
+endif()
+
+add_library(us3_turbo_client
+  ${US3_TURBO_CLIENT_SRCS})
 
 add_dependencies(us3_turbo_client
   us3_turbo_control_plane_proto)
@@ -36,9 +46,14 @@ target_include_directories(us3_turbo_client
   PRIVATE
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/client/src
-    ${US3_TURBO_ACCESS_GENERATED_DIR}
-    ${CUOBJCLIENT_INCLUDE_DIR}
-    ${CUFILE_INCLUDE_DIR})
+    ${US3_TURBO_ACCESS_GENERATED_DIR})
+
+if(US3_TURBO_ACCESS_ENABLE_GDS)
+  target_include_directories(us3_turbo_client
+    PRIVATE
+      ${CUOBJCLIENT_INCLUDE_DIR}
+      ${CUFILE_INCLUDE_DIR})
+endif()
 
 target_link_libraries(us3_turbo_client
   PUBLIC
@@ -46,11 +61,16 @@ target_link_libraries(us3_turbo_client
     us3_turbo_spdlog
     nlohmann_json::nlohmann_json
     us3_turbo_brpc
-    ${CUOBJCLIENT_LIBRARY}
-    ${CUDART_LIBRARY}
-    ${CUDA_DRIVER_LIBRARY}
     ${UCP_LIBRARY} ${UCS_LIBRARY} ${UCT_LIBRARY} ${UCM_LIBRARY}
     ${IBVERBS_LIBRARY} ${RDMACM_LIBRARY})
+
+if(US3_TURBO_ACCESS_ENABLE_GDS)
+  target_link_libraries(us3_turbo_client
+    PUBLIC
+      ${CUOBJCLIENT_LIBRARY}
+      ${CUDART_LIBRARY}
+      ${CUDA_DRIVER_LIBRARY})
+endif()
 
 target_compile_options(us3_turbo_client
   PRIVATE
