@@ -1,0 +1,14 @@
+--- a/src/brpc/policy/http_rpc_protocol.cpp
++++ b/src/brpc/policy/http_rpc_protocol.cpp
+@@ -746,8 +746,9 @@
+ public:
+     explicit HttpResponseSenderAsDone(HttpResponseSender* s) : _sender(std::move(*s)) {}
+     void Run() override {
+-        _sender._cntl->CallAfterRpcResp(
+-            _sender._messages->Request(), _sender._messages->Response());
++        const google::protobuf::Message* req_msg = _sender._messages ? _sender._messages->Request() : nullptr;
++        const google::protobuf::Message* res_msg = _sender._messages ? _sender._messages->Response() : nullptr;
++        _sender._cntl->CallAfterRpcResp(req_msg, res_msg);
+         delete this;
+     }
+

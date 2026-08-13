@@ -32,3 +32,9 @@ review/
 
 # glog-brpc rebuild (Mooncake 集成时为避 brpc/glog 双 v 冲突重编；BUILD.md 有重编步骤)
 third_party/install-glog/
+
+# third_party 依赖树为源码 tarball + build_deps.sh 构建的纯产物,不入库。
+# 首次编译用 ./do_make.sh --with-dep 从源码重建(避免提交不可移植的预编译 .a)。
+third_party/install/
+third_party/build/
+third_party/src_unpacked/

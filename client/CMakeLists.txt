@@ -51,8 +51,7 @@ target_include_directories(us3_turbo_client
 if(US3_TURBO_ACCESS_ENABLE_GDS)
   target_include_directories(us3_turbo_client
     PRIVATE
-      ${CUOBJCLIENT_INCLUDE_DIR}
-      ${CUFILE_INCLUDE_DIR})
+      ${CUDA_INCLUDE_DIR})
 endif()
 
 target_link_libraries(us3_turbo_client

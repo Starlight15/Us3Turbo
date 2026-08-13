@@ -115,19 +115,44 @@ find_library(RDMACM_LIBRARY NAMES rdmacm REQUIRED)
 if(US3_TURBO_ACCESS_ENABLE_GDS)
   add_compile_definitions(US3_TURBO_ACCESS_ENABLE_GDS=1)
 
-  find_library(CUOBJSERVER_LIBRARY NAMES cuobjserver REQUIRED)
+  # CUDA toolkit 根目录(可配置)。跨机编译时不同机器 CUDA 装在 /usr/local/cuda-<ver>,
+  # /usr/local/cuda 通常是 alternatives 软链指向版本目录。未指定时按常见版本自动探测。
+  set(US3_TURBO_ACCESS_CUDA_ROOT "" CACHE PATH
+      "CUDA toolkit root (default: autodetect /usr/local/cuda[-<ver>])")
+  if(NOT US3_TURBO_ACCESS_CUDA_ROOT)
+    foreach(_cuda_root /usr/local/cuda /usr/local/cuda-13.2 /usr/local/cuda-13.1
+                       /usr/local/cuda-12.6 /usr/local/cuda-12)
+      if(IS_DIRECTORY "${_cuda_root}/include"
+         AND EXISTS "${_cuda_root}/include/cuda_runtime.h")
+        set(US3_TURBO_ACCESS_CUDA_ROOT "${_cuda_root}")
+        break()
+      endif()
+    endforeach()
+  endif()
+  if(NOT US3_TURBO_ACCESS_CUDA_ROOT)
+    message(FATAL_ERROR "CUDA toolkit not found. Set -DUS3_TURBO_ACCESS_CUDA_ROOT=... "
+                        "or run ./do_make.sh --with-dep --enable-gds to install it.")
+  endif()
+  message(STATUS "CUDA toolkit root: ${US3_TURBO_ACCESS_CUDA_ROOT}")
+
+  # 统一 include 目录:cuda.h / cuda_runtime.h / cufile.h / cuobjclient.h 同目录,
+  # 一次 find_path 全解(修 gds_memory_manager.h 的 <cuda.h> 与 gds_put_channel.cpp
+  # 的 <cuda_runtime.h> 找不到头的编译期硬缺口,即 GDS 编译阻塞清单 B 项)。
+  find_path(CUDA_INCLUDE_DIR NAMES cuda_runtime.h
+    HINTS "${US3_TURBO_ACCESS_CUDA_ROOT}/include"
+          "${US3_TURBO_ACCESS_CUDA_ROOT}/targets/x86_64-linux/include"
+    REQUIRED)
+  # 兼容旧变量名(client/rtest 引用)。
+  set(CUOBJCLIENT_INCLUDE_DIR ${CUDA_INCLUDE_DIR})
+  set(CUFILE_INCLUDE_DIR     ${CUDA_INCLUDE_DIR})
+
   find_library(CUOBJCLIENT_LIBRARY NAMES cuobjclient
-    HINTS
-      /usr/local/cuda/targets/x86_64-linux/lib
-      /usr/local/cuda-13.1/targets/x86_64-linux/lib
-      /usr/local/cuda-13.2/targets/x86_64-linux/lib
+    HINTS "${US3_TURBO_ACCESS_CUDA_ROOT}/targets/x86_64-linux/lib"
+          "${US3_TURBO_ACCESS_CUDA_ROOT}/lib64"
     REQUIRED)
   find_library(CUDART_LIBRARY NAMES cudart_static cudart
-    HINTS
-      /usr/local/cuda/targets/x86_64-linux/lib
-      /usr/local/cuda-12/targets/x86_64-linux/lib
-      /usr/local/cuda-12.6/targets/x86_64-linux/lib
-      /usr/local/cuda-13.2/targets/x86_64-linux/lib
+    HINTS "${US3_TURBO_ACCESS_CUDA_ROOT}/targets/x86_64-linux/lib"
+          "${US3_TURBO_ACCESS_CUDA_ROOT}/lib64"
     REQUIRED)
   get_filename_component(CUDART_LIBRARY_DIR ${CUDART_LIBRARY} DIRECTORY)
   link_directories(${CUDART_LIBRARY_DIR})
@@ -135,29 +160,15 @@ if(US3_TURBO_ACCESS_ENABLE_GDS)
   # CUDA driver API (libcuda): cuPointerGetAttribute 属于 driver API,运行期由
   # 系统真实驱动的 libcuda.so.1 提供符号;链接期用 stubs/libcuda.so 是标准做法。
   find_library(CUDA_DRIVER_LIBRARY NAMES cuda
-    PATHS ${CUDA_TOOLKIT_ROOT_DIR}/lib64/stubs
-          ${CUDA_TOOLKIT_ROOT_DIR}/targets/x86_64-linux/lib/stubs
-          /usr/local/cuda/targets/x86_64-linux/lib/stubs
-          /usr/local/cuda-13.1/targets/x86_64-linux/lib/stubs
-          /usr/local/cuda-13.2/targets/x86_64-linux/lib/stubs
+    HINTS "${US3_TURBO_ACCESS_CUDA_ROOT}/targets/x86_64-linux/lib/stubs"
+          "${US3_TURBO_ACCESS_CUDA_ROOT}/lib64/stubs"
     NO_DEFAULT_PATH)
   if(NOT CUDA_DRIVER_LIBRARY)
-    message(FATAL_ERROR "libcuda.so (CUDA driver stub) not found. "
-                        "Check CUDA_TOOLKIT_ROOT_DIR or install CUDA toolkit.")
+    message(FATAL_ERROR "libcuda.so (CUDA driver stub) not found under "
+                        "${US3_TURBO_ACCESS_CUDA_ROOT}/targets/x86_64-linux/lib/stubs. "
+                        "Install CUDA toolkit (cuda-driver-dev).")
   endif()
   message(STATUS "Found CUDA driver stub: ${CUDA_DRIVER_LIBRARY}")
-
-  find_path(CUOBJCLIENT_INCLUDE_DIR NAMES cuobjclient.h
-    HINTS
-      /usr/local/cuda/targets/x86_64-linux/include
-      /usr/local/cuda-13.2/targets/x86_64-linux/include
-    REQUIRED)
-  find_path(CUFILE_INCLUDE_DIR NAMES cufile.h
-    HINTS
-      /usr/local/cuda/targets/x86_64-linux/include
-      /usr/local/cuda-12.6/targets/x86_64-linux/include
-      /usr/local/cuda-13.2/targets/x86_64-linux/include
-    REQUIRED)
 else()
   message(STATUS "US3_TURBO_ACCESS_ENABLE_GDS=OFF: skipping CUDA/cuobj/cufile deps (RDMA path only)")
 endif()

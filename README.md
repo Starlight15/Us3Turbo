@@ -16,18 +16,20 @@ client SDK / bench  ──brpc──►  us3_turbo_proxy (:9100)  ──TCP/RDMA
 
 ## 1. 前置依赖
 
-编译依赖一组离线静态库，需先准备好 `third_party/install/`（含 brpc、protobuf、spdlog、
-abseil 等）。该依赖树由 `ggds-compile-env` 仓的 `third_party/build_deps.sh` 构建，
-产物落到本仓 `third_party/install/`。缺该目录时 `./do_make.sh` 会报：
+编译依赖一组离线静态库（brpc、protobuf、spdlog、abseil 等），由**源码 tarball**
+（`third_party/src/*.tar.gz`）经仓内 `third_party/build_deps.sh` 构建到
+`third_party/install/`。不再提交预编译静态产物，跨机可移植。缺该目录时
+`./do_make.sh` 会报：
 
 ```
-Dependency root not found: third_party/install. Run ./third_party/build_deps.sh first ...
+Dependency root not found: third_party/install. Run ./do_make.sh --with-dep first ...
 ```
 
-系统侧还需：CUDA toolkit（12.6 / 13.x，提供 cudart、cuobjclient、cufile 头）、
-libibverbs / librdmacm、libucp/libucs/libuct/libucm、libcuobjserver.so。C++20 编译器
-（gcc-11+，devtoolset-11 即可，CMake 会强制 `_GLIBCXX_USE_CXX11_ABI=1` 以匹配
-cuobjserver.so 并静态链接 libstdc++/libgcc）。
+系统侧还需：libibverbs / librdmacm（RDMA 通路）。GDS 通路另需 CUDA toolkit
+（12.6 / 13.x，提供 cudart、`cuda.h`/`cuda_runtime.h`）与 cuObj SDK（`libcufile`、
+`libcuobjclient`、`libcuobjserver`），由 `scripts/install_gds_deps.sh` 自动 apt 安装。
+C++20 编译器（gcc-11+，devtoolset-11 即可，CMake 强制 `_GLIBCXX_USE_CXX11_ABI=1`
+并静态链接 libstdc++/libgcc）。
 
 ## 2. 一键编译
 
@@ -38,12 +40,22 @@ cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
 ./do_make.sh
 ```
 
+首次在新机器上编译（自动装系统依赖、从源码重编 third_party；加 `--enable-gds` 时
+同时 apt 安装 CUDA toolkit + cuObj SDK）：
+
+```bash
+./do_make.sh --with-dep            # 只编 RDMA 通路
+./do_make.sh --with-dep --enable-gds   # 连 GDS 通路一起，一键装 CUDA/cuObj
+```
+
 常用选项：
 
 | 选项 | 作用 |
 |---|---|
 | `--clean` | 配置前清空 `build/` |
 | `--debug` / `--release` / `--relwithdebinfo` | 切换构建类型（默认 RelWithDebInfo） |
+| `--with-dep` | 首次编译：装系统依赖 + 源码重编 `third_party/install`（+GDS 时装 CUDA/cuObj SDK） |
+| `--cuda-root PATH` | CUDA toolkit 根目录（默认自动探测 `/usr/local/cuda[-<ver>]`） |
 | `-j, --jobs N` | 并行编译任务数 |
 | `--deps-root PATH` | 覆盖依赖根目录（默认 `third_party/install`） |
 | `--enable-gds` / `--disable-gds` | 开启/关闭 GDS（CUDA cuObj）通路编译（默认 OFF） |
@@ -62,6 +74,9 @@ cmake -S . -B build \
   -DUS3_TURBO_ACCESS_BUILD_RTEST=ON
 cmake --build build -j"$(nproc)"
 ```
+
+GDS 通路：加 `-DUS3_TURBO_ACCESS_ENABLE_GDS=ON`；CUDA 装在非标准路径时再加
+`-DUS3_TURBO_ACCESS_CUDA_ROOT=/path/to/cuda`（缺省自动探测 `/usr/local/cuda[-<ver>]`）。
 
 ## 4. 产物
 
