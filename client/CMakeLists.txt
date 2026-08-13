@@ -61,7 +61,6 @@ target_link_libraries(us3_turbo_client
     us3_turbo_spdlog
     nlohmann_json::nlohmann_json
     us3_turbo_brpc
-    ${UCP_LIBRARY} ${UCS_LIBRARY} ${UCT_LIBRARY} ${UCM_LIBRARY}
     ${IBVERBS_LIBRARY} ${RDMACM_LIBRARY})
 
 if(US3_TURBO_ACCESS_ENABLE_GDS)

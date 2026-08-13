@@ -48,6 +48,12 @@ find_package(spdlog REQUIRED
   PATHS "${FUSION_ACCESS_DEPS_ROOT}/spdlog-install"
   NO_DEFAULT_PATH)
 find_package(nlohmann_json REQUIRED)
+
+# protobuf-config.cmake 内部会 find_dependency(absl)/find_dependency(utf8_range),
+# 二者与 protobuf 同安装树,位于 <root>/lib/cmake/{absl,utf8_range}/。将安装根加入
+# CMAKE_PREFIX_PATH,使 find_dependency 能定位到它们。
+list(PREPEND CMAKE_PREFIX_PATH "${US3_TURBO_ACCESS_PROTOBUF_ROOT}")
+
 find_package(Protobuf CONFIG REQUIRED
   PATHS
     ${US3_TURBO_ACCESS_PROTOBUF_ROOT}
@@ -100,10 +106,6 @@ list(SORT ABSEIL_STATIC_LIBRARIES)
 
 find_library(IBVERBS_LIBRARY NAMES ibverbs REQUIRED)
 find_library(RDMACM_LIBRARY NAMES rdmacm REQUIRED)
-find_library(UCP_LIBRARY NAMES ucp REQUIRED)
-find_library(UCS_LIBRARY NAMES ucs REQUIRED)
-find_library(UCT_LIBRARY NAMES uct REQUIRED)
-find_library(UCM_LIBRARY NAMES ucm REQUIRED)
 
 # ============================================================
 #  GDS (CUDA cuObj) 通路——仅 US3_TURBO_ACCESS_ENABLE_GDS=ON 时启用。
@@ -161,7 +163,11 @@ else()
 endif()
 
 add_library(us3_turbo_brpc INTERFACE)
-target_include_directories(us3_turbo_brpc INTERFACE ${US3_TURBO_ACCESS_BRPC_ROOT}/include)
+# brpc 头内部 include <google/protobuf/*> 与 <absl/*>,故需把 protobuf 安装树 include
+# (含 google/ 与 absl/)一并暴露,否则 client/proxy 编译 brpc 头时报缺头文件。
+target_include_directories(us3_turbo_brpc INTERFACE
+  ${US3_TURBO_ACCESS_BRPC_ROOT}/include
+  ${US3_TURBO_ACCESS_PROTOBUF_ROOT}/include)
 target_link_libraries(us3_turbo_brpc INTERFACE
   -Wl,--start-group
     ${BRPC_STATIC_LIBRARY}

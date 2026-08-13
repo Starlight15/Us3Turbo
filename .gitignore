@@ -14,7 +14,7 @@ us3_turbo_gds_put_example
 *.log.*
 nohup.out
 core
-core.*
+core.[0-9]*
 *.tmp
 scripts/*results*
 scripts/logs/
