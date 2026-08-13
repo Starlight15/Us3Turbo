@@ -65,6 +65,29 @@ cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
 =ON 等价 `--enable-gds`）。GDS 关闭时不查找/链接任何 CUDA/cuobj/cufile 依赖，只出
 RDMA（host 内存）通路；无 GPU 机器直接 `./do_make.sh` 即可。
 
+### 2.1 跨发行版（Ubuntu / CentOS）
+
+- **Ubuntu 22.04 / 24.04**：GDS + RDMA、或仅 GDS，均可用 `--with-dep --enable-gds` 一键装依赖。
+- **CentOS / RHEL（仅 RDMA，无 GPU）**：`./do_make.sh --with-dep` 会按发行版自动选
+  `apt-get` / `dnf` / `yum` 装系统依赖（部分 dev 包在 EPEL，脚本会尽力先启 `epel-release`），
+  再从源码重编 third_party。**注意 CentOS 7 系统 gcc 4.8.5 不支持 C++20**，须先启用
+  `devtoolset-11`（CentOS 7）或 `gcc-toolset-11`（CentOS 8+）：
+
+  ```bash
+  # CentOS 7
+  yum install -y centos-release-scl devtoolset-11
+  scl enable devtoolset-11 bash
+  ./do_make.sh --with-dep
+
+  # CentOS 8+ / Rocky / Alma
+  dnf install -y gcc-toolset-11
+  scl enable gcc-toolset-11 bash
+  ./do_make.sh --with-dep
+  ```
+
+  GDS 通路依赖 CUDA/cuObj SDK，仅 `scripts/install_gds_deps.sh` 支持 Ubuntu 官方仓库；
+  CentOS 上如需 GDS 请手动装 CUDA toolkit + cuObj SDK 后 `./do_make.sh --enable-gds --cuda-root <path>`。
+
 ## 3. 手动 CMake（等价于脚本）
 
 ```bash

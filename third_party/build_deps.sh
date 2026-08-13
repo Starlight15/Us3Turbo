@@ -45,6 +45,31 @@ need_tarball() {
   [[ -f "${TARBALL_DIR}/${name}" ]] || die "Tarball not found: ${TARBALL_DIR}/${name}"
 }
 
+# ---------------------------------------------------------------------------
+# 发行版检测:包管理器 + 静态库搜索目录(跨 Ubuntu/CentOS)。
+# ---------------------------------------------------------------------------
+PKG_MGR=""
+LIB_SEARCH_DIRS=(/usr/lib/x86_64-linux-gnu /usr/lib64 /usr/local/lib /usr/local/lib64)
+
+detect_distro() {
+  if command -v apt-get &>/dev/null; then
+    PKG_MGR="apt"
+  elif command -v dnf &>/dev/null; then
+    PKG_MGR="dnf"
+  elif command -v yum &>/dev/null; then
+    PKG_MGR="yum"
+  fi
+}
+
+# 在常见库目录里找静态库(跨发行版:Ubuntu 用 x86_64-linux-gnu,CentOS 用 lib64 / local)。
+find_static_lib() {
+  local name="$1" dir
+  for dir in "${LIB_SEARCH_DIRS[@]}"; do
+    [[ -f "${dir}/${name}" ]] && { echo "${dir}/${name}"; return 0; }
+  done
+  return 1
+}
+
 check_system_deps() {
   local missing=()
   for cmd in cmake g++ make; do
@@ -52,62 +77,76 @@ check_system_deps() {
   done
 
   local headers=(
-    "/usr/include/openssl/ssl.h:libssl-dev"
-    "/usr/include/zlib.h:zlib1g-dev"
-    "/usr/include/snappy.h:libsnappy-dev"
-    "/usr/include/leveldb/db.h:libleveldb-dev"
-    "/usr/include/gflags/gflags.h:libgflags-dev"
-    "/usr/include/infiniband/verbs.h:libibverbs-dev"
-    "/usr/include/rdma/rdma_cma.h:librdmacm-dev"
-    "/usr/include/nlohmann/json.hpp:nlohmann-json3-dev"
+    "/usr/include/openssl/ssl.h"
+    "/usr/include/zlib.h"
+    "/usr/include/snappy.h"
+    "/usr/include/leveldb/db.h"
+    "/usr/include/gflags/gflags.h"
+    "/usr/include/infiniband/verbs.h"
+    "/usr/include/rdma/rdma_cma.h"
+    "/usr/include/nlohmann/json.hpp"
   )
-  for entry in "${headers[@]}"; do
-    local hdr="${entry%%:*}" pkg="${entry##*:}"
-    [[ -f "$hdr" ]] || missing+=("$pkg")
+  for hdr in "${headers[@]}"; do
+    [[ -f "$hdr" ]] || missing+=("header:${hdr}")
   done
 
-  local static_libs=(
-    "/usr/lib/x86_64-linux-gnu/libssl.a:libssl-dev"
-    "/usr/lib/x86_64-linux-gnu/libcrypto.a:libssl-dev"
-    "/usr/lib/x86_64-linux-gnu/libz.a:zlib1g-dev"
-    "/usr/lib/x86_64-linux-gnu/libsnappy.a:libsnappy-dev"
-    "/usr/lib/x86_64-linux-gnu/libleveldb.a:libleveldb-dev"
-    "/usr/lib/x86_64-linux-gnu/libgflags.a:libgflags-dev"
-  )
-  for entry in "${static_libs[@]}"; do
-    local lib="${entry%%:*}" pkg="${entry##*:}"
-    [[ -f "$lib" ]] || missing+=("${pkg}(.a)")
+  local static_libs=(libssl.a libcrypto.a libz.a libsnappy.a libleveldb.a libgflags.a)
+  for lib in "${static_libs[@]}"; do
+    find_static_lib "$lib" &>/dev/null || missing+=("lib:${lib}")
   done
+
+  # C++20 需 gcc-11+;CentOS 7 系统 gcc 4.8.5 不够,须 devtoolset-11(CentOS 7)或
+  # gcc-toolset-11(CentOS 8+)。仅告警不阻断(用户可能已 source 工具集)。
+  if command -v g++ &>/dev/null; then
+    local gxx_major
+    gxx_major=$(g++ -dumpversion 2>/dev/null | cut -d. -f1)
+    if [[ "${gxx_major}" =~ ^[0-9]+$ && "${gxx_major}" -lt 11 ]]; then
+      warn "g++ ${gxx_major} < 11 does not support C++20. On CentOS 7 enable devtoolset-11 (scl enable devtoolset-11 bash); CentOS 8+ use gcc-toolset-11."
+    fi
+  fi
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     echo ""
     echo "Missing system dependencies:"
     printf '  - %s\n' "${missing[@]}"
     echo ""
-    echo "Install with:"
-    echo "  apt install -y build-essential cmake \\"
-    echo "    libssl-dev zlib1g-dev libsnappy-dev libleveldb-dev \\"
-    echo "    libgflags-dev libibverbs-dev librdmacm-dev nlohmann-json3-dev"
+    echo "Install with: ./third_party/build_deps.sh install-system-deps"
+    echo "              (or ./do_make.sh --with-dep)"
     echo ""
     die "Fix the above before continuing"
   fi
   log "System dependency check passed"
 }
 
-# 自动安装系统依赖(apt,需 root)。幂等:apt-get install 已装即跳过。
-# 装完再跑一次 check_system_deps 校验,避免"漏装仍继续编译"。
+# 自动安装系统依赖(需 root)。按发行版选 apt / dnf / yum,幂等。
 install_system_deps() {
+  detect_distro
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-    die "Need root to install system deps. Run with sudo, or manually run: \
-apt install -y build-essential cmake libssl-dev zlib1g-dev libsnappy-dev \
-libleveldb-dev libgflags-dev libibverbs-dev librdmacm-dev nlohmann-json3-dev"
+    die "Need root to install system deps. Run with sudo."
   fi
-  log "apt-get install system dependencies ..."
-  apt-get update -y
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    build-essential cmake \
-    libssl-dev zlib1g-dev libsnappy-dev libleveldb-dev libgflags-dev \
-    libibverbs-dev librdmacm-dev nlohmann-json3-dev
+
+  case "${PKG_MGR}" in
+    apt)
+      log "apt-get install system dependencies ..."
+      apt-get update -y
+      DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        build-essential cmake \
+        libssl-dev zlib1g-dev libsnappy-dev libleveldb-dev libgflags-dev \
+        libibverbs-dev librdmacm-dev nlohmann-json3-dev
+      ;;
+    dnf|yum)
+      log "${PKG_MGR} install system dependencies (CentOS/RHEL) ..."
+      # 部分 dev 包(snappy/leveldb/gflags/json)在 EPEL;尽力先启 epel-release,失败不致命。
+      "${PKG_MGR}" install -y epel-release || true
+      "${PKG_MGR}" install -y \
+        gcc gcc-c++ make cmake \
+        openssl-devel zlib-devel snappy-devel leveldb-devel gflags-devel \
+        libibverbs-devel librdmacm-devel json-devel
+      ;;
+    *)
+      die "Unsupported package manager. Install build deps manually, then run without --with-dep."
+      ;;
+  esac
   check_system_deps
 }
 
@@ -317,12 +356,6 @@ verify() {
     "${brpc_prefix}/lib/libbrpc.a"
     "${brpc_prefix}/include/brpc/server.h"
     "${spdlog_prefix}/include/spdlog/spdlog.h"
-    "/usr/lib/x86_64-linux-gnu/libssl.a"
-    "/usr/lib/x86_64-linux-gnu/libcrypto.a"
-    "/usr/lib/x86_64-linux-gnu/libz.a"
-    "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-    "/usr/lib/x86_64-linux-gnu/libleveldb.a"
-    "/usr/lib/x86_64-linux-gnu/libgflags.a"
   )
 
   for f in "${files[@]}"; do
@@ -330,6 +363,17 @@ verify() {
       printf "  %-60s \033[32mOK\033[0m\n" "$f"
     else
       printf "  %-60s \033[31mMISSING\033[0m\n" "$f"
+      ok=0
+    fi
+  done
+
+  # 系统静态库:跨发行版在 lib/x86_64-linux-gnu、lib64、local 里找。
+  for lib in libssl.a libcrypto.a libz.a libsnappy.a libleveldb.a libgflags.a; do
+    local path
+    if path=$(find_static_lib "$lib" 2>/dev/null); then
+      printf "  %-60s \033[32mOK\033[0m\n" "${path}"
+    else
+      printf "  %-60s \033[31mMISSING\033[0m\n" "$lib"
       ok=0
     fi
   done
