@@ -67,7 +67,7 @@ if ! grep -qs "developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_V
   log "Adding NVIDIA CUDA apt repo (ubuntu${UBUNTU_VER}) ..."
   apt-get update -y
   apt-get install -y wget
-  local keyring_deb="/tmp/cuda-keyring_1.1-1_all.deb"
+  keyring_deb="/tmp/cuda-keyring_1.1-1_all.deb"
   wget -qO "${keyring_deb}" \
     "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb"
   dpkg -i "${keyring_deb}"
