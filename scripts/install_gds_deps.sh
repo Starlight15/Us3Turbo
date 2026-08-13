@@ -31,6 +31,11 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 CUDA_ROOT="/usr/local/cuda"
 
+# NVIDIA CUDA 仓库域名:developer.download.nvidia.com 在国内常被墙/极慢,
+# 默认走官方国内镜像 .cn;海外可用 NVIDIA_MIRROR=https://developer.download.nvidia.com 覆盖。
+NVIDIA_MIRROR="${NVIDIA_MIRROR:-https://developer.download.nvidia.cn}"
+NVIDIA_MIRROR_HOST="${NVIDIA_MIRROR#https://}"
+
 # 校验关键编译产物是否齐备(头 + 库 + driver stub)。
 gds_present() {
   [[ -f "${CUDA_ROOT}/include/cuda_runtime.h" ]] &&
@@ -62,16 +67,22 @@ esac
 
 # 加 NVIDIA CUDA 仓库(官方 keyring .deb 同时装 keyring + sources.list)。
 REPO_FILE="/etc/apt/sources.list.d/cuda-ubuntu${UBUNTU_VER}-x86_64.list"
-if ! grep -qs "developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}" \
-       "${REPO_FILE}" 2>/dev/null; then
-  log "Adding NVIDIA CUDA apt repo (ubuntu${UBUNTU_VER}) ..."
+if [[ ! -f "${REPO_FILE}" ]]; then
+  log "Adding NVIDIA CUDA apt repo (ubuntu${UBUNTU_VER}, mirror ${NVIDIA_MIRROR}) ..."
   apt-get update -y
   apt-get install -y wget
   keyring_deb="/tmp/cuda-keyring_1.1-1_all.deb"
   wget -qO "${keyring_deb}" \
-    "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb"
+    "${NVIDIA_MIRROR}/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb"
   dpkg -i "${keyring_deb}"
   rm -f "${keyring_deb}"
+fi
+
+# 官方 keyring .deb 写入的是 developer.download.nvidia.com;按所选镜像统一改写
+# (幂等:已是目标域名则跳过,把 .com 修成 .cn 后再 apt update 才能连通)。
+if grep -qs "developer\.download\.nvidia\.com" "${REPO_FILE}" 2>/dev/null; then
+  sed -i "s#developer\.download\.nvidia\.com#${NVIDIA_MIRROR_HOST}#g" "${REPO_FILE}"
+  log "Rewrote NVIDIA apt repo host to ${NVIDIA_MIRROR_HOST}"
 fi
 
 log "Installing CUDA ${CUDA_VER} toolkit + GDS/cuObj SDK (this is a large download) ..."
