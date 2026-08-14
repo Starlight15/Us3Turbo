@@ -211,7 +211,7 @@ build_protobuf() {
 
   # Verify
   local absl_count
-  absl_count=$(find "$install_prefix/lib" -name 'libabsl_*.a' | wc -l)
+  absl_count=$(find -L "$install_prefix/lib" -name 'libabsl_*.a' | wc -l)
   [[ -f "${install_prefix}/lib/libprotobuf.a" ]]   || die "libprotobuf.a not found after install"
   [[ -f "${install_prefix}/lib/libprotoc.a" ]]      || die "libprotoc.a not found after install"
   [[ -f "${install_prefix}/lib/libutf8_range.a" ]]  || die "libutf8_range.a not found after install"
@@ -379,7 +379,7 @@ verify() {
   done
 
   local absl_count
-  absl_count=$(find "${protobuf_prefix}/lib" -name 'libabsl_*.a' 2>/dev/null | wc -l)
+  absl_count=$(find -L "${protobuf_prefix}/lib" -name 'libabsl_*.a' 2>/dev/null | wc -l)
   printf "  %-60s %s\n" "abseil static libs" "${absl_count} files"
 
   # Tarball check
