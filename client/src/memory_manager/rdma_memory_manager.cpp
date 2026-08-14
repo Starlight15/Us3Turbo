@@ -23,15 +23,12 @@ namespace {
 
 // client RDMA CM listener 绑定地址，端口 0 由系统分配。
 // bind IP 解析优先级（仅首次 Instance 调用生效）：
-//   ClientOptions::rdma_bind_ip > 环境变量 US3_TURBO_RDMA_BIND_IP > kFallbackBindIp。
+//   ClientOptions::rdma_bind_ip > 环境变量 US3_TURBO_RDMA_BIND_IP。
+// 两者都未指定时 Instance 报错返回，不再用内置 fallback（避免跨环境绑到错误网卡）。
 // g_bind_ip 初值 "0.0.0.0" 表示"尚未解析"。
-std::string g_bind_ip = "0.0.0.0";
-
-// 内置 fallback：本测试环境的 RDMA 数据网卡 IP。多 NIC / 跨环境部署须通过
-// 环境变量 US3_TURBO_RDMA_BIND_IP 或显式 ClientOptions::rdma_bind_ip 覆盖。
-// 注意：该 IP 会被写入 RDMA token 供 backend 反向连接，必须是可路由的 RDMA 网卡 IP
+// 注意：最终 IP 会被写入 RDMA token 供 backend 反向连接，必须是可路由的 RDMA 网卡 IP
 //（不能用 0.0.0.0，否则 backend 无法 RDMA-CONNECT）。
-constexpr const char* kFallbackBindIp = "192.168.1.198";
+std::string g_bind_ip = "0.0.0.0";
 
 // 单 Accept 超时（ms）：后台线程用短超时走 select 轮询，stop_ 时可快速退出。
 constexpr int kAcceptTimeoutMs = 500;
@@ -140,15 +137,22 @@ RdmaMemoryManager::~RdmaMemoryManager() {
 }
 
 bool RdmaMemoryManager::Instance(RdmaMemoryManager*& out, const std::string& bind_ip) {
-  // bind IP 解析优先级：显式参数 > 环境变量 US3_TURBO_RDMA_BIND_IP > 内置 fallback。
+  // bind IP 解析优先级：显式参数 > 环境变量 US3_TURBO_RDMA_BIND_IP。
+  // 两者都未指定时直接报错返回，不让 RDMA listener 用错误 IP 启动。
   // 仅首次调用生效（g_bind_ip 初值 "0.0.0.0" 表示未解析）；后续调用忽略。
   if (g_bind_ip == "0.0.0.0") {
     if (!bind_ip.empty()) {
       g_bind_ip = bind_ip;
     } else {
       const char* env = std::getenv("US3_TURBO_RDMA_BIND_IP");
-      if (env != nullptr && env[0] != '\0') g_bind_ip = env;
-      else g_bind_ip = kFallbackBindIp;
+      if (env != nullptr && env[0] != '\0') {
+        g_bind_ip = env;
+      } else {
+        LOG_SYS_ERROR(
+            "RDMA bind IP 未指定，RDMA 通路不可用：请通过 --rdma-bind-ip 或环境变量 "
+            "US3_TURBO_RDMA_BIND_IP 指定本机 RDMA 数据网卡 IP");
+        return false;
+      }
     }
   }
   static RdmaMemoryManager mgr;
