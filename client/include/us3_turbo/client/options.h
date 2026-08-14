@@ -38,7 +38,7 @@ struct ClientOptions {
   std::string log_level{"info"};
 
   // RDMA CM listener 绑定 IP。空串表示从环境变量 US3_TURBO_RDMA_BIND_IP 读取；
-  // 两者都未指定时 Instance 报错返回，RDMA 通路不可用。须匹配本地 RDMA 数据
+  // 两者都未指定时 Instance 记 info 返回，RDMA 通路不可用。须匹配本地 RDMA 数据
   // 网卡 IP（不能用 0.0.0.0，否则 backend 无法 RDMA-CONNECT）。多 NIC 机器请通过
   // 环境变量或显式设值指定数据网卡。
   std::string rdma_bind_ip;
