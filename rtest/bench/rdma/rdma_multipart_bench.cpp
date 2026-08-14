@@ -128,7 +128,7 @@ bool RdmaMpParseArgs(int argc, char** argv, RdmaMpArgs& a) {
                 << "  --proxy ADDR        proxy endpoint\n"
                 << "  --rdma-bind-ip IP   RDMA listener bind IP (default: env/fallback)\n"
                 << "  --total SIZE        total object size (default 64M)\n"
-                << "  --part-size SIZE    part size (default 8M, <=16M)\n"
+                << "  --part-size SIZE    part size (default 4M, <=16M)\n"
                 << "  --reps N            reps per worker (default 5)\n"
                 << "  --warmup N          warmup rounds (default 0)\n"
                 << "  --concurrency N     worker threads (default 1)\n"

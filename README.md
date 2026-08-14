@@ -171,7 +171,7 @@ nohup ./build/ufile-ac \
 
 proxy 通过 flagfile 启动，配置在 `proxy/conf/proxy.flags`（gflags 格式）。当前默认值
 已是性能调优后的最优值（`num_threads=16` / `backend_conn_pool_size=16` /
-`multipart_part_size=8M`，见 `docs/*_DEEP_ANALYSIS.md`）。
+`multipart_part_size=4M`，见 `docs/*_DEEP_ANALYSIS.md`）。
 
 ```bash
 cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
@@ -196,7 +196,7 @@ tail -n 5 /tmp/proxy.log        # 看到 brpc 监听 :9100
 | `--num_threads` | 16 | brpc worker 线程数，须 ≈ `backend_conn_pool_size` |
 | `--backend_endpoint` | `192.168.1.198:24000` | 后端 TCP 端点（setid 须与 backend `[common] setid` 一致） |
 | `--backend_conn_pool_size` | 16 | proxy→backend 连接池大小 |
-| `--multipart_part_size` | 8388608 (8M) | 分段上传 part 大小，同时是落盘 block 大小 |
+| `--multipart_part_size` | 4194304 (4M) | 分段上传 part 大小，同时是落盘 block 大小 |
 | `--max_single_put_bytes` | 4M | 单步 PUT 上限，超过必须走 multipart |
 | `--log_level` | info（flagfile 内 warn） | `debug/info/warn/error` |
 
@@ -211,7 +211,7 @@ cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
 # 改参（三行可按需选）
 sed -i 's/^--num_threads=.*/--num_threads=16/'               proxy/conf/proxy.flags
 sed -i 's/^--backend_conn_pool_size=.*/--backend_conn_pool_size=16/' proxy/conf/proxy.flags
-sed -i 's/^--multipart_part_size=.*/--multipart_part_size=8388608/' proxy/conf/proxy.flags
+sed -i 's/^--multipart_part_size=.*/--multipart_part_size=4194304/' proxy/conf/proxy.flags
 
 # 重启（分两步）
 kill $(pgrep -f us3_turbo_proxy); sleep 3
@@ -229,11 +229,11 @@ cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
 
 # GDS 分段上传（device 显存）
 ./build/rtest/bench/gds/us3_turbo_bench_gds_multipart \
-  --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2
+  --part-size 4M --total 64M --concurrency 32 --reps 10 --warmup 2
 
 # RDMA 分段上传（host 内存，须显式给 RDMA 网卡 IP）
 ./build/rtest/bench/rdma/us3_turbo_bench_rdma_multipart \
-  --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2 \
+  --part-size 4M --total 64M --concurrency 32 --reps 10 --warmup 2 \
   --proxy 10.72.142.155:9100 --rdma-bind-ip 10.72.142.155
 ```
 
@@ -244,7 +244,7 @@ bench 参数（gds/rdma multipart 通用）：
 | `--proxy ADDR` | `192.168.1.198:9100` | proxy 端点 |
 | `--rdma-bind-ip IP` | 空 | **RDMA 通路必填**：client 端 RDMA CM listener 绑定 IP，须为本机可路由的 RDMA 数据网卡 IP。空则退回读 `US3_TURBO_RDMA_BIND_IP`；两者都空则报错退出（RDMA 通路不可用）。GDS 通路可忽略 |
 | `--total SIZE` | 64M | 单对象总大小 |
-| `--part-size SIZE` | 8M | part 大小，**须 ≤ 16M**（backend `MAX_VALUE_LENGTH`）且与 proxy `--multipart_part_size` 一致，否则被拒 |
+| `--part-size SIZE` | 4M | part 大小，**须 ≤ 16M**（backend `MAX_VALUE_LENGTH`）且与 proxy `--multipart_part_size` 一致，否则被拒 |
 | `--concurrency N` | 1 | worker 线程数（性能测试用 32） |
 | `--reps N` | 5 | 每 worker 正式测量轮数 |
 | `--warmup N` | 0 | 预热轮数（排除冷启动，性能测试用 2） |
@@ -341,7 +341,7 @@ RDMA 单步 PUT/GET 与 multipart 一样需 `--rdma-bind-ip`（或 `US3_TURBO_RD
 | `--path rdma\|gds` | rdma | 数据通路；`gds` 仅 GDS 编译开启时可用 |
 | `--proxy HOST:PORT` | `192.168.1.198:9100` | proxy 端点 |
 | `--rdma-bind-ip IP` | 空 | RDMA 通路绑定 IP（`--path rdma` 必填） |
-| `--part-size SIZE` | 8M | 分段上传 part 大小（须与 proxy `--multipart_part_size` 一致） |
+| `--part-size SIZE` | 4M | 分段上传 part 大小（须与 proxy `--multipart_part_size` 一致） |
 
 > `--path gds` 需要在 GDS 编译开启（`--enable-gds`）的二进制里才可用，否则报
 > "GDS path not compiled"。
@@ -361,8 +361,8 @@ cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
 nohup ./build/proxy/us3_turbo_proxy --flagfile=proxy/conf/proxy.flags > /tmp/proxy.log 2>&1 &
 
 # 3. 跑双通路
-./build/rtest/bench/gds/us3_turbo_bench_gds_multipart  --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2
-./build/rtest/bench/rdma/us3_turbo_bench_rdma_multipart --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2 --rdma-bind-ip 10.72.142.155
+./build/rtest/bench/gds/us3_turbo_bench_gds_multipart  --part-size 4M --total 64M --concurrency 32 --reps 10 --warmup 2
+./build/rtest/bench/rdma/us3_turbo_bench_rdma_multipart --part-size 4M --total 64M --concurrency 32 --reps 10 --warmup 2 --rdma-bind-ip 10.72.142.155
 
 # 4. 改参重测：见 §3.2
 ```
@@ -390,8 +390,8 @@ nohup ./build/proxy/us3_turbo_proxy --flagfile=proxy/conf/proxy.flags > /tmp/pro
 ./build/rtest/bench/rdma/us3_turbo_bench_rdma_put --size 4M --count 40 --concurrency 8 --warmup 2 --rdma-bind-ip 10.72.142.155
 
 # 4. 分段上传
-./build/rtest/bench/gds/us3_turbo_bench_gds_multipart  --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2
-./build/rtest/bench/rdma/us3_turbo_bench_rdma_multipart --part-size 8M --total 64M --concurrency 32 --reps 10 --warmup 2 --rdma-bind-ip 10.72.142.155
+./build/rtest/bench/gds/us3_turbo_bench_gds_multipart  --part-size 4M --total 64M --concurrency 32 --reps 10 --warmup 2
+./build/rtest/bench/rdma/us3_turbo_bench_rdma_multipart --part-size 4M --total 64M --concurrency 32 --reps 10 --warmup 2 --rdma-bind-ip 10.72.142.155
 
 # 5. 下载 GET（RDMA）
 ./build/rtest/bench/rdma/us3_turbo_bench_rdma_get --size 4M --count 100 --concurrency 8 --warmup 2 --rdma-bind-ip 10.72.142.155

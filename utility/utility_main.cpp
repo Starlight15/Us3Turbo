@@ -72,7 +72,7 @@ void PrintUsage() {
       << "  --path rdma|gds       数据通路 (默认 rdma;gds 仅 GDS 编译开启时可用)\n"
       << "  --proxy HOST:PORT     proxy endpoint (默认 " << rtest::kDefaultProxyEndpoint << ")\n"
       << "  --rdma-bind-ip IP     RDMA 通路绑定 IP (--path rdma 必填)\n"
-      << "  --part-size SIZE      分段上传 part 大小 (默认 8M,须与 proxy --multipart_part_size 一致)\n"
+      << "  --part-size SIZE      分段上传 part 大小 (默认 4M,须与 proxy --multipart_part_size 一致)\n"
       << "\n"
       << "示例:\n"
       << "  " << kTool << " upload   --file /data/a.bin --key a.bin --path rdma --rdma-bind-ip 10.72.142.155\n"
