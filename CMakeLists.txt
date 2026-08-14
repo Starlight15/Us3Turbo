@@ -246,6 +246,7 @@ add_custom_target(us3_message_proto
 
 add_subdirectory(client)
 add_subdirectory(proxy)
+add_subdirectory(utility)
 
 if(US3_TURBO_ACCESS_BUILD_RTEST)
   add_subdirectory(rtest)

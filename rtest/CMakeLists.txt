@@ -25,6 +25,5 @@ function(rtest_add_target name source)
   endif()
 endfunction()
 
-add_subdirectory(examples)
 add_subdirectory(regression)
 add_subdirectory(bench)

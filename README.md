@@ -60,9 +60,9 @@ cd /mnt/us3_test/xinghui.shao/gds/Us3Turbo
 | `--deps-root PATH` | 覆盖依赖根目录（默认 `third_party/install`） |
 | `--enable-gds` / `--disable-gds` | 开启/关闭 GDS（CUDA cuObj）通路编译（默认 OFF） |
 
-环境变量等价：`BUILD_TYPE`、`JOBS`、`BUILD_RTEST`（默认 ON，控制是否编译 rtest 例程/
-示例/bench；关掉可加速只出 proxy + client）、`US3_TURBO_ACCESS_ENABLE_GDS`（默认 OFF，
-=ON 等价 `--enable-gds`）。GDS 关闭时不查找/链接任何 CUDA/cuobj/cufile 依赖，只出
+环境变量等价：`BUILD_TYPE`、`JOBS`、`BUILD_RTEST`（默认 ON，控制是否编译 rtest 回归/
+bench；关掉可加速只出 proxy + client + utility）、`US3_TURBO_ACCESS_ENABLE_GDS`（默认
+OFF，=ON 等价 `--enable-gds`）。GDS 关闭时不查找/链接任何 CUDA/cuobj/cufile 依赖，只出
 RDMA（host 内存）通路；无 GPU 机器直接 `./do_make.sh` 即可。
 
 ### 2.1 跨发行版（Ubuntu / CentOS）
@@ -106,15 +106,16 @@ GDS 通路：加 `-DUS3_TURBO_ACCESS_ENABLE_GDS=ON`；CUDA 装在非标准路径
 | 产物 | 路径 | 说明 |
 |---|---|---|
 | proxy 可执行 | `build/proxy/us3_turbo_proxy` | 控制面 brpc 服务 |
-| client 静态库 | `build/client/libus3_turbo_client.a` | SDK，被 bench/example/rtest 链接 |
+| client 静态库 | `build/client/libus3_turbo_client.a` | SDK，被 bench/utility/rtest 链接 |
+| utility | `build/utility/us3_turbo_utility` | 命令行工具：上传/下载指定对象 |
 | bench | `build/rtest/bench/{gds,rdma}/us3_turbo_bench_*` | 性能基准 |
-| example | `build/rtest/examples/{gds,rdma}/us3_turbo_*_example` | 单功能用法示例 |
 | 回归测试 | `build/rtest/regression/{gds,rdma}/us3_turbo_rtest_*` | 功能回归 |
 
 单编某目标：
 
 ```bash
 cmake --build build --target us3_turbo_proxy -j
+cmake --build build --target us3_turbo_utility -j
 cmake --build build --target us3_turbo_bench_gds_multipart -j
 ```
 
@@ -296,7 +297,9 @@ RDMA 单步 PUT/GET 与 multipart 一样需 `--rdma-bind-ip`（或 `US3_TURBO_RD
 结合 `--reps`、`--warmup` 与 proxy log_level=warn，可稳定复现 `docs/*_DEEP_ANALYSIS.md`
 中的 per-part 模型。
 
-## 5. 回归测试 / 示例
+## 5. 回归测试 / utility 命令行工具
+
+### 5.1 回归测试
 
 ```bash
 # 回归（需后端 + proxy 就绪；GET 类须关 mock）
@@ -304,18 +307,44 @@ RDMA 单步 PUT/GET 与 multipart 一样需 `--rdma-bind-ip`（或 `US3_TURBO_RD
 ./build/rtest/regression/rdma/us3_turbo_rtest_rdma_get_single_block_crc \
   --rdma-bind-ip 10.72.142.155
 # ...其余 rtest_* 同理
-
-# 示例（单功能最小用法）
-./build/rtest/examples/gds/us3_turbo_gds_put_example
-./build/rtest/examples/rdma/us3_turbo_rdma_multipart_example \
-  --proxy 10.72.142.155:9100 --rdma-bind-ip 10.72.142.155
 ```
 
 单块 CRC 回归用显式 2M size（`< 4M` 单步上限），与 `kDefaultPartSize` 解耦，故不带
-`--part-size`。回归/示例用 `--proxy` 覆盖端点、`--rdma-bind-ip` 指定 RDMA 网卡 IP
-（RDMA 通路必填）、`--size` 覆盖单块大小。示例与回归同样支持 `--rdma-bind-ip` /
-`--proxy` flag；不传 `--rdma-bind-ip` 且未设 `US3_TURBO_RDMA_BIND_IP` 时，RDMA 回归/
-示例会因 listener 不可用而失败（与 bench 一致）。
+`--part-size`。回归用 `--proxy` 覆盖端点、`--rdma-bind-ip` 指定 RDMA 网卡 IP（RDMA
+通路必填）、`--size` 覆盖单块大小。不传 `--rdma-bind-ip` 且未设 `US3_TURBO_RDMA_BIND_IP`
+时，RDMA 回归会因 listener 不可用而失败（与 bench 一致）。
+
+### 5.2 utility 命令行工具（上传 / 下载指定对象）
+
+取代原 `rtest/examples/` 教学示例，合并为单一工具 `build/utility/us3_turbo_utility`：
+
+```bash
+# 上传本地文件为对象（size ≤ 4M 自动走单步 PUT，否则分段上传）
+./build/utility/us3_turbo_utility upload \
+  --file /data/a.bin --bucket test-bucket --key a.bin \
+  --path rdma --proxy 10.72.142.155:9100 --rdma-bind-ip 10.72.142.155
+
+# 下载对象到本地文件
+./build/utility/us3_turbo_utility download \
+  --file /tmp/a.bin --bucket test-bucket --key a.bin \
+  --path rdma --proxy 10.72.142.155:9100 --rdma-bind-ip 10.72.142.155
+```
+
+参数：
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `upload` / `download` | — | 子命令（必选） |
+| `--file PATH` | — | 本地文件路径（upload 读源 / download 写目标，必选） |
+| `--key KEY` | — | 对象 key（必选） |
+| `--bucket NAME` | test-bucket | bucket |
+| `--path rdma\|gds` | rdma | 数据通路；`gds` 仅 GDS 编译开启时可用 |
+| `--proxy HOST:PORT` | `192.168.1.198:9100` | proxy 端点 |
+| `--rdma-bind-ip IP` | 空 | RDMA 通路绑定 IP（`--path rdma` 必填） |
+| `--part-size SIZE` | 8M | 分段上传 part 大小（须与 proxy `--multipart_part_size` 一致） |
+
+> `--path gds` 需要在 GDS 编译开启（`--enable-gds`）的二进制里才可用，否则报
+> "GDS path not compiled"。
 
 ## 6. 性能调参复现流程（端到端）
 
