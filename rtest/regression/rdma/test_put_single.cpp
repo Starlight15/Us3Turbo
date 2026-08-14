@@ -25,11 +25,14 @@ int main(int argc, char** argv) {
 
   // ---- args ----
   std::string proxy = kProxy;
+  std::string rdma_bind_ip;  // RDMA listener bind IP(空=env/fallback)
   bool verify_crc = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--proxy" && i + 1 < argc) {
       proxy = argv[++i];
+    } else if (a == "--rdma-bind-ip" && i + 1 < argc) {
+      rdma_bind_ip = argv[++i];
     } else if (a == "--verify-crc32c") {
       verify_crc = true;
     } else {
@@ -44,7 +47,7 @@ int main(int argc, char** argv) {
             << "  test sizes : " << (sizeof(kTestSizes) / sizeof(kTestSizes[0])) << "\n";
 
   // ---- init ----
-  Client client(ClientOptions{.endpoint = proxy, .verify_crc32c = verify_crc});
+  Client client(ClientOptions{.endpoint = proxy, .verify_crc32c = verify_crc, .rdma_bind_ip = rdma_bind_ip});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
     return 1;

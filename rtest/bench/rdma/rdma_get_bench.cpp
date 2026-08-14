@@ -36,6 +36,7 @@ bool RdmaGetParseArgs(int argc, char** argv, RdmaGetArgs& a) {
     if (r < 0) {
       std::cout << "usage: us3_turbo_bench_rdma_get [options]\n"
                 << "  --proxy HOST:PORT     proxy endpoint (default " << rtest::kDefaultProxyEndpoint << ")\n"
+                << "  --rdma-bind-ip IP     RDMA listener bind IP (default: env/fallback)\n"
                 << "  --size N[K|M|G]        object size (default 4M)\n"
                 << "  --count N              number of objects (default 10)\n"
                 << "  --concurrency N        worker threads (default 1)\n"
@@ -134,7 +135,9 @@ int main(int argc, char** argv) {
   rtest::FillHostPattern(host);
 
   // init
-  Client client(ClientOptions{.endpoint = a.proxy, .latency_trace = a.trace});
+  Client client(ClientOptions{.endpoint = a.proxy,
+                               .latency_trace = a.trace,
+                               .rdma_bind_ip = a.rdma_bind_ip});
   if (!client.Initialize()) {
     std::cerr << "Client::Initialize failed\n";
     return 1;

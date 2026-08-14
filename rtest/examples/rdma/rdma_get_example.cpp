@@ -17,7 +17,19 @@
 int main(int argc, char** argv) {
   using namespace us3_turbo::client;
 
-  const char* kProxy = (argc > 1) ? argv[1] : rtest::kDefaultProxyEndpoint;
+  std::string proxy = rtest::kDefaultProxyEndpoint;
+  std::string rdma_bind_ip;
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    if (a == "--proxy" && i + 1 < argc) {
+      proxy = argv[++i];
+    } else if (a == "--rdma-bind-ip" && i + 1 < argc) {
+      rdma_bind_ip = argv[++i];
+    } else {
+      std::cerr << "usage: " << argv[0] << " [--proxy HOST:PORT] [--rdma-bind-ip IP]\n";
+      return 2;
+    }
+  }
   constexpr const char* kBucket = "test-bucket";
   constexpr std::uint64_t kSize = 4ULL * 1024 * 1024;  // 4 MiB
 
@@ -29,7 +41,7 @@ int main(int argc, char** argv) {
   std::vector<std::byte> host_get(kSize);
   std::memset(host_get.data(), 0xAA, kSize);
 
-  Client client(ClientOptions{.endpoint = kProxy});
+  Client client(ClientOptions{.endpoint = proxy, .rdma_bind_ip = rdma_bind_ip});
   if (!client.Initialize()) {
     std::cerr << "Client::Initialize failed\n";
     return 1;

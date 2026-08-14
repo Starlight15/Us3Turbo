@@ -85,6 +85,7 @@ inline bool NeedVal(int& i, int argc, char** argv, std::string_view arg, std::st
 // struct 中派生添加。
 struct BaseArgs {
   std::string proxy{rtest::kDefaultProxyEndpoint};
+  std::string rdma_bind_ip;  // RDMA listener 绑定 IP(空=走 client 的 env/fallback)
   std::uint64_t total{64ULL * 1024 * 1024};
   std::uint32_t reps{5};
   std::uint32_t warmup{0};
@@ -105,6 +106,9 @@ inline int ParseCommonArg(BaseArgs& a, int& i, int argc, char** argv, std::strin
   if (arg == "--proxy") {
     if (!need()) return -1;
     a.proxy = std::string(val);
+  } else if (arg == "--rdma-bind-ip") {
+    if (!need()) return -1;
+    a.rdma_bind_ip = std::string(val);
   } else if (arg == "--bucket") {
     if (!need()) return -1;
     a.bucket = std::string(val);

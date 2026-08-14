@@ -126,6 +126,7 @@ bool RdmaMpParseArgs(int argc, char** argv, RdmaMpArgs& a) {
     if (r < 0) {
       std::cout << "usage: us3_turbo_bench_rdma_multipart [options]\n"
                 << "  --proxy ADDR        proxy endpoint\n"
+                << "  --rdma-bind-ip IP   RDMA listener bind IP (default: env/fallback)\n"
                 << "  --total SIZE        total object size (default 64M)\n"
                 << "  --part-size SIZE    part size (default 8M, <=16M)\n"
                 << "  --reps N            reps per worker (default 5)\n"
@@ -201,7 +202,8 @@ int main(int argc, char** argv) {
                                .multipart_part_size = a.part_size,
                                .verify_crc32c = a.verify_crc32c,
                                .latency_trace = a.trace,
-                               .log_level = a.trace ? "info" : "warn"});
+                               .log_level = a.trace ? "info" : "warn",
+                               .rdma_bind_ip = a.rdma_bind_ip});
   if (!client.Initialize()) {
     std::cerr << "Client::Initialize failed\n";
     return 1;

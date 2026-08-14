@@ -25,11 +25,14 @@ int main(int argc, char** argv) {
 
   // ---- args ----
   std::string proxy = kProxy;
+  std::string rdma_bind_ip;  // RDMA listener bind IP(空=env/fallback)
   std::uint64_t part_size = kPartSize;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--proxy" && i + 1 < argc) {
       proxy = argv[++i];
+    } else if (a == "--rdma-bind-ip" && i + 1 < argc) {
+      rdma_bind_ip = argv[++i];
     } else if (a == "--size" && i + 1 < argc) {
       if (!rtest::ParseSize(argv[++i], part_size)) {
         std::cerr << "bad --size\n";
@@ -55,7 +58,7 @@ int main(int argc, char** argv) {
   std::memset(host_get.data(), 0xAA, total);
 
   // ---- init ----
-  Client client(ClientOptions{.endpoint = proxy, .multipart_part_size = part_size});
+  Client client(ClientOptions{.endpoint = proxy, .multipart_part_size = part_size, .rdma_bind_ip = rdma_bind_ip});
   if (!client.Initialize()) {
     std::cerr << "[FAIL] " << kTestName << ": Initialize failed\n";
     return 1;
