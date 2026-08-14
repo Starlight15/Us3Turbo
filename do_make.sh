@@ -94,6 +94,60 @@ done
 
 [[ -f "${PROJECT_ROOT}/CMakeLists.txt" ]] || die "Run this script from the Us3Turbo repository root"
 
+# ---- 编译器解析：C++20 需 gcc-8+；CentOS 7 自动启用 devtoolset-11。----
+# 优先级：用户显式 CXX/CC > devtoolset-11(系统 gcc 过老时) > 系统默认(CMake 探测)。
+# 结果以 -DCMAKE_C_COMPILER/-DCMAKE_CXX_COMPILER 传给 cmake，可覆盖 build/ 里的旧缓存
+# (环境变量 CC/CXX 只在无缓存时才被 CMake 读取，故不能靠它覆盖旧编译器)。
+CMAKE_C_COMPILER=""
+CMAKE_CXX_COMPILER=""
+resolve_compiler() {
+  local devtool="/opt/rh/devtoolset-11/root/usr/bin"
+
+  # 用户显式指定了 C/C++ 编译器则直接采用（尊重用户覆盖）。
+  if [[ -n "${CXX:-}" && -n "${CC:-}" ]]; then
+    CMAKE_CXX_COMPILER="${CXX}"
+    CMAKE_C_COMPILER="${CC}"
+    return
+  fi
+
+  # devtoolset-11 存在且当前 g++ 主版本 < 8 时启用（覆盖 PATH，供 --with-dep 复用）。
+  if [[ -x "${devtool}/g++" ]]; then
+    local sys_major
+    sys_major="$(g++ -dumpversion 2>/dev/null | cut -d. -f1 || true)"
+    if [[ -z "${sys_major}" || "${sys_major}" -lt 8 ]]; then
+      log "System gcc too old (g++ major ${sys_major:-?} < 8); enabling devtoolset-11"
+      CMAKE_CXX_COMPILER="${devtool}/g++"
+      CMAKE_C_COMPILER="${devtool}/gcc"
+      export PATH="${devtool}:${PATH}"
+      return
+    fi
+  fi
+
+  # 默认：留空，交给 CMake 从 PATH 探测（Ubuntu 自带 gcc-13 走这里）。
+}
+
+# 编译器主版本变化时自动清 build：CMake 缓存会残留旧编译器与 CXX20 探测结果，
+# 换工具链后必须清空，否则报 "does not support CXX20"。
+maybe_clean_stale_build() {
+  [[ -f "${BUILD_DIR}/CMakeCache.txt" ]] || return 0
+  local cached_cxx
+  cached_cxx="$(grep -E '^CMAKE_CXX_COMPILER:FILEPATH=' "${BUILD_DIR}/CMakeCache.txt" | head -1 | cut -d= -f2- || true)"
+  [[ -n "${cached_cxx}" ]] || return 0
+
+  local want_cxx="${CMAKE_CXX_COMPILER:-$(command -v g++ 2>/dev/null || command -v c++ 2>/dev/null || true)}"
+  [[ -n "${want_cxx}" ]] || return 0
+
+  local cached_major want_major
+  cached_major="$( "${cached_cxx}" -dumpversion 2>/dev/null | cut -d. -f1 || true )"
+  want_major="$( "${want_cxx}" -dumpversion 2>/dev/null | cut -d. -f1 || true )"
+  if [[ -n "${cached_major}" && -n "${want_major}" && "${cached_major}" != "${want_major}" ]]; then
+    log "Compiler changed (g++ major ${cached_major} → ${want_major}); removing stale build dir"
+    rm -rf "${BUILD_DIR}"
+  fi
+}
+
+resolve_compiler
+
 # ---- 首次编译依赖引导 (--with-dep) ----
 # 顺序:系统依赖(apt) → third_party 源码重编 → (GDS) CUDA/cuObj SDK。
 # 全程不使用不可移植的预编译静态产物;third_party/install 由源码重建。
@@ -113,6 +167,7 @@ if [[ ${CLEAN_BUILD} -eq 1 ]]; then
   log "Removing ${BUILD_DIR}"
   rm -rf "${BUILD_DIR}"
 fi
+maybe_clean_stale_build
 
 mkdir -p "${BUILD_DIR}"
 
@@ -124,6 +179,8 @@ CMAKE_ARGS=(
   -DUS3_TURBO_ACCESS_ENABLE_GDS="${ENABLE_GDS}"
 )
 [[ -n "${CUDA_ROOT}" ]] && CMAKE_ARGS+=(-DUS3_TURBO_ACCESS_CUDA_ROOT="${CUDA_ROOT}")
+[[ -n "${CMAKE_C_COMPILER}" ]] && CMAKE_ARGS+=(-DCMAKE_C_COMPILER="${CMAKE_C_COMPILER}")
+[[ -n "${CMAKE_CXX_COMPILER}" ]] && CMAKE_ARGS+=(-DCMAKE_CXX_COMPILER="${CMAKE_CXX_COMPILER}")
 
 cmake -S "${PROJECT_ROOT}" -B "${BUILD_DIR}" "${CMAKE_ARGS[@]}"
 
